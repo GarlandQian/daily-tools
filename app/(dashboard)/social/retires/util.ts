@@ -14,7 +14,6 @@ export const calcRetires = ({
   gender,
   occupation
 }: calcRetiresParams) => {
-  debugger
   // 新政策开始时间
   const startCalcDay = dayjs('2025-01-01');
   // 生日
@@ -35,14 +34,16 @@ export const calcRetires = ({
     return '请输入正确的性别和职业';
   }
 
+  const tryretiredate = dayjs(birthDay).add(baseRetirementAge * 12, 'M');
+
   // 判断是否在2025年1月1日之前可以退休
-  if (birthDay.isBefore(startCalcDay)) {
+  if (tryretiredate.isBefore(startCalcDay)) {
     // 在2025年前退休，使用旧政策
     return `退休日期为：${birthDay.format('YYYY年MM月DD日')}，退休年龄为${baseRetirementAge}岁`;
   }
 
   // 如果在2025年后退休，计算延迟幅度
-  const yearsUntil2025 = startCalcDay.year() - birthDay.year();
+  const yearsUntil2025 = startCalcDay.year() - birthDay.year() + 60;
   if (gender === 'male') {
     delayMonths = Math.floor((yearsUntil2025 * 12) / 4); // 男性每4个月延迟1个月
     if (baseRetirementAge + delayMonths / 12 > 63) {
@@ -62,10 +63,10 @@ export const calcRetires = ({
 
   // 最终退休年龄（以月为单位）
   const retirementAgeInMonths = baseRetirementAge * 12 + delayMonths;
-  const retireDate = birthDay.add(retirementAgeInMonths, 'M')
+  const retireDate = birthDay.add(retirementAgeInMonths, 'M');
 
-  const finalAge = Math.floor(retirementAgeInMonths / 12)
-  const finalMonths = retirementAgeInMonths % 12
+  const finalAge = Math.floor(retirementAgeInMonths / 12);
+  const finalMonths = retirementAgeInMonths % 12;
 
   return `退休日期为：${retireDate.format('YYYY年MM月DD日')}，退休年龄为${finalAge}岁${finalMonths}个月`;
 };
