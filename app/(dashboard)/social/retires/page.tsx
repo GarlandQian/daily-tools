@@ -24,10 +24,11 @@ import {
 } from '@/components/ui/select';
 
 import { calcRetires } from './util';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
+import { toast } from '@/components/hooks/use-toast';
 
 const FormSchema = z.object({
-  birth: z.string({
+  birth: z.date({
     required_error: 'Birthday is required!'
   }),
   gender: z.string({
@@ -44,15 +45,22 @@ export default function InputForm() {
     }
   });
 
-  function onSubmit(data: z.infer<typeof FormSchema>) {
-    const v = calcRetires({
-      ...data,
-      birth: new Date(data.birth)
-    });
-    console.log(v);
-  }
+  const [data, setData] = useState({
+    retirementDate: '',
+    baseRetirementAge: ''
+  })
 
-  const isFemale = useMemo(() => form.getValues('gender') === 'male', [form]);
+  function onSubmit(data: z.infer<typeof FormSchema>) {
+    const retirement = calcRetires(data);
+    if(typeof retirement == 'string') {
+      toast({
+        title: 'error',
+        description: retirement
+      })
+      return
+    }
+    setData({...retirement})
+  }
 
   return (
     <Form {...form}>
@@ -64,10 +72,7 @@ export default function InputForm() {
             <FormItem>
               <FormLabel>Birthday</FormLabel>
               <FormControl>
-                <DatePicker
-                  value={field.value}
-                  setValueDate={field.onChange}
-                />
+                <DatePicker value={field.value} setValueDate={field.onChange} />
               </FormControl>
               <FormDescription>This is your Birthday.</FormDescription>
               <FormMessage />
@@ -103,39 +108,40 @@ export default function InputForm() {
             </FormItem>
           )}
         />
-        {isFemale && (
-          <FormField
-            control={form.control}
-            name="occupation"
-            render={({ field }) => (
-              <FormItem>
-                <div className="flex items-center">
-                  <FormLabel>Occupation</FormLabel>
-                  <div className="w-[280px]">
-                    <Select
-                      onValueChange={field.onChange}
-                      defaultValue={field.value}
-                    >
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select your occupation" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="worker">worker</SelectItem>
-                        <SelectItem value="staff">staff</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
+        <FormField
+          control={form.control}
+          name="occupation"
+          render={({ field }) => (
+            <FormItem>
+              <div className="flex items-center">
+                <FormLabel>Occupation</FormLabel>
+                <div className="w-[280px]">
+                  <Select
+                    onValueChange={field.onChange}
+                    defaultValue={field.value}
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select your occupation" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="worker">worker</SelectItem>
+                      <SelectItem value="staff">staff</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
-                <FormDescription>This is your occupation.</FormDescription>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        )}
+              </div>
+              <FormDescription>This is your occupation.</FormDescription>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
         <Button type="submit">Submit</Button>
       </form>
+      <div>
+        {data.baseRetirementAge}{data.retirementDate}
+      </div>
     </Form>
   );
 }

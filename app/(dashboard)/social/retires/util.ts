@@ -39,7 +39,10 @@ export const calcRetires = ({
   // 判断是否在2025年1月1日之前可以退休
   if (tryretiredate.isBefore(startCalcDay)) {
     // 在2025年前退休，使用旧政策
-    return `退休日期为：${birthDay.format('YYYY年MM月DD日')}，退休年龄为${baseRetirementAge}岁`;
+    return {
+      retirementDate: tryretiredate.format('YYYY年MM月DD日'),
+      baseRetirementAge: `${baseRetirementAge}岁`
+    }
   }
 
   // 如果在2025年后退休，计算延迟幅度
@@ -68,5 +71,8 @@ export const calcRetires = ({
   const finalAge = Math.floor(retirementAgeInMonths / 12);
   const finalMonths = retirementAgeInMonths % 12;
 
-  return `退休日期为：${retireDate.format('YYYY年MM月DD日')}，退休年龄为${finalAge}岁${finalMonths}个月`;
+  return {
+    retirementDate: retireDate.format('YYYY年MM月DD日'),
+    baseRetirementAge: `${finalAge}岁${finalMonths}个月`
+  }
 };
