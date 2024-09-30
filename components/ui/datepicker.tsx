@@ -17,10 +17,10 @@ export function DatePicker({
   value,
   setValueDate
 }: {
-  value?: string;
+  value?: Date;
   setValueDate?: (value?: Date) => void;
 }) {
-  const [date, setDate] = useState(value ? new Date(value) : undefined)
+  const [date, setDate] = useState(value)
 
   function handleSelectDate(selected?: Date) {
     setDate(selected);
