@@ -9,7 +9,18 @@ export interface calcRetiresParams {
   occupation?: 'worker' | 'staff'
 }
 
-export const calcRetires = ({ birth, gender, occupation }: calcRetiresParams) => {
+export interface calcRetiresReturnType {
+  /** 是否享受新政策 */
+  newRetirementPolicy: boolean
+  /** 退休年月日 */
+  retirementDate: Date
+  /** 退休年龄 */
+  baseRetirementAge: number
+  /** 退休月年龄 */
+  baseRetirementMonth: number
+}
+
+export const calcRetires = ({ birth, gender, occupation }: calcRetiresParams): calcRetiresReturnType => {
   // 新政策开始时间
   const startCalcDay = dayjs('2025-01-01')
   // 生日
@@ -27,7 +38,7 @@ export const calcRetires = ({ birth, gender, occupation }: calcRetiresParams) =>
   } else if (gender === 'female' && occupation === 'staff') {
     baseRetirementAge = 55
   } else {
-    return '请输入正确的性别和职业'
+    throw new Error('请输入正确的性别和职业')
   }
 
   const tryretiredate = dayjs(birthDay).add(baseRetirementAge * 12, 'M')
@@ -36,25 +47,28 @@ export const calcRetires = ({ birth, gender, occupation }: calcRetiresParams) =>
   if (tryretiredate.isBefore(startCalcDay)) {
     // 在2025年前退休，使用旧政策
     return {
-      retirementDate: tryretiredate.format('YYYY年MM月DD日'),
-      baseRetirementAge: `${baseRetirementAge}岁`,
+      newRetirementPolicy: false,
+      retirementDate: tryretiredate.toDate(),
+      baseRetirementAge,
+      baseRetirementMonth: 0,
     }
   }
 
   // 如果在2025年后退休，计算延迟幅度
-  const yearsUntil2025 = startCalcDay.year() - birthDay.year() + 60
+
+  const monthsUntil2025 = tryretiredate.diff(startCalcDay, 'month')
   if (gender === 'male') {
-    delayMonths = Math.floor((yearsUntil2025 * 12) / 4) // 男性每4个月延迟1个月
+    delayMonths = Math.floor((monthsUntil2025) / 4) // 男性每4个月延迟1个月
     if (baseRetirementAge + delayMonths / 12 > 63) {
       delayMonths = (63 - baseRetirementAge) * 12 // 最多延迟到63岁
     }
   } else if (gender === 'female' && occupation === 'worker') {
-    delayMonths = Math.floor((yearsUntil2025 * 12) / 2) // 女性工人每2个月延迟1个月
+    delayMonths = Math.floor((monthsUntil2025) / 2) // 女性工人每2个月延迟1个月
     if (baseRetirementAge + delayMonths / 12 > 55) {
       delayMonths = (55 - baseRetirementAge) * 12 // 最多延迟到55岁
     }
   } else if (gender === 'female' && occupation === 'staff') {
-    delayMonths = Math.floor((yearsUntil2025 * 12) / 4) // 女性职员每4个月延迟1个月
+    delayMonths = Math.floor((monthsUntil2025) / 4) // 女性职员每4个月延迟1个月
     if (baseRetirementAge + delayMonths / 12 > 58) {
       delayMonths = (58 - baseRetirementAge) * 12 // 最多延迟到58岁
     }
@@ -68,7 +82,9 @@ export const calcRetires = ({ birth, gender, occupation }: calcRetiresParams) =>
   const finalMonths = retirementAgeInMonths % 12
 
   return {
-    retirementDate: retireDate.format('YYYY年MM月DD日'),
-    baseRetirementAge: `${finalAge}岁${finalMonths}个月`,
+    newRetirementPolicy: true,
+    retirementDate: retireDate.toDate(),
+    baseRetirementAge: finalAge,
+    baseRetirementMonth: finalMonths,
   }
 }
