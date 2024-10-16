@@ -5,6 +5,7 @@ import dayjs from 'dayjs'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useMemo, useState } from 'react'
 import { calcRetires, calcRetiresParams, calcRetiresReturnType } from './util'
+import { useTranslation } from 'react-i18next'
 
 const useStyles = createStyles(({ css }) => ({
   warpper: css`
@@ -72,6 +73,8 @@ const useStyles = createStyles(({ css }) => ({
 const Retires = () => {
   const { styles } = useStyles()
 
+  const { t } = useTranslation()
+
   const [form] = Form.useForm<calcRetiresParams>()
   const gender = Form.useWatch('gender', form)
   const isFemale = useMemo(() => gender === 'female', [gender])
@@ -90,7 +93,11 @@ const Retires = () => {
         wrapperCol={{ span: 16 }}
         onFinish={onFinish}
       >
-        <Form.Item name="birth" label="Birthday" rules={[{ required: true, message: 'Please select your birthday!' }]}>
+        <Form.Item
+          name="birth"
+          label="Birthday"
+          rules={[{ required: true, message: t('rules.msg.required', { msg: t('app.social.retires.birthday') }) }]}
+        >
           <DatePicker />
         </Form.Item>
         <Form.Item name="gender" label="Gender" rules={[{ required: true, message: 'Please select your gender!' }]}>
