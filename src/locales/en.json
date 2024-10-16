@@ -1,0 +1,6 @@
+{
+  "app.social": "Social",
+  "app.social.retires": "Retires",
+  "app.social.retires.birthday": "birthday",
+  "rules.msg.required": "{{msg}} is required"
+}
