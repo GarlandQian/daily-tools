@@ -72,7 +72,6 @@ const useStyles = createStyles(({ css }) => ({
 
 const Retires = () => {
   const { styles } = useStyles()
-
   const { t } = useTranslation()
 
   const [form] = Form.useForm<calcRetiresParams>()
@@ -136,7 +135,7 @@ const Retires = () => {
         )}
         <Form.Item>
           <Button type="primary" htmlType="submit">
-            submit
+            {t('public.submit')}
           </Button>
         </Form.Item>
       </Form>

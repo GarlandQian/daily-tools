@@ -67,9 +67,14 @@ const ToolsLayout: React.FC = ({ children }: React.PropsWithChildren) => {
   } = useTranslation()
   const items: MenuItem[] = [
     getItem(t('app.social'), '/social', <UserOutlined />, [getItem(t('app.social.retires'), '/social/retires')]),
-    getItem(t('app.translate'), '/translate', <FundOutlined />, [
-      getItem(t('app.translate.hash'), '/translate/hash'),
-      getItem(t('app.translate.encryption'), '/translate/encryption'),
+    getItem(t('app.hash'), '/hash', <FundOutlined />, [
+      getItem(t('app.hash.md5'), '/hash/md5'),
+      getItem(t('app.hash.sha'), '/hash/sha'),
+      getItem(t('app.hash.hmacMD5'), '/hash/hmacMD5'),
+      getItem(t('app.hash.hmacSHA'), '/hash/hmacSHA'),
+      getItem(t('app.hash.ripemd'), '/hash/ripemd'),
+      getItem(t('app.hash.hmacRIPEMD'), '/hash/hmacRIPEMD'),
+      getItem(t('app.hash.pbkdf'), '/hash/pbkdf'),
     ]),
   ]
   const [collapsed, setCollapsed] = useState(false)
