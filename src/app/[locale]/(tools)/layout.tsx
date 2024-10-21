@@ -1,7 +1,8 @@
 'use client'
-import { createFromIconfontCN, FundOutlined, UserOutlined } from '@ant-design/icons'
+import { githubUrl, iconfontUrl } from '@/config/config'
+import { createFromIconfontCN, FundOutlined, GithubOutlined, UserOutlined } from '@ant-design/icons'
 import type { MenuProps } from 'antd'
-import { Breadcrumb, Layout, Menu, theme } from 'antd'
+import { Breadcrumb, Flex, Layout, Menu, theme } from 'antd'
 import { createStyles } from 'antd-style'
 import { usePathname, useRouter } from 'next/navigation'
 import React, { useMemo, useState } from 'react'
@@ -10,7 +11,7 @@ import { useTranslation } from 'react-i18next'
 const { Header, Content, Footer, Sider } = Layout
 
 const IconFont = createFromIconfontCN({
-  scriptUrl: ['//at.alicdn.com/t/c/font_4712729_kzdtt63fp9k.js'],
+  scriptUrl: [iconfontUrl],
 })
 
 type MenuItem = Required<MenuProps>['items'][number]
@@ -43,11 +44,11 @@ const getLevelKeys = (items1: LevelKeysProps[]) => {
 }
 
 const useStyles = createStyles(({ token, css }) => ({
-  languageIcon: css`
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    height: 100%;
+  header: css`
+    padding: '0 20px 0 0';
+    background: ${token.colorBgContainer};
+  `,
+  transformIcon: css`
     &:hover {
       color: ${token.colorPrimaryHover};
     }
@@ -58,7 +59,7 @@ const ToolsLayout: React.FC = ({ children }: React.PropsWithChildren) => {
   const {
     token: { colorBgContainer, borderRadiusLG },
   } = theme.useToken()
-  const { styles, cx } = useStyles()
+  const { styles } = useStyles()
   const router = useRouter()
   const pathname = usePathname()
   const {
@@ -110,7 +111,7 @@ const ToolsLayout: React.FC = ({ children }: React.PropsWithChildren) => {
 
   const breadcrumbItems = useMemo(() => {
     const keyList = selectKeys[0].split('/').filter(Boolean)
-    return keyList.map((key, index) => ({
+    return keyList.map((_key, index) => ({
       title: t(`app.${[...new Array(index + 1)].map((_item, i) => `${keyList[i]}`).join('.')}`),
     }))
   }, [selectKeys, t])
@@ -130,17 +131,28 @@ const ToolsLayout: React.FC = ({ children }: React.PropsWithChildren) => {
         />
       </Sider>
       <Layout>
-        <Header style={{ padding: '0 20px 0 0', background: colorBgContainer }}>
-          <div
-            className={cx('cursor-pointer', styles.languageIcon)}
-            onClick={() => changeLanguage(language === 'en' ? 'cn' : 'en')}
-          >
-            {language === 'cn' ? (
-              <IconFont type="icon-zhongyingwenqiehuan" style={{ fontSize: '32px' }} />
-            ) : (
-              <IconFont type="icon-zhongyingwenqiehuan1" style={{ fontSize: '32px' }} />
-            )}
-          </div>
+        <Header className={styles.header}>
+          <Flex className="h-full" align="center" justify="space-between">
+            <div></div>
+            <Flex align="center" gap={10}>
+              <GithubOutlined className="cursor-pointer text-[28px]" onClick={() => window.open(githubUrl)} />
+              <Flex align="center" gap={10} className={styles.transformIcon}>
+                {language === 'cn' ? (
+                  <IconFont
+                    className="cursor-pointer text-[32px]"
+                    type="icon-chinese"
+                    onClick={() => changeLanguage('en')}
+                  />
+                ) : (
+                  <IconFont
+                    className="cursor-pointer text-[32px]"
+                    type="icon-english"
+                    onClick={() => changeLanguage('cn')}
+                  />
+                )}
+              </Flex>
+            </Flex>
+          </Flex>
         </Header>
         <Content style={{ margin: '0 16px' }}>
           <Breadcrumb style={{ margin: '16px 0' }} items={breadcrumbItems} />
