@@ -3,5 +3,9 @@
   "app.social.retires": "退休",
   "app.social.retires.birthday": "生日",
   "app.translate": "转化",
+  "app.translate.hash": "哈希",
+  "app.translate.hash.key": "关键字",
+  "app.translate.hash.message": "原文",
+  "app.translate.encryption": "加解密",
   "rules.msg.required": "{{msg}}是必填的"
 }

@@ -3,8 +3,8 @@ import { createFromIconfontCN, FundOutlined, UserOutlined } from '@ant-design/ic
 import type { MenuProps } from 'antd'
 import { Breadcrumb, Layout, Menu, theme } from 'antd'
 import { createStyles } from 'antd-style'
-import { useRouter } from 'next/navigation'
-import React, { useState } from 'react'
+import { usePathname, useRouter } from 'next/navigation'
+import React, { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 const { Header, Content, Footer, Sider } = Layout
@@ -60,20 +60,24 @@ const ToolsLayout: React.FC = ({ children }: React.PropsWithChildren) => {
   } = theme.useToken()
   const { styles, cx } = useStyles()
   const router = useRouter()
+  const pathname = usePathname()
   const {
     t,
     i18n: { language, changeLanguage },
   } = useTranslation()
   const items: MenuItem[] = [
     getItem(t('app.social'), '/social', <UserOutlined />, [getItem(t('app.social.retires'), '/social/retires')]),
-    getItem(t('app.translate'), '/translate', <FundOutlined />, [getItem(t('app.translate.hash'), '/translate/hash')]),
+    getItem(t('app.translate'), '/translate', <FundOutlined />, [
+      getItem(t('app.translate.hash'), '/translate/hash'),
+      getItem(t('app.translate.encryption'), '/translate/encryption'),
+    ]),
   ]
   const [collapsed, setCollapsed] = useState(false)
+  const [stateOpenKeys, setStateOpenKeys] = useState([`/${pathname.split('/')[1]}`])
+  const [selectKeys, setSelectKeys] = useState([pathname])
 
-  const [stateOpenKeys, setStateOpenKeys] = useState(['/social'])
-
-  const levelKeys = getLevelKeys(items as LevelKeysProps[])
   const onOpenChange: MenuProps['onOpenChange'] = (openKeys) => {
+    const levelKeys = getLevelKeys(items as LevelKeysProps[])
     const currentOpenKey = openKeys.find((key) => stateOpenKeys.indexOf(key) === -1)
     // open
     if (currentOpenKey !== undefined) {
@@ -94,20 +98,30 @@ const ToolsLayout: React.FC = ({ children }: React.PropsWithChildren) => {
     }
   }
 
+  const onSelect = ({ selectedKeys }: { selectedKeys: string[] }) => {
+    setSelectKeys(selectedKeys)
+    router.push(selectedKeys[0])
+  }
+
+  const breadcrumbItems = useMemo(() => {
+    const keyList = selectKeys[0].split('/').filter(Boolean)
+    return keyList.map((key, index) => ({
+      title: t(`app.${[...new Array(index + 1)].map((_item, i) => `${keyList[i]}`).join('.')}`),
+    }))
+  }, [selectKeys, t])
+
   return (
     <Layout style={{ height: '100vh', overflow: 'hidden' }}>
       <Sider collapsible collapsed={collapsed} onCollapse={(value) => setCollapsed(value)}>
         <div className="demo-logo-vertical" />
         <Menu
           theme="dark"
-          defaultSelectedKeys={['/social/retires']}
-          defaultOpenKeys={stateOpenKeys}
+          selectedKeys={selectKeys}
+          openKeys={stateOpenKeys}
           onOpenChange={onOpenChange}
           mode="inline"
           items={items}
-          onSelect={(info) => {
-            router.push(info.selectedKeys[0])
-          }}
+          onSelect={onSelect}
         />
       </Sider>
       <Layout>
@@ -124,17 +138,7 @@ const ToolsLayout: React.FC = ({ children }: React.PropsWithChildren) => {
           </div>
         </Header>
         <Content style={{ margin: '0 16px' }}>
-          <Breadcrumb
-            style={{ margin: '16px 0' }}
-            items={[
-              {
-                title: t('app.social'),
-              },
-              {
-                title: t('app.social.retires'),
-              },
-            ]}
-          />
+          <Breadcrumb style={{ margin: '16px 0' }} items={breadcrumbItems} />
           <div
             style={{
               padding: 24,
@@ -146,7 +150,7 @@ const ToolsLayout: React.FC = ({ children }: React.PropsWithChildren) => {
             {children}
           </div>
         </Content>
-        <Footer style={{ textAlign: 'center' }}>Ant Design ©{new Date().getFullYear()} Created by Ant UED</Footer>
+        <Footer style={{ textAlign: 'center' }}>Tools ©2024-{new Date().getFullYear()} Created by GarlandQian</Footer>
       </Layout>
     </Layout>
   )

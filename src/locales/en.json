@@ -4,5 +4,8 @@
   "app.social.retires.birthday": "birthday",
   "app.translate": "Translate",
   "app.translate.hash": "Hash",
+  "app.translate.hash.key": "key",
+  "app.translate.hash.message": "Message",
+  "app.translate.encryption": "Encryption",
   "rules.msg.required": "{{msg}} is required"
 }
