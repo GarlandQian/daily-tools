@@ -1,6 +1,6 @@
 'use client'
-import { githubUrl, iconfontUrl } from '@/config/config'
-import { createFromIconfontCN, FundOutlined, GithubOutlined, UserOutlined } from '@ant-design/icons'
+import IconFont from '@/components/IconFont'
+import { FundOutlined, GithubOutlined, UserOutlined } from '@ant-design/icons'
 import type { MenuProps } from 'antd'
 import { Breadcrumb, Flex, Layout, Menu, theme } from 'antd'
 import { createStyles } from 'antd-style'
@@ -9,10 +9,6 @@ import React, { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 const { Header, Content, Footer, Sider } = Layout
-
-const IconFont = createFromIconfontCN({
-  scriptUrl: [iconfontUrl],
-})
 
 type MenuItem = Required<MenuProps>['items'][number]
 function getItem(label: React.ReactNode, key: React.Key, icon?: React.ReactNode, children?: MenuItem[]): MenuItem {
@@ -135,7 +131,10 @@ const ToolsLayout: React.FC = ({ children }: React.PropsWithChildren) => {
           <Flex className="h-full" align="center" justify="space-between">
             <div></div>
             <Flex align="center" gap={10}>
-              <GithubOutlined className="cursor-pointer text-[28px]" onClick={() => window.open(githubUrl)} />
+              <GithubOutlined
+                className="cursor-pointer text-[28px]"
+                onClick={() => window.open(process.env.NEXT_PUBLIC_GITHUB_URL)}
+              />
               <Flex align="center" gap={10} className={styles.transformIcon}>
                 {language === 'cn' ? (
                   <IconFont
