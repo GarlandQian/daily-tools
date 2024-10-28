@@ -4,7 +4,7 @@ import { Canvas } from '@react-three/fiber'
 import dynamic from 'next/dynamic'
 import { Suspense } from 'react'
 import { OrbitControls } from '@react-three/drei'
-import Model from './Frey_FirstAnniversary'
+import Model from './model/main'
 
 const Home = () => {
   return (

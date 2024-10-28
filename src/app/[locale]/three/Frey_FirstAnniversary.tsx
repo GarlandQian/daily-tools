@@ -44,7 +44,7 @@ export default function Model(
     >
 ) {
   // const group = useRef();
-  const { scene, animations } = useGLTF('/model/Frey_FirstAnniversary.glb')
+  const { scene, animations } = useGLTF('/models/Frey_FirstAnniversary.glb')
   const { actions, names, ref } = useAnimations(animations)
   useFrame(({ clock }) => {
     ref.current!.rotation.y = Math.sin(clock.getElapsedTime())
@@ -86,4 +86,4 @@ export default function Model(
   )
 }
 
-useGLTF.preload('/model/Frey_FirstAnniversary.glb')
+useGLTF.preload('/models/Frey_FirstAnniversary.glb')
