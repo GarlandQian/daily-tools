@@ -6,7 +6,7 @@ import { AntdRegistry } from '@ant-design/nextjs-registry'
 import i18nConfig from '@/locales/i18nConfig'
 import initTranslations from '@/locales/i18n'
 import TranslationsProvider from '@/components/TranslationsProvider'
-import TransitionLayout from '@/components/TransitionLayout'
+import NextTopLoader from 'nextjs-toploader'
 
 export const metadata = {
   title: "GarlandQian's Tools",
@@ -29,11 +29,10 @@ const RootLayout = async ({
     <html lang={locale}>
       <body className="flex min-h-screen w-full flex-col">
         <AntdRegistry>
-          <TransitionLayout>
-            <TranslationsProvider locale={locale} resources={resources}>
-              {children}
-            </TranslationsProvider>
-          </TransitionLayout>
+          <NextTopLoader />
+          <TranslationsProvider locale={locale} resources={resources}>
+            {children}
+          </TranslationsProvider>
         </AntdRegistry>
       </body>
     </html>

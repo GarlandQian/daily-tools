@@ -3,19 +3,19 @@ import Loader from '@/components/three/Loader'
 import { Canvas } from '@react-three/fiber'
 import dynamic from 'next/dynamic'
 import { Suspense } from 'react'
-import { OrbitControls } from '@react-three/drei'
-import Model from './Frey_FirstAnniversary'
+import { OrbitControls, Stats } from '@react-three/drei'
+import Model from './model'
 
 const Home = () => {
   return (
     <div style={{ height: '100vh' }}>
-      <h1>3D Models with Reusable Three.js Component</h1>
-      <Canvas>
+      <Canvas camera={{ position: [2, 1, 2], near: 0.05 }} style={{ background: '#fff' }}>
         <ambientLight intensity={1} />
-        <directionalLight />
+        <OrbitControls enableZoom={true} />
+        <Stats />
+        <directionalLight position={[5, 5, 5]} castShadow />
         <Suspense fallback={<Loader />}>
           <Model />
-          <OrbitControls enableZoom={true} />
         </Suspense>
       </Canvas>
     </div>
