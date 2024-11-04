@@ -1,6 +1,6 @@
 'use client'
 import IconFont from '@/components/IconFont'
-import { FundOutlined, GithubOutlined, UserOutlined } from '@ant-design/icons'
+import { FundOutlined, GithubOutlined, RollbackOutlined, UserOutlined } from '@ant-design/icons'
 import type { MenuProps } from 'antd'
 import { Breadcrumb, Flex, Layout, Menu, theme } from 'antd'
 import { createStyles } from 'antd-style'
@@ -74,6 +74,9 @@ const ToolsLayout: React.FC = ({ children }: React.PropsWithChildren) => {
       getItem(t('app.hash.ripemd'), '/hash/ripemd'),
       getItem(t('app.hash.hmacRIPEMD'), '/hash/hmacRIPEMD'),
       getItem(t('app.hash.pbkdf'), '/hash/pbkdf'),
+    ]),
+    getItem(t('app.encryption'), '/encryption', <RollbackOutlined />, [
+      getItem(t('app.encryption.aes'), '/encryption/aes'),
     ]),
   ]
   const [collapsed, setCollapsed] = useState(false)
