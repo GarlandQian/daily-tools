@@ -29,7 +29,7 @@ const RootLayout = async ({
     <html lang={locale}>
       <body className="flex min-h-screen w-full flex-col">
         <AntdRegistry>
-          <NextTopLoader />
+          <NextTopLoader showSpinner={false} />
           <TranslationsProvider locale={locale} resources={resources}>
             {children}
           </TranslationsProvider>
