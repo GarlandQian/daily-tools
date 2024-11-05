@@ -13,6 +13,7 @@
   "app.encryption.aes.padding": "填充",
   "app.encryption.aes.secret": "密钥",
   "app.encryption.aes.str": "需要加密的文本",
+  "app.encryption.des": "Des",
   "app.hash": "哈希",
   "app.hash.hmacMD5": "HAMCMD5",
   "app.hash.hmacRIPEMD": "HMACRIPEMD",
