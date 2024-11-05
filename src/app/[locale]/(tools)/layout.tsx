@@ -77,6 +77,8 @@ const ToolsLayout: React.FC = ({ children }: React.PropsWithChildren) => {
     ]),
     getItem(t('app.encryption'), '/encryption', <RollbackOutlined />, [
       getItem(t('app.encryption.aes'), '/encryption/aes'),
+      getItem(t('app.encryption.des'), '/encryption/des'),
+      getItem(t('app.encryption.tripleDes'), '/encryption/tripleDes'),
     ]),
   ]
   const [collapsed, setCollapsed] = useState(false)

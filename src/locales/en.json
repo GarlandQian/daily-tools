@@ -13,6 +13,8 @@
   "app.encryption.aes.padding": "Padding",
   "app.encryption.aes.secret": "Secret",
   "app.encryption.aes.str": "Key",
+  "app.encryption.des": "Des",
+  "app.encryption.tripleDes": "TripleDes",
   "app.hash": "Hash",
   "app.hash.hmacMD5": "HAMCMD5",
   "app.hash.hmacRIPEMD": "HMACRIPEMD",

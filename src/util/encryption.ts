@@ -63,3 +63,78 @@ export function aesCrypto(text: string, secret: string, options: AesCryptoOption
     return decrypted.toString(CryptoJS.enc.Utf8) // 解密结果一般是字符串，保持 Utf8 解码输出
   }
 }
+
+/**
+ * 通用 DES 加密/解密方法
+ * @param text - 要加密或解密的文本。
+ * @param secret - 密钥。
+ * @param options - 配置项，例如模式、填充方式、IV等。
+ * @param isEncrypt - 是否加密，true 为加密，false 为解密。
+ * @returns 加密或解密后的文本。
+ */
+export function desCrypto(text: string, secret: string, options: AesCryptoOptions, isEncrypt: boolean = true): string {
+  const { iv, mode, padding, format, encoding } = options
+
+  // 检查密钥和 IV 的长度
+  validateKeyAndIvLength(secret, CryptoJS.enc.Utf8.parse(iv))
+
+  const secretKey = CryptoJS.enc[encoding].parse(secret) // 使用指定编码解析密钥
+
+  if (isEncrypt) {
+    const encrypted = CryptoJS.DES.encrypt(text, secretKey, {
+      iv: CryptoJS.enc.Utf8.parse(iv),
+      mode: CryptoJS.mode[mode],
+      padding: CryptoJS.pad[padding],
+      format: CryptoJS.format[format],
+    })
+    return encrypted.toString()
+  } else {
+    const decrypted = CryptoJS.DES.decrypt(text, secretKey, {
+      iv: CryptoJS.enc.Utf8.parse(iv),
+      mode: CryptoJS.mode[mode],
+      padding: CryptoJS.pad[padding],
+      format: CryptoJS.format[format],
+    })
+    return decrypted.toString(CryptoJS.enc.Utf8) // 解密结果一般是字符串，保持 Utf8 解码输出
+  }
+}
+
+/**
+ * 通用 TripleDES 加密/解密方法
+ * @param text - 要加密或解密的文本。
+ * @param secret - 密钥。
+ * @param options - 配置项，例如模式、填充方式、IV等。
+ * @param isEncrypt - 是否加密，true 为加密，false 为解密。
+ * @returns 加密或解密后的文本。
+ */
+export function TripleDesCrypto(
+  text: string,
+  secret: string,
+  options: AesCryptoOptions,
+  isEncrypt: boolean = true
+): string {
+  const { iv, mode, padding, format, encoding } = options
+
+  // 检查密钥和 IV 的长度
+  validateKeyAndIvLength(secret, CryptoJS.enc.Utf8.parse(iv))
+
+  const secretKey = CryptoJS.enc[encoding].parse(secret) // 使用指定编码解析密钥
+
+  if (isEncrypt) {
+    const encrypted = CryptoJS.TripleDES.encrypt(text, secretKey, {
+      iv: CryptoJS.enc.Utf8.parse(iv),
+      mode: CryptoJS.mode[mode],
+      padding: CryptoJS.pad[padding],
+      format: CryptoJS.format[format],
+    })
+    return encrypted.toString()
+  } else {
+    const decrypted = CryptoJS.TripleDES.decrypt(text, secretKey, {
+      iv: CryptoJS.enc.Utf8.parse(iv),
+      mode: CryptoJS.mode[mode],
+      padding: CryptoJS.pad[padding],
+      format: CryptoJS.format[format],
+    })
+    return decrypted.toString(CryptoJS.enc.Utf8) // 解密结果一般是字符串，保持 Utf8 解码输出
+  }
+}
