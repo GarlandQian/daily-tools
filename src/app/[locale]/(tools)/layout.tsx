@@ -1,6 +1,6 @@
 'use client'
 import IconFont from '@/components/IconFont'
-import { FundOutlined, GithubOutlined, RollbackOutlined, UserOutlined } from '@ant-design/icons'
+import { FundOutlined, GithubOutlined, RollbackOutlined, UserOutlined, VideoCameraOutlined } from '@ant-design/icons'
 import type { MenuProps } from 'antd'
 import { Breadcrumb, Flex, Layout, Menu, theme } from 'antd'
 import { createStyles } from 'antd-style'
@@ -79,6 +79,11 @@ const ToolsLayout: React.FC = ({ children }: React.PropsWithChildren) => {
       getItem(t('app.encryption.aes'), '/encryption/aes'),
       getItem(t('app.encryption.des'), '/encryption/des'),
       getItem(t('app.encryption.tripleDes'), '/encryption/tripleDes'),
+    ]),
+    getItem(t('app.preview'), '/preview', <VideoCameraOutlined />, [
+      getItem(t('app.preview.docx'), '/preview/docx'),
+      getItem(t('app.preview.excel'), '/preview/excel'),
+      getItem(t('app.preview.pdf'), '/preview/pdf'),
     ]),
   ]
   const [collapsed, setCollapsed] = useState(false)
