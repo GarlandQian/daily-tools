@@ -161,17 +161,20 @@ const ToolsLayout: React.FC = ({ children }: React.PropsWithChildren) => {
           </Flex>
         </Header>
         <Content style={{ margin: '0 16px' }}>
-          <Breadcrumb style={{ margin: '16px 0' }} items={breadcrumbItems} />
-          <div
-            style={{
-              padding: 24,
-              height: '100%',
-              background: colorBgContainer,
-              borderRadius: borderRadiusLG,
-            }}
-          >
-            <TransitionLayout>{children}</TransitionLayout>
-          </div>
+          <Flex vertical style={{ height: '100%', overflow: 'hidden' }}>
+            <Breadcrumb style={{ margin: '16px 0' }} items={breadcrumbItems} />
+            <TransitionLayout
+              style={{
+                padding: 24,
+                background: colorBgContainer,
+                borderRadius: borderRadiusLG,
+                flex: 1,
+                overflow: 'hidden',
+              }}
+            >
+              {children}
+            </TransitionLayout>
+          </Flex>
         </Content>
         <Footer style={{ textAlign: 'center' }}>Tools ©2024-{new Date().getFullYear()} Created by GarlandQian</Footer>
       </Layout>

@@ -11,6 +11,9 @@
   "dependencies": {
     "@ant-design/icons": "^5.5.1",
     "@ant-design/nextjs-registry": "^1.0.1",
+    "@js-preview/docx": "^1.6.2",
+    "@js-preview/excel": "^1.7.12",
+    "@js-preview/pdf": "^2.0.8",
     "@react-spring/three": "^9.7.5",
     "@react-three/drei": "^9.114.6",
     "@react-three/fiber": "^8.17.10",

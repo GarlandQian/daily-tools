@@ -1,6 +1,7 @@
 'use client'
 import { motion } from 'framer-motion'
 import { usePathname } from 'next/navigation'
+import { CSSProperties } from 'react'
 
 const variants = {
   hidden: { opacity: 0, x: -200 },
@@ -10,8 +11,10 @@ const variants = {
 
 export default function TransitionLayout({
   children,
+  style,
 }: Readonly<{
   children: React.ReactNode
+  style?: CSSProperties
 }>) {
   const pathname = usePathname() // 获取当前路径
   return (
@@ -22,6 +25,7 @@ export default function TransitionLayout({
       exit="exit"
       variants={variants}
       transition={{ type: 'linear', duration: 0.3 }} // 设置过渡时间
+      style={style}
     >
       {children}
     </motion.div>
