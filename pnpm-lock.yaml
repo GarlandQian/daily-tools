@@ -14,6 +14,15 @@ importers:
       '@ant-design/nextjs-registry':
         specifier: ^1.0.1
         version: 1.0.1(@ant-design/cssinjs@1.21.1(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(antd@5.21.3(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(next@14.2.15(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@js-preview/docx':
+        specifier: ^1.6.2
+        version: 1.6.2
+      '@js-preview/excel':
+        specifier: ^1.7.12
+        version: 1.7.12
+      '@js-preview/pdf':
+        specifier: ^2.0.8
+        version: 2.0.8
       '@react-spring/three':
         specifier: ^9.7.5
         version: 9.7.5(@react-three/fiber@8.17.10(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(three@0.169.0))(react@18.3.1)(three@0.169.0)
@@ -387,6 +396,15 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.25':
     resolution: {integrity: sha512-vNk6aEwybGtawWmy/PzwnGDOjCkLWSD2wqvjGGAgOAwCGWySYXfYoxt00IJkTF+8Lb57DwOb3Aa0o9CApepiYQ==}
+
+  '@js-preview/docx@1.6.2':
+    resolution: {integrity: sha512-DNzUr8l4KwbK10+kCc9wWn5syfDduaMoLnIwcHRo94N0XffJfhiYkfjmY/gvGWj4OmD/gB281bANnHyVMyfA5Q==}
+
+  '@js-preview/excel@1.7.12':
+    resolution: {integrity: sha512-sO2B+SEeBz12NydiOzC9ZiwxyVSQbnFHIO0g7u+AHX4VziGVMT2krAL+oRzoyfgG4jChp0I18nlkpZtbEP/y6Q==}
+
+  '@js-preview/pdf@2.0.8':
+    resolution: {integrity: sha512-x0mb59u2KQ8InBtiwBN0+FaiYyzlW39y5/WYuVpvEI8YEZPDxJBQwstPaN18yHx2ywZCaH38uOy7zapkAaChmg==}
 
   '@mediapipe/tasks-vision@0.10.8':
     resolution: {integrity: sha512-Rp7ll8BHrKB3wXaRFKhrltwZl1CiXGdibPxuWXvqGnKTnv8fqa/nvftYNuSbf+pbJWKYCXdBtYTITdAUTGGh0Q==}
@@ -3246,6 +3264,12 @@ snapshots:
     dependencies:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.0
+
+  '@js-preview/docx@1.6.2': {}
+
+  '@js-preview/excel@1.7.12': {}
+
+  '@js-preview/pdf@2.0.8': {}
 
   '@mediapipe/tasks-vision@0.10.8': {}
 
