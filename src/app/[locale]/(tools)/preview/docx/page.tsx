@@ -40,7 +40,7 @@ const DocxPerview = () => {
         </Flex>
         <div style={{ overflow: 'auto', flex: 1, paddingRight: '10px' }}>
           <Spin spinning={loading}></Spin>
-          <div ref={docxRef}></div>
+          <div style={{ height: '100%' }} ref={docxRef}></div>
         </div>
       </Flex>
     </>
