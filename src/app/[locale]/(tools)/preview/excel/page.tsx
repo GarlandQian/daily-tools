@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from 'react'
 import jsPreviewExcel, { JsExcelPreview } from '@js-preview/excel'
 import '@js-preview/excel/lib/index.css'
-import { Button, Spin, Upload } from 'antd'
+import { Button, Flex, Spin, Upload } from 'antd'
 import { UploadChangeParam } from 'antd/es/upload'
 
 const ExcelPerview = () => {
@@ -37,16 +37,17 @@ const ExcelPerview = () => {
 
   return (
     <>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', height: '100%', overflow: 'hidden' }}>
-        <Upload action="/" maxCount={1} showUploadList={false} onChange={onChange} accept=".xlsx">
-          <Button>Click to Upload</Button>
-        </Upload>
-
-        <div style={{ overflow: 'hidden', flex: 1, paddingRight: '10px' }}>
+      <Flex gap="middle" vertical style={{ height: '100%', overflow: 'hidden', marginRight: '-20px' }}>
+        <Flex>
+          <Upload action="/" maxCount={1} showUploadList={false} onChange={onChange} accept=".docx">
+            <Button>Click to Upload</Button>
+          </Upload>
+        </Flex>
+        <div style={{ overflow: 'auto', flex: 1, paddingRight: '10px' }}>
           <Spin spinning={loading}></Spin>
-          <div ref={excelRef} style={{ height: '100%' }}></div>
+          <div style={{ height: '100%' }} ref={excelRef}></div>
         </div>
-      </div>
+      </Flex>
     </>
   )
 }
