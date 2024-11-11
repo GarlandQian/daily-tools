@@ -1,0 +1,45 @@
+name: Publish Docker Image
+
+on:
+  push:
+    branches:
+      - main # 或者您需要的其他分支
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+
+    steps:
+      # 1. 检出代码
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      # 2. 获取 GitHub 用户名并转换为小写
+      - name: Set lowercase GitHub username
+        id: set_username
+        run: |
+          # 获取当前 GitHub 用户名并转换为小写
+          USERNAME=${{ github.actor }}
+          USERNAME_LOWER=$(echo $USERNAME | tr '[:upper:]' '[:lower:]')
+          echo "USERNAME_LOWER=$USERNAME_LOWER" >> $GITHUB_ENV  # 将小写用户名保存为环境变量
+
+      # 3. 登录到 GitHub Container Registry
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # 4. 构建并推送 Docker 镜像
+      - name: Build and push Docker image
+        run: |
+          # 使用小写的用户名来构建并推送 Docker 镜像
+          docker build -t ghcr.io/${{ env.USERNAME_LOWER }}/docker-repo/daily-mysql:latest .
+          docker push ghcr.io/${{ env.USERNAME_LOWER }}/docker-repo/daily-mysql:latest
