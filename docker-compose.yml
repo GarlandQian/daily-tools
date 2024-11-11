@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  mysql:
+    image: ghcr.io/GarlandQian/docker-repo/daily-mysql:latest
+    container_name: daily-mysql
+    ports:
+      - '3306:3306' # 暴露本地端口
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: daily_tools
+      MYSQL_USER: daily_tools_user
+      MYSQL_PASSWORD: garlandqian123
+    networks:
+      - daily-network
+
+  app:
+    build:
+      context: .
+    container_name: daily_tools
+    ports:
+      - '3000:3000' # Next.js 默认端口
+    environment:
+      DATABASE_URL: mysql://daily_tools_user:garlandqian123@mysql:3306/daily_tools
+    depends_on:
+      - mysql
+    networks:
+      - daily-network
+
+networks:
+  daily-network:
