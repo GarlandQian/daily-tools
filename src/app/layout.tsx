@@ -10,7 +10,8 @@ import NextTopLoader from 'nextjs-toploader'
 
 export const metadata = {
   title: "GarlandQian's Tools",
-  description: "This is garlandQian's tools",
+  description:
+    "This is garlandQian's tools, include retirement date, hash encryption, encryption and decryption, file preview.",
 }
 
 export function generateStaticParams() {
