@@ -84,6 +84,7 @@ const ToolsLayout: React.FC = ({ children }: React.PropsWithChildren) => {
       getItem(t('app.preview.docx'), '/preview/docx'),
       getItem(t('app.preview.excel'), '/preview/excel'),
       getItem(t('app.preview.pdf'), '/preview/pdf'),
+      getItem(t('app.preview.pptx'), '/preview/pptx'),
     ]),
   ]
   const [collapsed, setCollapsed] = useState(false)
