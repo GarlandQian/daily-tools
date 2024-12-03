@@ -1,4 +1,5 @@
 'use client'
+import EllipsisMiddle from '@/components/EllipsisMiddle'
 import { Button, Form, Input } from 'antd'
 import CryptoJS from 'crypto-js'
 import { AnimatePresence, motion } from 'framer-motion'
@@ -48,7 +49,9 @@ export default function MD5() {
               exit={{ opacity: 0, y: 20 }}
               transition={{ duration: 1 }}
             >
-              <Form.Item label={t('app.hash.result')}>{result}</Form.Item>
+              <Form.Item label={t('app.hash.result')}>
+                <EllipsisMiddle suffixCount={12}>{result}</EllipsisMiddle>
+              </Form.Item>
             </motion.div>
           )}
         </AnimatePresence>

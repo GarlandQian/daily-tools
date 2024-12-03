@@ -21,7 +21,7 @@ const EllipsisMiddle: React.FC<{ suffixCount: number; children: string; rows?: n
         expanded,
         onExpand: (_, info) => setExpanded(info.expanded),
       }}
-      copyable
+      copyable={{ text: children }}
     >
       {start}
     </Paragraph>

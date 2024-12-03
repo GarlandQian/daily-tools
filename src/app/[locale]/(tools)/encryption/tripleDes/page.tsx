@@ -1,4 +1,5 @@
 'use client'
+import EllipsisMiddle from '@/components/EllipsisMiddle'
 import { TripleDesCrypto, type AesCryptoOptions } from '@/util'
 import { Button, Form, Input, Radio, Select } from 'antd'
 import CryptoJS from 'crypto-js'
@@ -157,7 +158,9 @@ const AESPage = () => {
             exit={{ opacity: 0, y: 20 }}
             transition={{ duration: 1 }}
           >
-            {result}
+            <Form.Item label={t('app.hash.result')}>
+              <EllipsisMiddle suffixCount={12}>{result}</EllipsisMiddle>
+            </Form.Item>
           </motion.div>
         )}
       </AnimatePresence>
