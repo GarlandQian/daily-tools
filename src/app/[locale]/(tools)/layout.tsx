@@ -1,5 +1,4 @@
 'use client'
-import IconFont from '@/components/IconFont'
 import { FundOutlined, GithubOutlined, RollbackOutlined, UserOutlined, VideoCameraOutlined } from '@ant-design/icons'
 import type { MenuProps } from 'antd'
 import { Breadcrumb, Flex, Layout, Menu, theme } from 'antd'
@@ -8,6 +7,8 @@ import { usePathname } from 'next/navigation'
 import { useRouter } from 'nextjs-toploader/app'
 import React, { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+
+import IconFont from '@/components/IconFont'
 import TransitionLayout from '@/components/TransitionLayout'
 
 const { Header, Content, Footer, Sider } = Layout

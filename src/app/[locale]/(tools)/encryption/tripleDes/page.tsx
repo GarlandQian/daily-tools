@@ -1,11 +1,12 @@
 'use client'
-import EllipsisMiddle from '@/components/EllipsisMiddle'
-import { TripleDesCrypto, type AesCryptoOptions } from '@/util'
 import { Button, Form, Input, Radio, Select } from 'antd'
 import CryptoJS from 'crypto-js'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+
+import EllipsisMiddle from '@/components/EllipsisMiddle'
+import { type AesCryptoOptions,TripleDesCrypto } from '@/util'
 
 interface EncryptionType extends AesCryptoOptions {
   str: string

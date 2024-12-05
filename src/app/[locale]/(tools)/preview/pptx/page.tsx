@@ -1,8 +1,8 @@
 'use client'
-import { useEffect, useRef, useState } from 'react'
-import jsPreviewPPtx, { init } from 'pptx-preview'
 import { Button, Flex, Spin, Upload } from 'antd'
 import { RcFile } from 'antd/es/upload'
+import jsPreviewPPtx, { init } from 'pptx-preview'
+import { useEffect, useRef, useState } from 'react'
 
 const DocxPerview = () => {
   const myPPtxPreviewer = useRef<ReturnType<typeof jsPreviewPPtx.init> | null>(null)
