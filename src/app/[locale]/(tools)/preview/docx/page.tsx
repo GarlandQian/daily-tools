@@ -1,9 +1,10 @@
 'use client'
-import { useEffect, useRef, useState } from 'react'
-import jsPreviewDocx, { JsDocxPreview } from '@js-preview/docx'
 import '@js-preview/docx/lib/index.css'
+
+import jsPreviewDocx, { JsDocxPreview } from '@js-preview/docx'
 import { Button, Flex, Spin, Upload } from 'antd'
 import { UploadChangeParam } from 'antd/es/upload'
+import { useEffect, useRef, useState } from 'react'
 
 const DocxPerview = () => {
   const myDocxPreviewer = useRef<JsDocxPreview | null>(null)

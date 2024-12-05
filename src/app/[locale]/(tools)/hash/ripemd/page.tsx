@@ -1,10 +1,11 @@
 'use client'
-import EllipsisMiddle from '@/components/EllipsisMiddle'
 import { Button, Form, Input } from 'antd'
 import CryptoJS from 'crypto-js'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+
+import EllipsisMiddle from '@/components/EllipsisMiddle'
 
 interface RIPEMDParams {
   message: string

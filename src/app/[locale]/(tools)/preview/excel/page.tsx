@@ -1,9 +1,10 @@
 'use client'
-import { useEffect, useRef, useState } from 'react'
-import jsPreviewExcel, { JsExcelPreview } from '@js-preview/excel'
 import '@js-preview/excel/lib/index.css'
+
+import jsPreviewExcel, { JsExcelPreview } from '@js-preview/excel'
 import { Button, Flex, Spin, Upload } from 'antd'
 import { UploadChangeParam } from 'antd/es/upload'
+import { useEffect, useRef, useState } from 'react'
 
 const ExcelPerview = () => {
   const myExcelPreviewer = useRef<JsExcelPreview | null>(null)

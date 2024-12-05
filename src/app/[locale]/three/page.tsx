@@ -1,9 +1,11 @@
 'use client'
-import Loader from '@/components/three/Loader'
+import { OrbitControls, Stats } from '@react-three/drei'
 import { Canvas } from '@react-three/fiber'
 import dynamic from 'next/dynamic'
 import { Suspense } from 'react'
-import { OrbitControls, Stats } from '@react-three/drei'
+
+import Loader from '@/components/three/Loader'
+
 import Model from './model'
 
 const Home = () => {

@@ -1,12 +1,13 @@
 import 'normalize.css/normalize.css'
 import './globals.css'
 
-import React from 'react'
 import { AntdRegistry } from '@ant-design/nextjs-registry'
-import i18nConfig from '@/locales/i18nConfig'
-import initTranslations from '@/locales/i18n'
-import TranslationsProvider from '@/components/TranslationsProvider'
 import NextTopLoader from 'nextjs-toploader'
+import React from 'react'
+
+import TranslationsProvider from '@/components/TranslationsProvider'
+import initTranslations from '@/locales/i18n'
+import i18nConfig from '@/locales/i18nConfig'
 
 export const metadata = {
   title: "GarlandQian's Tools",
