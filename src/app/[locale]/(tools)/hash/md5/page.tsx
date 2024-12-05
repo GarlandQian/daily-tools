@@ -1,61 +1,14 @@
-'use client'
-import EllipsisMiddle from '@/components/EllipsisMiddle'
-import { Button, Form, Input } from 'antd'
-import CryptoJS from 'crypto-js'
-import { AnimatePresence, motion } from 'framer-motion'
-import { useState } from 'react'
-import { useTranslation } from 'react-i18next'
+import dynamic from 'next/dynamic'
 
-interface MD5Params {
-  message: string
+export const metadata = {
+  title: 'MD5', // 页面标题
+  description: 'Generate MD5 hashes easily with this simple tool.', // 页面描述
+  keywords: ['MD5', 'Hash', 'Generator', 'Online Tool'], // 关键词（部分搜索引擎支持）
 }
 
-export default function MD5() {
-  const { t } = useTranslation()
+// 动态加载客户端组件
+const MD5Form = dynamic(() => import('./components/MD5Form'), { ssr: false })
 
-  const [form] = Form.useForm<MD5Params>()
-  const [result, setReult] = useState('')
-
-  const onFinish = (values: MD5Params) => {
-    setReult(CryptoJS.MD5(values.message).toString())
-  }
-  return (
-    <>
-      <Form
-        labelAlign="left"
-        layout="horizontal"
-        form={form}
-        labelCol={{ span: 2 }}
-        wrapperCol={{ span: 16 }}
-        onFinish={onFinish}
-      >
-        <Form.Item
-          name="message"
-          label={t('app.hash.message')}
-          rules={[{ required: true, message: t('rules.msg.required', { msg: t('app.hash.message') }) }]}
-        >
-          <Input.TextArea />
-        </Form.Item>
-        <Form.Item>
-          <Button type="primary" htmlType="submit">
-            {t('public.submit')}
-          </Button>
-        </Form.Item>
-        <AnimatePresence>
-          {result && (
-            <motion.div
-              initial={{ opacity: 0, y: -20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 20 }}
-              transition={{ duration: 1 }}
-            >
-              <Form.Item label={t('app.hash.result')}>
-                <EllipsisMiddle suffixCount={12}>{result}</EllipsisMiddle>
-              </Form.Item>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </Form>
-    </>
-  )
+export default function MD5Page() {
+  return <MD5Form />
 }
