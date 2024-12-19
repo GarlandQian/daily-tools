@@ -38,6 +38,7 @@
   "app.social": "Social",
   "app.social.retires": "Retires",
   "app.social.retires.birthday": "birthday",
+  "app.social.time": "Time",
   "public.confirm": "Confirm",
   "public.submit": "Submit",
   "rules.msg.required": "{{msg}} is required"

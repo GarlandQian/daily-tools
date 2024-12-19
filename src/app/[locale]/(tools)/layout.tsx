@@ -66,7 +66,10 @@ const ToolsLayout: React.FC = ({ children }: React.PropsWithChildren) => {
     i18n: { language, changeLanguage },
   } = useTranslation()
   const items: MenuItem[] = [
-    getItem(t('app.social'), '/social', <UserOutlined />, [getItem(t('app.social.retires'), '/social/retires')]),
+    getItem(t('app.social'), '/social', <UserOutlined />, [
+      getItem(t('app.social.retires'), '/social/retires'),
+      getItem(t('app.social.time'), '/social/time'),
+    ]),
     getItem(t('app.hash'), '/hash', <FundOutlined />, [
       getItem(t('app.hash.md5'), '/hash/md5'),
       getItem(t('app.hash.sha'), '/hash/sha'),
