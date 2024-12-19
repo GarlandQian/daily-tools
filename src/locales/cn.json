@@ -38,6 +38,7 @@
   "app.social": "社会",
   "app.social.retires": "退休",
   "app.social.retires.birthday": "生日",
+  "app.social.time": "时间",
   "public.confirm": "确认",
   "public.submit": "提交",
   "rules.msg.required": "{{msg}}是必填的"
