@@ -1,19 +1,17 @@
-name: Publish Docker Image
+name: Publish MySQL Docker Image
 
 on:
   push:
     branches:
-      - main # 或者您需要的其他分支
+      - main
 
 jobs:
-  build-and-push:
+  build:
     runs-on: ubuntu-latest
 
     permissions:
       contents: read
-      packages: write
-      attestations: write
-      id-token: write
+      packages: write # 确保有权限推送包
 
     steps:
       # 1. 检出代码

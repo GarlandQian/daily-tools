@@ -12,7 +12,7 @@ dayjs.extend(timezone)
 const Time = () => {
   const [currentTime, setCurrentTime] = useState(dayjs())
 
-  useRafInterval(() => {
+  useRafInterval(async () => {
     setCurrentTime(dayjs().tz(tzListMap[tzDefault].value))
   }, 1000)
 
