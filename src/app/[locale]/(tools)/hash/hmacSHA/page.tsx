@@ -10,7 +10,13 @@ import EllipsisMiddle from '@/components/EllipsisMiddle'
 interface HMACSHAParams {
   message: string
   key: string
-  mode: 'HmacSHA1' | 'HmacSHA224' | 'HmacSHA256' | 'HmacSHA3' | 'HmacSHA384' | 'HmacSHA512'
+  mode:
+    | 'HmacSHA1'
+    | 'HmacSHA224'
+    | 'HmacSHA256'
+    | 'HmacSHA3'
+    | 'HmacSHA384'
+    | 'HmacSHA512'
 }
 
 export default function HmacSHA() {
@@ -56,21 +62,36 @@ export default function HmacSHA() {
         <Form.Item
           name="message"
           label={t('app.hash.message')}
-          rules={[{ required: true, message: t('rules.msg.required', { msg: t('app.hash.message') }) }]}
+          rules={[
+            {
+              required: true,
+              message: t('rules.msg.required', { msg: t('app.hash.message') })
+            }
+          ]}
         >
           <Input.TextArea />
         </Form.Item>
         <Form.Item
           name="key"
           label={t('app.hash.key')}
-          rules={[{ required: true, message: t('rules.msg.required', { msg: t('app.hash.key') }) }]}
+          rules={[
+            {
+              required: true,
+              message: t('rules.msg.required', { msg: t('app.hash.key') })
+            }
+          ]}
         >
           <Input />
         </Form.Item>
         <Form.Item
           name="mode"
           label={t('app.hash.mode')}
-          rules={[{ required: true, message: t('rules.msg.required', { msg: t('app.hash.mode') }) }]}
+          rules={[
+            {
+              required: true,
+              message: t('rules.msg.required', { msg: t('app.hash.mode') })
+            }
+          ]}
         >
           <Radio.Group onChange={changeMode}>
             <Radio.Button value="HmacSHA1">HmacSHA1</Radio.Button>

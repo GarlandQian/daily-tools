@@ -1,5 +1,11 @@
 'use client'
-import { FundOutlined, GithubOutlined, RollbackOutlined, UserOutlined, VideoCameraOutlined } from '@ant-design/icons'
+import {
+  FundOutlined,
+  GithubOutlined,
+  RollbackOutlined,
+  UserOutlined,
+  VideoCameraOutlined
+} from '@ant-design/icons'
 import type { MenuProps } from 'antd'
 import { Breadcrumb, Flex, Layout, Menu, theme } from 'antd'
 import { createStyles } from 'antd-style'
@@ -14,12 +20,17 @@ import TransitionLayout from '@/components/TransitionLayout'
 const { Header, Content, Footer, Sider } = Layout
 
 type MenuItem = Required<MenuProps>['items'][number]
-function getItem(label: React.ReactNode, key: React.Key, icon?: React.ReactNode, children?: MenuItem[]): MenuItem {
+function getItem(
+  label: React.ReactNode,
+  key: React.Key,
+  icon?: React.ReactNode,
+  children?: MenuItem[]
+): MenuItem {
   return {
     key,
     icon,
     children,
-    label,
+    label
   } as MenuItem
 }
 interface LevelKeysProps {
@@ -29,7 +40,7 @@ interface LevelKeysProps {
 const getLevelKeys = (items1: LevelKeysProps[]) => {
   const key: Record<string, number> = {}
   const func = (items2: LevelKeysProps[], level = 1) => {
-    items2.forEach((item) => {
+    items2.forEach(item => {
       if (item.key) {
         key[item.key] = level
       }
@@ -51,24 +62,24 @@ const useStyles = createStyles(({ token, css }) => ({
     &:hover {
       color: ${token.colorPrimaryHover};
     }
-  `,
+  `
 }))
 
 const ToolsLayout: React.FC = ({ children }: React.PropsWithChildren) => {
   const {
-    token: { colorBgContainer, borderRadiusLG },
+    token: { colorBgContainer, borderRadiusLG }
   } = theme.useToken()
   const { styles } = useStyles()
   const router = useRouter()
   const pathname = usePathname()
   const {
     t,
-    i18n: { language, changeLanguage },
+    i18n: { language, changeLanguage }
   } = useTranslation()
   const items: MenuItem[] = [
     getItem(t('app.social'), '/social', <UserOutlined />, [
       getItem(t('app.social.retires'), '/social/retires'),
-      getItem(t('app.social.time'), '/social/time'),
+      getItem(t('app.social.time'), '/social/time')
     ]),
     getItem(t('app.hash'), '/hash', <FundOutlined />, [
       getItem(t('app.hash.md5'), '/hash/md5'),
@@ -77,39 +88,43 @@ const ToolsLayout: React.FC = ({ children }: React.PropsWithChildren) => {
       getItem(t('app.hash.hmacSHA'), '/hash/hmacSHA'),
       getItem(t('app.hash.ripemd'), '/hash/ripemd'),
       getItem(t('app.hash.hmacRIPEMD'), '/hash/hmacRIPEMD'),
-      getItem(t('app.hash.pbkdf'), '/hash/pbkdf'),
+      getItem(t('app.hash.pbkdf'), '/hash/pbkdf')
     ]),
     getItem(t('app.encryption'), '/encryption', <RollbackOutlined />, [
       getItem(t('app.encryption.aes'), '/encryption/aes'),
       getItem(t('app.encryption.des'), '/encryption/des'),
-      getItem(t('app.encryption.tripleDes'), '/encryption/tripleDes'),
+      getItem(t('app.encryption.tripleDes'), '/encryption/tripleDes')
     ]),
     getItem(t('app.preview'), '/preview', <VideoCameraOutlined />, [
       getItem(t('app.preview.docx'), '/preview/docx'),
       getItem(t('app.preview.excel'), '/preview/excel'),
       getItem(t('app.preview.pdf'), '/preview/pdf'),
-      getItem(t('app.preview.pptx'), '/preview/pptx'),
-    ]),
+      getItem(t('app.preview.pptx'), '/preview/pptx')
+    ])
   ]
   const [collapsed, setCollapsed] = useState(false)
-  const [stateOpenKeys, setStateOpenKeys] = useState([`/${pathname.split('/')[1]}`])
+  const [stateOpenKeys, setStateOpenKeys] = useState([
+    `/${pathname.split('/')[1]}`
+  ])
   const [selectKeys, setSelectKeys] = useState([pathname])
 
-  const onOpenChange: MenuProps['onOpenChange'] = (openKeys) => {
+  const onOpenChange: MenuProps['onOpenChange'] = openKeys => {
     const levelKeys = getLevelKeys(items as LevelKeysProps[])
-    const currentOpenKey = openKeys.find((key) => stateOpenKeys.indexOf(key) === -1)
+    const currentOpenKey = openKeys.find(
+      key => stateOpenKeys.indexOf(key) === -1
+    )
     // open
     if (currentOpenKey !== undefined) {
       const repeatIndex = openKeys
-        .filter((key) => key !== currentOpenKey)
-        .findIndex((key) => levelKeys[key] === levelKeys[currentOpenKey])
+        .filter(key => key !== currentOpenKey)
+        .findIndex(key => levelKeys[key] === levelKeys[currentOpenKey])
 
       setStateOpenKeys(
         openKeys
           // remove repeat key
           .filter((_, index) => index !== repeatIndex)
           // remove current level all child
-          .filter((key) => levelKeys[key] <= levelKeys[currentOpenKey])
+          .filter(key => levelKeys[key] <= levelKeys[currentOpenKey])
       )
     } else {
       // close
@@ -125,14 +140,19 @@ const ToolsLayout: React.FC = ({ children }: React.PropsWithChildren) => {
   const breadcrumbItems = useMemo(() => {
     const keyList = selectKeys[0].split('/').filter(Boolean)
     return keyList.map((_key, index) => ({
-      title: t(`app.${[...new Array(index + 1)].map((_item, i) => `${keyList[i]}`).join('.')}`),
+      title: t(
+        `app.${[...new Array(index + 1)].map((_item, i) => `${keyList[i]}`).join('.')}`
+      )
     }))
   }, [selectKeys, t])
 
   return (
     <Layout style={{ height: '100vh', overflow: 'hidden' }}>
-      <Sider collapsible collapsed={collapsed} onCollapse={(value) => setCollapsed(value)}>
-        <div className="demo-logo-vertical" />
+      <Sider
+        collapsible
+        collapsed={collapsed}
+        onCollapse={value => setCollapsed(value)}
+      >
         <Menu
           theme="dark"
           selectedKeys={selectKeys}
@@ -179,14 +199,16 @@ const ToolsLayout: React.FC = ({ children }: React.PropsWithChildren) => {
                 background: colorBgContainer,
                 borderRadius: borderRadiusLG,
                 flex: 1,
-                overflow: 'hidden',
+                overflow: 'hidden'
               }}
             >
               {children}
             </TransitionLayout>
           </Flex>
         </Content>
-        <Footer style={{ textAlign: 'center' }}>Tools ©2024-{new Date().getFullYear()} Created by GarlandQian</Footer>
+        <Footer style={{ textAlign: 'center' }}>
+          Tools ©2024-{new Date().getFullYear()} Created by GarlandQian
+        </Footer>
       </Layout>
     </Layout>
   )

@@ -23,7 +23,11 @@ export interface IntervalFnOptions {
  * @param interval
  * @param options
  */
-export function intervalFn(cb: Fn, interval: number = 1000, options: IntervalFnOptions = {}): Pausable {
+export function intervalFn(
+  cb: Fn,
+  interval: number = 1000,
+  options: IntervalFnOptions = {}
+): Pausable {
   const { immediate = true, immediateCallback = false } = options
 
   let timer: ReturnType<typeof setInterval> | null = null
@@ -55,6 +59,6 @@ export function intervalFn(cb: Fn, interval: number = 1000, options: IntervalFnO
   return {
     isActive,
     pause,
-    resume,
+    resume
   }
 }

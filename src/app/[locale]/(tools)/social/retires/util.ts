@@ -20,7 +20,11 @@ export interface calcRetiresReturnType {
   baseRetirementMonth: number
 }
 
-export const calcRetires = ({ birth, gender, occupation }: calcRetiresParams): calcRetiresReturnType => {
+export const calcRetires = ({
+  birth,
+  gender,
+  occupation
+}: calcRetiresParams): calcRetiresReturnType => {
   // 新政策开始时间
   const startCalcDay = dayjs('2025-01-01')
   // 生日
@@ -50,7 +54,7 @@ export const calcRetires = ({ birth, gender, occupation }: calcRetiresParams): c
       newRetirementPolicy: false,
       retirementDate: tryretiredate.toDate(),
       baseRetirementAge,
-      baseRetirementMonth: 0,
+      baseRetirementMonth: 0
     }
   }
 
@@ -58,17 +62,17 @@ export const calcRetires = ({ birth, gender, occupation }: calcRetiresParams): c
 
   const monthsUntil2025 = tryretiredate.diff(startCalcDay, 'month')
   if (gender === 'male') {
-    delayMonths = Math.floor((monthsUntil2025) / 4) // 男性每4个月延迟1个月
+    delayMonths = Math.floor(monthsUntil2025 / 4) // 男性每4个月延迟1个月
     if (baseRetirementAge + delayMonths / 12 > 63) {
       delayMonths = (63 - baseRetirementAge) * 12 // 最多延迟到63岁
     }
   } else if (gender === 'female' && occupation === 'worker') {
-    delayMonths = Math.floor((monthsUntil2025) / 2) // 女性工人每2个月延迟1个月
+    delayMonths = Math.floor(monthsUntil2025 / 2) // 女性工人每2个月延迟1个月
     if (baseRetirementAge + delayMonths / 12 > 55) {
       delayMonths = (55 - baseRetirementAge) * 12 // 最多延迟到55岁
     }
   } else if (gender === 'female' && occupation === 'staff') {
-    delayMonths = Math.floor((monthsUntil2025) / 4) // 女性职员每4个月延迟1个月
+    delayMonths = Math.floor(monthsUntil2025 / 4) // 女性职员每4个月延迟1个月
     if (baseRetirementAge + delayMonths / 12 > 58) {
       delayMonths = (58 - baseRetirementAge) * 12 // 最多延迟到58岁
     }
@@ -85,6 +89,6 @@ export const calcRetires = ({ birth, gender, occupation }: calcRetiresParams): c
     newRetirementPolicy: true,
     retirementDate: retireDate.toDate(),
     baseRetirementAge: finalAge,
-    baseRetirementMonth: finalMonths,
+    baseRetirementMonth: finalMonths
   }
 }

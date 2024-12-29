@@ -1,8 +1,15 @@
 {
-  "extends": ["next/core-web-vitals", "next/typescript"],
-  "plugins": ["simple-import-sort"],
+  "extends": [
+    "next/core-web-vitals",
+    "next/typescript",
+    "plugin:prettier/recommended",
+    "plugin:tailwindcss/recommended"
+  ],
+  "plugins": ["simple-import-sort", "tailwindcss"],
   "rules": {
     "simple-import-sort/imports": "error",
-    "simple-import-sort/exports": "error"
+    "simple-import-sort/exports": "error",
+    "tailwindcss/classnames-order": "warn",
+    "tailwindcss/no-custom-classname": "off"
   }
 }

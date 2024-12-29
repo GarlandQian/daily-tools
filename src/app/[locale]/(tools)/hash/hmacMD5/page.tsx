@@ -34,14 +34,24 @@ export default function HAMCMD5() {
         <Form.Item
           name="message"
           label={t('app.hash.message')}
-          rules={[{ required: true, message: t('rules.msg.required', { msg: t('app.hash.message') }) }]}
+          rules={[
+            {
+              required: true,
+              message: t('rules.msg.required', { msg: t('app.hash.message') })
+            }
+          ]}
         >
           <Input.TextArea />
         </Form.Item>
         <Form.Item
           name="key"
           label={t('app.hash.key')}
-          rules={[{ required: true, message: t('rules.msg.required', { msg: t('app.hash.key') }) }]}
+          rules={[
+            {
+              required: true,
+              message: t('rules.msg.required', { msg: t('app.hash.key') })
+            }
+          ]}
         >
           <Input />
         </Form.Item>

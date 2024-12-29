@@ -5,18 +5,22 @@ import jsPreviewPPtx, { init } from 'pptx-preview'
 import { useEffect, useRef, useState } from 'react'
 
 const DocxPerview = () => {
-  const myPPtxPreviewer = useRef<ReturnType<typeof jsPreviewPPtx.init> | null>(null)
+  const myPPtxPreviewer = useRef<ReturnType<typeof jsPreviewPPtx.init> | null>(
+    null
+  )
   const pptxRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (pptxRef.current) {
       //初始化时指明要挂载的父元素Dom节点
       myPPtxPreviewer.current = init(pptxRef.current, {
         width: '100%' as unknown as number,
-        height: 700,
+        height: 700
       })
     }
     return () => {
-      myPPtxPreviewer.current?.dom.querySelectorAll('.pptx-preview-wrapper').forEach((e) => e.remove())
+      myPPtxPreviewer.current?.dom
+        .querySelectorAll('.pptx-preview-wrapper')
+        .forEach(e => e.remove())
     }
   }, [])
 
@@ -35,9 +39,19 @@ const DocxPerview = () => {
 
   return (
     <>
-      <Flex gap="middle" vertical style={{ height: '100%', overflow: 'hidden', marginRight: '-20px' }}>
+      <Flex
+        gap="middle"
+        vertical
+        style={{ height: '100%', overflow: 'hidden', marginRight: '-20px' }}
+      >
         <Flex>
-          <Upload action="/" maxCount={1} showUploadList={false} accept=".pptx" beforeUpload={beforeUpload}>
+          <Upload
+            action="/"
+            maxCount={1}
+            showUploadList={false}
+            accept=".pptx"
+            beforeUpload={beforeUpload}
+          >
             <Button>Click to Upload</Button>
           </Upload>
         </Flex>

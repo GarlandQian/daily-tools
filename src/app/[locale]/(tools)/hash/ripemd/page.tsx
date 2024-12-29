@@ -33,7 +33,12 @@ export default function RIPEMD() {
         <Form.Item
           name="message"
           label={t('app.hash.message')}
-          rules={[{ required: true, message: t('rules.msg.required', { msg: t('app.hash.message') }) }]}
+          rules={[
+            {
+              required: true,
+              message: t('rules.msg.required', { msg: t('app.hash.message') })
+            }
+          ]}
         >
           <Input.TextArea />
         </Form.Item>

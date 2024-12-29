@@ -27,7 +27,7 @@ const ExcelPerview = () => {
       setLoading(true)
       myExcelPreviewer?.current
         ?.preview(url)
-        .catch((error) => {
+        .catch(error => {
           console.error('Preview Error:', error) // 处理预览错误
         })
         .finally(() => {
@@ -38,9 +38,19 @@ const ExcelPerview = () => {
 
   return (
     <>
-      <Flex gap="middle" vertical style={{ height: '100%', overflow: 'hidden', marginRight: '-20px' }}>
+      <Flex
+        gap="middle"
+        vertical
+        style={{ height: '100%', overflow: 'hidden', marginRight: '-20px' }}
+      >
         <Flex>
-          <Upload action="/" maxCount={1} showUploadList={false} onChange={onChange} accept=".xlsx">
+          <Upload
+            action="/"
+            maxCount={1}
+            showUploadList={false}
+            onChange={onChange}
+            accept=".xlsx"
+          >
             <Button>Click to Upload</Button>
           </Upload>
         </Flex>

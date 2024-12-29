@@ -68,7 +68,7 @@ const useStyles = createStyles(({ css }) => ({
     transform: translate(-1px, 1px) scale(0.75);
     transform-origin: right center;
     text-align: center;
-  `,
+  `
 }))
 
 const Retires = () => {
@@ -97,21 +97,32 @@ const Retires = () => {
         <Form.Item
           name="birth"
           label="Birthday"
-          rules={[{ required: true, message: t('rules.msg.required', { msg: t('app.social.retires.birthday') }) }]}
+          rules={[
+            {
+              required: true,
+              message: t('rules.msg.required', {
+                msg: t('app.social.retires.birthday')
+              })
+            }
+          ]}
         >
           <DatePicker />
         </Form.Item>
-        <Form.Item name="gender" label="Gender" rules={[{ required: true, message: 'Please select your gender!' }]}>
+        <Form.Item
+          name="gender"
+          label="Gender"
+          rules={[{ required: true, message: 'Please select your gender!' }]}
+        >
           <Radio.Group
             options={[
               {
                 label: 'male',
-                value: 'male',
+                value: 'male'
               },
               {
                 label: 'female',
-                value: 'female',
-              },
+                value: 'female'
+              }
             ]}
           />
         </Form.Item>
@@ -119,18 +130,20 @@ const Retires = () => {
           <Form.Item
             name="occupation"
             label="Occupation"
-            rules={[{ required: true, message: 'Please select your occupation!' }]}
+            rules={[
+              { required: true, message: 'Please select your occupation!' }
+            ]}
           >
             <Radio.Group
               options={[
                 {
                   label: 'worker',
-                  value: 'worker',
+                  value: 'worker'
                 },
                 {
                   label: 'staff',
-                  value: 'staff',
-                },
+                  value: 'staff'
+                }
               ]}
             />
           </Form.Item>
@@ -155,16 +168,27 @@ const Retires = () => {
                   (retirement.newRetirementPolicy ? (
                     <>
                       <span className={styles.enclosed}>
-                        退休时间为{dayjs(retirement.retirementDate).format('YYYY年MM月DD日')}。
+                        退休时间为
+                        {dayjs(retirement.retirementDate).format(
+                          'YYYY年MM月DD日'
+                        )}
+                        。
                       </span>
                       到时你已
                       {retirement.baseRetirementAge}岁
-                      {retirement.baseRetirementMonth ? `${retirement.baseRetirementMonth}月` : ''}。
+                      {retirement.baseRetirementMonth
+                        ? `${retirement.baseRetirementMonth}月`
+                        : ''}
+                      。
                     </>
                   ) : (
                     <>
                       <span className={styles.enclosed}>
-                        退休时间为{dayjs(retirement.retirementDate).format('YYYY年MM月DD日')}。
+                        退休时间为
+                        {dayjs(retirement.retirementDate).format(
+                          'YYYY年MM月DD日'
+                        )}
+                        。
                       </span>
                       到时你已
                       {retirement.baseRetirementAge}岁。

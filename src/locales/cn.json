@@ -41,5 +41,6 @@
   "app.social.time": "时间",
   "public.confirm": "确认",
   "public.submit": "提交",
-  "rules.msg.required": "{{msg}}是必填的"
+  "rules.msg.required": "{{msg}}是必填的",
+  "app.social.time.timezone": "时区"
 }
