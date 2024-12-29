@@ -1,6 +1,4 @@
 {
-  // #每次保存的时候自动格式化
-  "editor.formatOnSave": true,
   // #每次保存的时候将代码按eslint格式进行修复,vscode es6语法检测配置
   "editor.codeActionsOnSave": {
     "source.fixAll.eslint": "explicit"
@@ -9,5 +7,4 @@
   "i18n-ally.keystyle": "flat",
   "i18n-ally.sortKeys": true, // 字母顺序排序
   "i18n-ally.namespace": true,
-  "sqltools.connections": [] // 开启命名空间
 }

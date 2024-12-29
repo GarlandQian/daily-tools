@@ -37,21 +37,40 @@ export default function PBKDF() {
         <Form.Item
           name="message"
           label={t('app.hash.message')}
-          rules={[{ required: true, message: t('rules.msg.required', { msg: t('app.hash.message') }) }]}
+          rules={[
+            {
+              required: true,
+              message: t('rules.msg.required', { msg: t('app.hash.message') })
+            }
+          ]}
         >
           <Input.TextArea />
         </Form.Item>
         <Form.Item
           name="salt"
           label={t('app.hash.pbkdf.salt')}
-          rules={[{ required: true, message: t('rules.msg.required', { msg: t('app.hash.pbkdf.salt') }) }]}
+          rules={[
+            {
+              required: true,
+              message: t('rules.msg.required', {
+                msg: t('app.hash.pbkdf.salt')
+              })
+            }
+          ]}
         >
           <Input />
         </Form.Item>
         <Form.Item
           name="keySize"
           label={t('app.hash.pbkdf.keySize')}
-          rules={[{ required: true, message: t('rules.msg.required', { msg: t('app.hash.pbkdf.keySize') }) }]}
+          rules={[
+            {
+              required: true,
+              message: t('rules.msg.required', {
+                msg: t('app.hash.pbkdf.keySize')
+              })
+            }
+          ]}
         >
           <Radio.Group>
             <Radio value={128}>128 byte</Radio>
@@ -62,7 +81,14 @@ export default function PBKDF() {
         <Form.Item
           name="iterations"
           label={t('app.hash.pbkdf.iterations')}
-          rules={[{ required: true, message: t('rules.msg.required', { msg: t('app.hash.pbkdf.iterations') }) }]}
+          rules={[
+            {
+              required: true,
+              message: t('rules.msg.required', {
+                msg: t('app.hash.pbkdf.iterations')
+              })
+            }
+          ]}
         >
           <InputNumber min={0} precision={0}></InputNumber>
         </Form.Item>

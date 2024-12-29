@@ -41,5 +41,6 @@
   "app.social.time": "Time",
   "public.confirm": "Confirm",
   "public.submit": "Submit",
-  "rules.msg.required": "{{msg}} is required"
+  "rules.msg.required": "{{msg}} is required",
+  "app.social.time.timezone": "Timezone"
 }

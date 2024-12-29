@@ -9,5 +9,5 @@ export function middleware(request: NextRequest) {
 
 // 配置只适用于中间件的路由
 export const config = {
-  matcher: '/((?!api|static|.*\\..*|_next).*)',
+  matcher: '/((?!api|static|.*\\..*|_next).*)'
 }

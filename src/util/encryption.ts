@@ -22,10 +22,14 @@ export interface AesCryptoOptions {
 function validateKeyAndIvLength(key: string, iv?: CryptoJS.lib.WordArray) {
   const keyLength = CryptoJS.enc.Utf8.parse(key).sigBytes
   if (![16, 24, 32].includes(keyLength)) {
-    throw new Error('密钥长度无效。AES 密钥必须为 16 字节（128 位）、24 字节（192 位）或 32 字节（256 位）。')
+    throw new Error(
+      '密钥长度无效。AES 密钥必须为 16 字节（128 位）、24 字节（192 位）或 32 字节（256 位）。'
+    )
   }
   if (iv && iv.sigBytes !== 16) {
-    throw new Error('初始化向量（IV）长度无效。AES IV 必须为 16 字节（128 位）。')
+    throw new Error(
+      '初始化向量（IV）长度无效。AES IV 必须为 16 字节（128 位）。'
+    )
   }
 }
 
@@ -37,7 +41,12 @@ function validateKeyAndIvLength(key: string, iv?: CryptoJS.lib.WordArray) {
  * @param isEncrypt - 是否加密，true 为加密，false 为解密。
  * @returns 加密或解密后的文本。
  */
-export function aesCrypto(text: string, secret: string, options: AesCryptoOptions, isEncrypt: boolean = true): string {
+export function aesCrypto(
+  text: string,
+  secret: string,
+  options: AesCryptoOptions,
+  isEncrypt: boolean = true
+): string {
   const { iv, mode, padding, format, encoding } = options
 
   // 检查密钥和 IV 的长度
@@ -50,7 +59,7 @@ export function aesCrypto(text: string, secret: string, options: AesCryptoOption
       iv: CryptoJS.enc.Utf8.parse(iv),
       mode: CryptoJS.mode[mode],
       padding: CryptoJS.pad[padding],
-      format: CryptoJS.format[format],
+      format: CryptoJS.format[format]
     })
     return encrypted.toString()
   } else {
@@ -58,7 +67,7 @@ export function aesCrypto(text: string, secret: string, options: AesCryptoOption
       iv: CryptoJS.enc.Utf8.parse(iv),
       mode: CryptoJS.mode[mode],
       padding: CryptoJS.pad[padding],
-      format: CryptoJS.format[format],
+      format: CryptoJS.format[format]
     })
     return decrypted.toString(CryptoJS.enc.Utf8) // 解密结果一般是字符串，保持 Utf8 解码输出
   }
@@ -72,7 +81,12 @@ export function aesCrypto(text: string, secret: string, options: AesCryptoOption
  * @param isEncrypt - 是否加密，true 为加密，false 为解密。
  * @returns 加密或解密后的文本。
  */
-export function desCrypto(text: string, secret: string, options: AesCryptoOptions, isEncrypt: boolean = true): string {
+export function desCrypto(
+  text: string,
+  secret: string,
+  options: AesCryptoOptions,
+  isEncrypt: boolean = true
+): string {
   const { iv, mode, padding, format, encoding } = options
 
   // 检查密钥和 IV 的长度
@@ -85,7 +99,7 @@ export function desCrypto(text: string, secret: string, options: AesCryptoOption
       iv: CryptoJS.enc.Utf8.parse(iv),
       mode: CryptoJS.mode[mode],
       padding: CryptoJS.pad[padding],
-      format: CryptoJS.format[format],
+      format: CryptoJS.format[format]
     })
     return encrypted.toString()
   } else {
@@ -93,7 +107,7 @@ export function desCrypto(text: string, secret: string, options: AesCryptoOption
       iv: CryptoJS.enc.Utf8.parse(iv),
       mode: CryptoJS.mode[mode],
       padding: CryptoJS.pad[padding],
-      format: CryptoJS.format[format],
+      format: CryptoJS.format[format]
     })
     return decrypted.toString(CryptoJS.enc.Utf8) // 解密结果一般是字符串，保持 Utf8 解码输出
   }
@@ -125,7 +139,7 @@ export function TripleDesCrypto(
       iv: CryptoJS.enc.Utf8.parse(iv),
       mode: CryptoJS.mode[mode],
       padding: CryptoJS.pad[padding],
-      format: CryptoJS.format[format],
+      format: CryptoJS.format[format]
     })
     return encrypted.toString()
   } else {
@@ -133,7 +147,7 @@ export function TripleDesCrypto(
       iv: CryptoJS.enc.Utf8.parse(iv),
       mode: CryptoJS.mode[mode],
       padding: CryptoJS.pad[padding],
-      format: CryptoJS.format[format],
+      format: CryptoJS.format[format]
     })
     return decrypted.toString(CryptoJS.enc.Utf8) // 解密结果一般是字符串，保持 Utf8 解码输出
   }

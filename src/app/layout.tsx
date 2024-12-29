@@ -12,16 +12,16 @@ import i18nConfig from '@/locales/i18nConfig'
 export const metadata = {
   title: "GarlandQian's Tools",
   description:
-    "This is garlandQian's tools, include retirement date, hash encryption, encryption and decryption, file preview.",
+    "This is garlandQian's tools, include retirement date, hash encryption, encryption and decryption, file preview."
 }
 
 export function generateStaticParams() {
-  return i18nConfig.locales.map((locale) => ({ locale }))
+  return i18nConfig.locales.map(locale => ({ locale }))
 }
 
 const RootLayout = async ({
   children,
-  params: { locale },
+  params: { locale }
 }: Readonly<{
   children: React.ReactNode
   params: { locale: string }

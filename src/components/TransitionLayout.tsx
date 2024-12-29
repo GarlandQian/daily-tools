@@ -6,12 +6,12 @@ import { CSSProperties } from 'react'
 const variants = {
   hidden: { opacity: 0, x: -200 },
   enter: { opacity: 1, x: 0 },
-  exit: { opacity: 0, x: 200 },
+  exit: { opacity: 0, x: 200 }
 }
 
 export default function TransitionLayout({
   children,
-  style,
+  style
 }: Readonly<{
   children: React.ReactNode
   style?: CSSProperties

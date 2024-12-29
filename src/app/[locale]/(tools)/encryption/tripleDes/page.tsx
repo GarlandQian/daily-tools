@@ -6,7 +6,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import EllipsisMiddle from '@/components/EllipsisMiddle'
-import { type AesCryptoOptions,TripleDesCrypto } from '@/util'
+import { type AesCryptoOptions, TripleDesCrypto } from '@/util'
 
 interface EncryptionType extends AesCryptoOptions {
   str: string
@@ -19,7 +19,9 @@ const AESPage = () => {
   const [form] = Form.useForm<EncryptionType>()
   const [result, setResult] = useState<string>()
   const onFinish = (values: EncryptionType) => {
-    setResult(TripleDesCrypto(values.str, values.secret, values, values.isEncrypt))
+    setResult(
+      TripleDesCrypto(values.str, values.secret, values, values.isEncrypt)
+    )
   }
   return (
     <>
@@ -36,14 +38,21 @@ const AESPage = () => {
           <Radio.Group
             options={[
               { label: t('app.encryption.aes.encrypt.yes'), value: true },
-              { label: t('app.encryption.aes.encrypt.no'), value: false },
+              { label: t('app.encryption.aes.encrypt.no'), value: false }
             ]}
           />
         </Form.Item>
         <Form.Item
           label={t('app.encryption.aes.str')}
           name="str"
-          rules={[{ required: true, message: t('rules.msg.required', { msg: t('app.encryption.aes.str') }) }]}
+          rules={[
+            {
+              required: true,
+              message: t('rules.msg.required', {
+                msg: t('app.encryption.aes.str')
+              })
+            }
+          ]}
         >
           <Input />
         </Form.Item>
@@ -51,16 +60,26 @@ const AESPage = () => {
           label={t('app.encryption.aes.secret')}
           name="secret"
           rules={[
-            { required: true, message: t('rules.msg.required', { msg: t('app.encryption.aes.secret') }) },
+            {
+              required: true,
+              message: t('rules.msg.required', {
+                msg: t('app.encryption.aes.secret')
+              })
+            },
             {
               validator: (_rule, value) => {
-                if (value && ![16, 24, 32].includes(CryptoJS.enc.Utf8.parse(value).sigBytes)) {
+                if (
+                  value &&
+                  ![16, 24, 32].includes(
+                    CryptoJS.enc.Utf8.parse(value).sigBytes
+                  )
+                ) {
                   return Promise.reject(t('app.encryption.aes.iv.length'))
                 } else {
                   return Promise.resolve()
                 }
-              },
-            },
+              }
+            }
           ]}
         >
           <Input />
@@ -69,7 +88,12 @@ const AESPage = () => {
           label={t('app.encryption.aes.iv')}
           name="iv"
           rules={[
-            { required: true, message: t('rules.msg.required', { msg: t('app.encryption.aes.iv') }) },
+            {
+              required: true,
+              message: t('rules.msg.required', {
+                msg: t('app.encryption.aes.iv')
+              })
+            },
             {
               validator: (_rule, value) => {
                 if (value && CryptoJS.enc.Utf8.parse(value).sigBytes !== 16) {
@@ -77,8 +101,8 @@ const AESPage = () => {
                 } else {
                   return Promise.resolve()
                 }
-              },
-            },
+              }
+            }
           ]}
         >
           <Input />
@@ -86,7 +110,14 @@ const AESPage = () => {
         <Form.Item
           label={t('app.encryption.aes.mode')}
           name="mode"
-          rules={[{ required: true, message: t('rules.msg.required', { msg: t('app.encryption.aes.mode') }) }]}
+          rules={[
+            {
+              required: true,
+              message: t('rules.msg.required', {
+                msg: t('app.encryption.aes.mode')
+              })
+            }
+          ]}
         >
           <Select
             options={[
@@ -95,14 +126,21 @@ const AESPage = () => {
               { label: 'CTR', value: 'CTR' },
               { label: 'CTRGladman', value: 'CTRGladman' },
               { label: 'ECB', value: 'ECB' },
-              { label: 'OFB', value: 'OFB' },
+              { label: 'OFB', value: 'OFB' }
             ]}
           />
         </Form.Item>
         <Form.Item
           label={t('app.encryption.aes.padding')}
           name="padding"
-          rules={[{ required: true, message: t('rules.msg.required', { msg: t('app.encryption.aes.padding') }) }]}
+          rules={[
+            {
+              required: true,
+              message: t('rules.msg.required', {
+                msg: t('app.encryption.aes.padding')
+              })
+            }
+          ]}
         >
           <Select
             options={[
@@ -111,26 +149,40 @@ const AESPage = () => {
               { label: 'Iso10126', value: 'Iso10126' },
               { label: 'Iso97971', value: 'Iso97971' },
               { label: 'ZeroPadding', value: 'ZeroPadding' },
-              { label: 'NoPadding', value: 'NoPadding' },
+              { label: 'NoPadding', value: 'NoPadding' }
             ]}
           />
         </Form.Item>
         <Form.Item
           label={t('app.encryption.aes.format')}
           name="format"
-          rules={[{ required: true, message: t('rules.msg.required', { msg: t('app.encryption.aes.format') }) }]}
+          rules={[
+            {
+              required: true,
+              message: t('rules.msg.required', {
+                msg: t('app.encryption.aes.format')
+              })
+            }
+          ]}
         >
           <Select
             options={[
               { label: 'OpenSSL', value: 'OpenSSL' },
-              { label: 'Hex', value: 'Hex' },
+              { label: 'Hex', value: 'Hex' }
             ]}
           />
         </Form.Item>
         <Form.Item
           label={t('app.encryption.aes.encoding')}
           name="encoding"
-          rules={[{ required: true, message: t('rules.msg.required', { msg: t('app.encryption.aes.encoding') }) }]}
+          rules={[
+            {
+              required: true,
+              message: t('rules.msg.required', {
+                msg: t('app.encryption.aes.encoding')
+              })
+            }
+          ]}
         >
           <Select
             options={[
@@ -141,7 +193,7 @@ const AESPage = () => {
               { label: 'Utf16BE', value: 'Utf16BE' },
               { label: 'Utf16LE', value: 'Utf16LE' },
               { label: 'Base64', value: 'Base64' },
-              { label: 'Base64url', value: 'Base64url' },
+              { label: 'Base64url', value: 'Base64url' }
             ]}
           />
         </Form.Item>

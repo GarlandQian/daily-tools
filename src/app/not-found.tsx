@@ -1,5 +1,5 @@
 'use client'
-import './404.css';
+import './404.css'
 
 export default function NotFound() {
   return (

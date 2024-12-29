@@ -54,14 +54,24 @@ export default function HmacMD5() {
         <Form.Item
           name="message"
           label={t('app.hash.message')}
-          rules={[{ required: true, message: t('rules.msg.required', { msg: t('app.hash.message') }) }]}
+          rules={[
+            {
+              required: true,
+              message: t('rules.msg.required', { msg: t('app.hash.message') })
+            }
+          ]}
         >
           <Input.TextArea />
         </Form.Item>
         <Form.Item
           name="mode"
           label={t('app.hash.mode')}
-          rules={[{ required: true, message: t('rules.msg.required', { msg: t('app.hash.mode') }) }]}
+          rules={[
+            {
+              required: true,
+              message: t('rules.msg.required', { msg: t('app.hash.mode') })
+            }
+          ]}
         >
           <Radio.Group onChange={changeMode}>
             <Radio.Button value="SHA1">SHA1</Radio.Button>

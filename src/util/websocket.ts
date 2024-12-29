@@ -142,7 +142,14 @@ export function webSocket<Data>(
   url: string | URL | undefined,
   options: UseWebSocketOptions = {}
 ): UseWebSocketReturn<Data> {
-  const { onConnected, onDisconnected, onError, onMessage, immediate = true, protocols = [] } = options
+  const {
+    onConnected,
+    onDisconnected,
+    onError,
+    onMessage,
+    immediate = true,
+    protocols = []
+  } = options
 
   let data: Data | undefined = void 0
   let status: WebSocketStatus = 'CLOSED'
@@ -206,12 +213,20 @@ export function webSocket<Data>(
       _sendBuffer()
     }
 
-    ws.onclose = (ev) => {
+    ws.onclose = ev => {
       status = 'CLOSED'
       onDisconnected?.(ws, ev)
 
-      if (!explicitlyClosed && options.autoReconnect && (wsRef == null || ws === wsRef)) {
-        const { retries = -1, delay = 1000, onFailed } = resolveNestedOptions(options.autoReconnect)
+      if (
+        !explicitlyClosed &&
+        options.autoReconnect &&
+        (wsRef == null || ws === wsRef)
+      ) {
+        const {
+          retries = -1,
+          delay = 1000,
+          onFailed
+        } = resolveNestedOptions(options.autoReconnect)
 
         if (typeof retries === 'number' && (retries < 0 || retried < retries)) {
           retried += 1
@@ -224,14 +239,15 @@ export function webSocket<Data>(
       }
     }
 
-    ws.onerror = (e) => {
+    ws.onerror = e => {
       onError?.(ws!, e)
     }
 
     ws.onmessage = (e: MessageEvent) => {
       if (options.heartbeat) {
         resetHeartbeat()
-        const { message = DEFAULT_PING_MESSAGE, responseMessage = message } = resolveNestedOptions(options.heartbeat)
+        const { message = DEFAULT_PING_MESSAGE, responseMessage = message } =
+          resolveNestedOptions(options.heartbeat)
         if (e.data === responseMessage) return
       }
 
@@ -244,7 +260,7 @@ export function webSocket<Data>(
     const {
       message = DEFAULT_PING_MESSAGE,
       interval = 1000,
-      pongTimeout = 1000,
+      pongTimeout = 1000
     } = resolveNestedOptions(options.heartbeat)
 
     const { pause, resume } = intervalFn(
@@ -280,6 +296,6 @@ export function webSocket<Data>(
     close,
     send,
     open,
-    ws: wsRef,
+    ws: wsRef
   }
 }

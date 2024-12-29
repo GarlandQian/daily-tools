@@ -13,7 +13,11 @@ export interface TranslationsProviderProps {
   resources?: Resource
 }
 
-export default function TranslationsProvider({ children, locale, resources }: TranslationsProviderProps) {
+export default function TranslationsProvider({
+  children,
+  locale,
+  resources
+}: TranslationsProviderProps) {
   const i18n = createInstance()
 
   initTranslations(locale, i18n, resources)
