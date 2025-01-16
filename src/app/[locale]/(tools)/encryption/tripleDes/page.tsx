@@ -19,9 +19,7 @@ const AESPage = () => {
   const [form] = Form.useForm<EncryptionType>()
   const [result, setResult] = useState<string>()
   const onFinish = (values: EncryptionType) => {
-    setResult(
-      TripleDesCrypto(values.str, values.secret, values, values.isEncrypt)
-    )
+    setResult(TripleDesCrypto(values.str, values.secret, values, values.isEncrypt))
   }
   return (
     <>
@@ -68,12 +66,7 @@ const AESPage = () => {
             },
             {
               validator: (_rule, value) => {
-                if (
-                  value &&
-                  ![16, 24, 32].includes(
-                    CryptoJS.enc.Utf8.parse(value).sigBytes
-                  )
-                ) {
+                if (value && ![16, 24, 32].includes(CryptoJS.enc.Utf8.parse(value).sigBytes)) {
                   return Promise.reject(t('app.encryption.aes.iv.length'))
                 } else {
                   return Promise.resolve()

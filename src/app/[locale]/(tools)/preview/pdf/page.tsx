@@ -42,13 +42,7 @@ const ExcelPerview = () => {
         style={{ height: '100%', overflow: 'hidden', marginRight: '-20px' }}
       >
         <Flex>
-          <Upload
-            action="/"
-            maxCount={1}
-            showUploadList={false}
-            onChange={onChange}
-            accept=".pdf"
-          >
+          <Upload action="/" maxCount={1} showUploadList={false} onChange={onChange} accept=".pdf">
             <Button>Click to Upload</Button>
           </Upload>
         </Flex>

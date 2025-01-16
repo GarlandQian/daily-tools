@@ -33,9 +33,7 @@ export default async function initTranslations(
       return localeData
     }
     i18nInstance.use(
-      resourcesToBackend(
-        async (language: 'en' | 'cn') => await dynamicImport(language)
-      )
+      resourcesToBackend(async (language: 'en' | 'cn') => await dynamicImport(language))
     )
   }
 

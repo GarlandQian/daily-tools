@@ -10,13 +10,7 @@ import EllipsisMiddle from '@/components/EllipsisMiddle'
 interface HMACSHAParams {
   message: string
   key: string
-  mode:
-    | 'HmacSHA1'
-    | 'HmacSHA224'
-    | 'HmacSHA256'
-    | 'HmacSHA3'
-    | 'HmacSHA384'
-    | 'HmacSHA512'
+  mode: 'HmacSHA1' | 'HmacSHA224' | 'HmacSHA256' | 'HmacSHA3' | 'HmacSHA384' | 'HmacSHA512'
 }
 
 export default function HmacSHA() {
