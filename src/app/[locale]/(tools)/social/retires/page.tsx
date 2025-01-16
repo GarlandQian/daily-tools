@@ -130,9 +130,7 @@ const Retires = () => {
           <Form.Item
             name="occupation"
             label="Occupation"
-            rules={[
-              { required: true, message: 'Please select your occupation!' }
-            ]}
+            rules={[{ required: true, message: 'Please select your occupation!' }]}
           >
             <Radio.Group
               options={[
@@ -169,26 +167,18 @@ const Retires = () => {
                     <>
                       <span className={styles.enclosed}>
                         退休时间为
-                        {dayjs(retirement.retirementDate).format(
-                          'YYYY年MM月DD日'
-                        )}
-                        。
+                        {dayjs(retirement.retirementDate).format('YYYY年MM月DD日')}。
                       </span>
                       到时你已
                       {retirement.baseRetirementAge}岁
-                      {retirement.baseRetirementMonth
-                        ? `${retirement.baseRetirementMonth}月`
-                        : ''}
+                      {retirement.baseRetirementMonth ? `${retirement.baseRetirementMonth}月` : ''}
                       。
                     </>
                   ) : (
                     <>
                       <span className={styles.enclosed}>
                         退休时间为
-                        {dayjs(retirement.retirementDate).format(
-                          'YYYY年MM月DD日'
-                        )}
-                        。
+                        {dayjs(retirement.retirementDate).format('YYYY年MM月DD日')}。
                       </span>
                       到时你已
                       {retirement.baseRetirementAge}岁。

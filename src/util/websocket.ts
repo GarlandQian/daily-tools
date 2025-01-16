@@ -217,16 +217,8 @@ export function webSocket<Data>(
       status = 'CLOSED'
       onDisconnected?.(ws, ev)
 
-      if (
-        !explicitlyClosed &&
-        options.autoReconnect &&
-        (wsRef == null || ws === wsRef)
-      ) {
-        const {
-          retries = -1,
-          delay = 1000,
-          onFailed
-        } = resolveNestedOptions(options.autoReconnect)
+      if (!explicitlyClosed && options.autoReconnect && (wsRef == null || ws === wsRef)) {
+        const { retries = -1, delay = 1000, onFailed } = resolveNestedOptions(options.autoReconnect)
 
         if (typeof retries === 'number' && (retries < 0 || retried < retries)) {
           retried += 1
@@ -246,8 +238,9 @@ export function webSocket<Data>(
     ws.onmessage = (e: MessageEvent) => {
       if (options.heartbeat) {
         resetHeartbeat()
-        const { message = DEFAULT_PING_MESSAGE, responseMessage = message } =
-          resolveNestedOptions(options.heartbeat)
+        const { message = DEFAULT_PING_MESSAGE, responseMessage = message } = resolveNestedOptions(
+          options.heartbeat
+        )
         if (e.data === responseMessage) return
       }
 

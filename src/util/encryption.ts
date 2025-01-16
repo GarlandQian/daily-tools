@@ -27,9 +27,7 @@ function validateKeyAndIvLength(key: string, iv?: CryptoJS.lib.WordArray) {
     )
   }
   if (iv && iv.sigBytes !== 16) {
-    throw new Error(
-      '初始化向量（IV）长度无效。AES IV 必须为 16 字节（128 位）。'
-    )
+    throw new Error('初始化向量（IV）长度无效。AES IV 必须为 16 字节（128 位）。')
   }
 }
 

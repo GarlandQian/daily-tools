@@ -5,9 +5,7 @@ import jsPreviewPPtx, { init } from 'pptx-preview'
 import { useEffect, useRef, useState } from 'react'
 
 const DocxPerview = () => {
-  const myPPtxPreviewer = useRef<ReturnType<typeof jsPreviewPPtx.init> | null>(
-    null
-  )
+  const myPPtxPreviewer = useRef<ReturnType<typeof jsPreviewPPtx.init> | null>(null)
   const pptxRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (pptxRef.current) {

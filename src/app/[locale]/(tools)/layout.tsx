@@ -103,16 +103,12 @@ const ToolsLayout: React.FC = ({ children }: React.PropsWithChildren) => {
     ])
   ]
   const [collapsed, setCollapsed] = useState(false)
-  const [stateOpenKeys, setStateOpenKeys] = useState([
-    `/${pathname.split('/')[1]}`
-  ])
+  const [stateOpenKeys, setStateOpenKeys] = useState([`/${pathname.split('/')[1]}`])
   const [selectKeys, setSelectKeys] = useState([pathname])
 
   const onOpenChange: MenuProps['onOpenChange'] = openKeys => {
     const levelKeys = getLevelKeys(items as LevelKeysProps[])
-    const currentOpenKey = openKeys.find(
-      key => stateOpenKeys.indexOf(key) === -1
-    )
+    const currentOpenKey = openKeys.find(key => stateOpenKeys.indexOf(key) === -1)
     // open
     if (currentOpenKey !== undefined) {
       const repeatIndex = openKeys
@@ -140,19 +136,13 @@ const ToolsLayout: React.FC = ({ children }: React.PropsWithChildren) => {
   const breadcrumbItems = useMemo(() => {
     const keyList = selectKeys[0].split('/').filter(Boolean)
     return keyList.map((_key, index) => ({
-      title: t(
-        `app.${[...new Array(index + 1)].map((_item, i) => `${keyList[i]}`).join('.')}`
-      )
+      title: t(`app.${[...new Array(index + 1)].map((_item, i) => `${keyList[i]}`).join('.')}`)
     }))
   }, [selectKeys, t])
 
   return (
     <Layout style={{ height: '100vh', overflow: 'hidden' }}>
-      <Sider
-        collapsible
-        collapsed={collapsed}
-        onCollapse={value => setCollapsed(value)}
-      >
+      <Sider collapsible collapsed={collapsed} onCollapse={value => setCollapsed(value)}>
         <Menu
           theme="dark"
           selectedKeys={selectKeys}
