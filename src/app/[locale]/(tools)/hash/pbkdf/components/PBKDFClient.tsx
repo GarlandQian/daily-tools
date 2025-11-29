@@ -1,5 +1,5 @@
 'use client'
-import { Button, Form, Input, Radio } from 'antd'
+import { Button, Form, Input, InputNumber, Radio } from 'antd'
 import CryptoJS from 'crypto-js'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useState } from 'react'
@@ -7,44 +7,21 @@ import { useTranslation } from 'react-i18next'
 
 import EllipsisMiddle from '@/components/EllipsisMiddle'
 
-interface SHAParams {
+interface PBKDFParams {
   message: string
-  mode: 'SHA1' | 'SHA224' | 'SHA256' | 'SHA3' | 'SHA384' | 'SHA512'
+  keySize: 128 | 256 | 512
+  salt: string
+  iterations: number
 }
-export default function HmacMD5() {
+
+export default function PBKDFClient() {
   const { t } = useTranslation()
 
-  const [form] = Form.useForm<SHAParams>()
+  const [form] = Form.useForm<PBKDFParams>()
   const [result, setReult] = useState('')
 
-  const changeMode = () => {
-    setReult('')
-  }
-
-  const onFinish = (values: SHAParams) => {
-    let value = ''
-    const message = values.message
-    switch (values.mode) {
-      case 'SHA1':
-        value = CryptoJS.SHA1(message).toString()
-        break
-      case 'SHA224':
-        value = CryptoJS.SHA224(message).toString()
-        break
-      case 'SHA256':
-        value = CryptoJS.SHA256(message).toString()
-        break
-      case 'SHA3':
-        value = CryptoJS.SHA3(message).toString()
-        break
-      case 'SHA384':
-        value = CryptoJS.SHA384(message).toString()
-        break
-      case 'SHA512':
-        value = CryptoJS.SHA512(message).toString()
-        break
-    }
-    setReult(value)
+  const onFinish = ({ message, salt, keySize, iterations }: PBKDFParams) => {
+    setReult(CryptoJS.PBKDF2(message, salt, { keySize, iterations }).toString())
   }
   return (
     <>
@@ -52,7 +29,7 @@ export default function HmacMD5() {
         labelAlign="left"
         layout="horizontal"
         form={form}
-        initialValues={{ mode: 'SHA1' }}
+        initialValues={{ mode: 'HmacSHA1' }}
         labelCol={{ xs: { span: 24 }, sm: { span: 6 }, md: { span: 4 } }}
         wrapperCol={{ xs: { span: 24 }, sm: { span: 18 }, md: { span: 16 } }}
         onFinish={onFinish}
@@ -70,24 +47,52 @@ export default function HmacMD5() {
           <Input.TextArea />
         </Form.Item>
         <Form.Item
-          name="mode"
-          label={t('app.hash.mode')}
+          name="salt"
+          label={t('app.hash.pbkdf.salt')}
           rules={[
             {
               required: true,
-              message: t('rules.msg.required', { msg: t('app.hash.mode') })
+              message: t('rules.msg.required', {
+                msg: t('app.hash.pbkdf.salt')
+              })
             }
           ]}
         >
-          <Radio.Group onChange={changeMode}>
-            <Radio.Button value="SHA1">SHA1</Radio.Button>
-            <Radio.Button value="SHA224">SHA224</Radio.Button>
-            <Radio.Button value="SHA256">SHA256</Radio.Button>
-            <Radio.Button value="SHA3">SHA3</Radio.Button>
-            <Radio.Button value="SHA384">SHA384</Radio.Button>
-            <Radio.Button value="SHA512">SHA512</Radio.Button>
+          <Input />
+        </Form.Item>
+        <Form.Item
+          name="keySize"
+          label={t('app.hash.pbkdf.keySize')}
+          rules={[
+            {
+              required: true,
+              message: t('rules.msg.required', {
+                msg: t('app.hash.pbkdf.keySize')
+              })
+            }
+          ]}
+        >
+          <Radio.Group>
+            <Radio value={128}>128 byte</Radio>
+            <Radio value={256}>256 byte</Radio>
+            <Radio value={512}>512 byte</Radio>
           </Radio.Group>
         </Form.Item>
+        <Form.Item
+          name="iterations"
+          label={t('app.hash.pbkdf.iterations')}
+          rules={[
+            {
+              required: true,
+              message: t('rules.msg.required', {
+                msg: t('app.hash.pbkdf.iterations')
+              })
+            }
+          ]}
+        >
+          <InputNumber min={0} precision={0}></InputNumber>
+        </Form.Item>
+
         <Form.Item>
           <Button type="primary" htmlType="submit">
             {t('public.submit')}

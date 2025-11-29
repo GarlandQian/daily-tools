@@ -25,8 +25,8 @@ export default function MD5Form() {
       labelAlign="left"
       layout="horizontal"
       form={form}
-      labelCol={{ span: 2 }}
-      wrapperCol={{ span: 16 }}
+      labelCol={{ xs: { span: 24 }, sm: { span: 6 }, md: { span: 4 } }}
+      wrapperCol={{ xs: { span: 24 }, sm: { span: 18 }, md: { span: 16 } }}
       onFinish={onFinish}
     >
       <Form.Item

@@ -1,4 +1,4 @@
-'use client'
+
 import './404.css'
 
 export default function NotFound() {
