@@ -1,5 +1,5 @@
 'use client'
-import { Button, Form, Input, Radio } from 'antd'
+import { Button, Form, Input } from 'antd'
 import CryptoJS from 'crypto-js'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useState } from 'react'
@@ -7,44 +7,19 @@ import { useTranslation } from 'react-i18next'
 
 import EllipsisMiddle from '@/components/EllipsisMiddle'
 
-interface SHAParams {
+interface HMACMD5Params {
   message: string
-  mode: 'SHA1' | 'SHA224' | 'SHA256' | 'SHA3' | 'SHA384' | 'SHA512'
+  key: string
 }
-export default function HmacMD5() {
+
+export default function HMACMD5Client() {
   const { t } = useTranslation()
 
-  const [form] = Form.useForm<SHAParams>()
+  const [form] = Form.useForm<HMACMD5Params>()
   const [result, setReult] = useState('')
 
-  const changeMode = () => {
-    setReult('')
-  }
-
-  const onFinish = (values: SHAParams) => {
-    let value = ''
-    const message = values.message
-    switch (values.mode) {
-      case 'SHA1':
-        value = CryptoJS.SHA1(message).toString()
-        break
-      case 'SHA224':
-        value = CryptoJS.SHA224(message).toString()
-        break
-      case 'SHA256':
-        value = CryptoJS.SHA256(message).toString()
-        break
-      case 'SHA3':
-        value = CryptoJS.SHA3(message).toString()
-        break
-      case 'SHA384':
-        value = CryptoJS.SHA384(message).toString()
-        break
-      case 'SHA512':
-        value = CryptoJS.SHA512(message).toString()
-        break
-    }
-    setReult(value)
+  const onFinish = (values: HMACMD5Params) => {
+    setReult(CryptoJS.HmacMD5(values.message, values.key).toString())
   }
   return (
     <>
@@ -52,7 +27,6 @@ export default function HmacMD5() {
         labelAlign="left"
         layout="horizontal"
         form={form}
-        initialValues={{ mode: 'SHA1' }}
         labelCol={{ xs: { span: 24 }, sm: { span: 6 }, md: { span: 4 } }}
         wrapperCol={{ xs: { span: 24 }, sm: { span: 18 }, md: { span: 16 } }}
         onFinish={onFinish}
@@ -70,23 +44,16 @@ export default function HmacMD5() {
           <Input.TextArea />
         </Form.Item>
         <Form.Item
-          name="mode"
-          label={t('app.hash.mode')}
+          name="key"
+          label={t('app.hash.key')}
           rules={[
             {
               required: true,
-              message: t('rules.msg.required', { msg: t('app.hash.mode') })
+              message: t('rules.msg.required', { msg: t('app.hash.key') })
             }
           ]}
         >
-          <Radio.Group onChange={changeMode}>
-            <Radio.Button value="SHA1">SHA1</Radio.Button>
-            <Radio.Button value="SHA224">SHA224</Radio.Button>
-            <Radio.Button value="SHA256">SHA256</Radio.Button>
-            <Radio.Button value="SHA3">SHA3</Radio.Button>
-            <Radio.Button value="SHA384">SHA384</Radio.Button>
-            <Radio.Button value="SHA512">SHA512</Radio.Button>
-          </Radio.Group>
+          <Input />
         </Form.Item>
         <Form.Item>
           <Button type="primary" htmlType="submit">

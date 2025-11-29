@@ -3,7 +3,7 @@ import { i18nRouter } from 'next-i18n-router'
 
 import i18nConfig from '@/locales/i18nConfig' // 引入配置文件
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   return i18nRouter(request, i18nConfig)
 }
 

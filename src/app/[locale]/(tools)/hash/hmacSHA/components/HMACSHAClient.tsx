@@ -7,41 +7,43 @@ import { useTranslation } from 'react-i18next'
 
 import EllipsisMiddle from '@/components/EllipsisMiddle'
 
-interface SHAParams {
+interface HMACSHAParams {
   message: string
-  mode: 'SHA1' | 'SHA224' | 'SHA256' | 'SHA3' | 'SHA384' | 'SHA512'
+  key: string
+  mode: 'HmacSHA1' | 'HmacSHA224' | 'HmacSHA256' | 'HmacSHA3' | 'HmacSHA384' | 'HmacSHA512'
 }
-export default function HmacMD5() {
+
+export default function HMACSHAClient() {
   const { t } = useTranslation()
 
-  const [form] = Form.useForm<SHAParams>()
+  const [form] = Form.useForm<HMACSHAParams>()
   const [result, setReult] = useState('')
 
   const changeMode = () => {
     setReult('')
   }
 
-  const onFinish = (values: SHAParams) => {
+  const onFinish = (values: HMACSHAParams) => {
     let value = ''
-    const message = values.message
+    const { message, key } = values
     switch (values.mode) {
-      case 'SHA1':
-        value = CryptoJS.SHA1(message).toString()
+      case 'HmacSHA1':
+        value = CryptoJS.HmacSHA1(message, key).toString()
         break
-      case 'SHA224':
-        value = CryptoJS.SHA224(message).toString()
+      case 'HmacSHA224':
+        value = CryptoJS.HmacSHA224(message, key).toString()
         break
-      case 'SHA256':
-        value = CryptoJS.SHA256(message).toString()
+      case 'HmacSHA256':
+        value = CryptoJS.HmacSHA256(message, key).toString()
         break
-      case 'SHA3':
-        value = CryptoJS.SHA3(message).toString()
+      case 'HmacSHA3':
+        value = CryptoJS.HmacSHA3(message, key).toString()
         break
-      case 'SHA384':
-        value = CryptoJS.SHA384(message).toString()
+      case 'HmacSHA384':
+        value = CryptoJS.HmacSHA384(message, key).toString()
         break
-      case 'SHA512':
-        value = CryptoJS.SHA512(message).toString()
+      case 'HmacSHA512':
+        value = CryptoJS.HmacSHA512(message, key).toString()
         break
     }
     setReult(value)
@@ -52,7 +54,7 @@ export default function HmacMD5() {
         labelAlign="left"
         layout="horizontal"
         form={form}
-        initialValues={{ mode: 'SHA1' }}
+        initialValues={{ mode: 'HmacSHA1' }}
         labelCol={{ xs: { span: 24 }, sm: { span: 6 }, md: { span: 4 } }}
         wrapperCol={{ xs: { span: 24 }, sm: { span: 18 }, md: { span: 16 } }}
         onFinish={onFinish}
@@ -70,6 +72,18 @@ export default function HmacMD5() {
           <Input.TextArea />
         </Form.Item>
         <Form.Item
+          name="key"
+          label={t('app.hash.key')}
+          rules={[
+            {
+              required: true,
+              message: t('rules.msg.required', { msg: t('app.hash.key') })
+            }
+          ]}
+        >
+          <Input />
+        </Form.Item>
+        <Form.Item
           name="mode"
           label={t('app.hash.mode')}
           rules={[
@@ -80,12 +94,12 @@ export default function HmacMD5() {
           ]}
         >
           <Radio.Group onChange={changeMode}>
-            <Radio.Button value="SHA1">SHA1</Radio.Button>
-            <Radio.Button value="SHA224">SHA224</Radio.Button>
-            <Radio.Button value="SHA256">SHA256</Radio.Button>
-            <Radio.Button value="SHA3">SHA3</Radio.Button>
-            <Radio.Button value="SHA384">SHA384</Radio.Button>
-            <Radio.Button value="SHA512">SHA512</Radio.Button>
+            <Radio.Button value="HmacSHA1">HmacSHA1</Radio.Button>
+            <Radio.Button value="HmacSHA224">HmacSHA224</Radio.Button>
+            <Radio.Button value="HmacSHA256">HmacSHA256</Radio.Button>
+            <Radio.Button value="HmacSHA3">HmacSHA3</Radio.Button>
+            <Radio.Button value="HmacSHA384">HmacSHA384</Radio.Button>
+            <Radio.Button value="HmacSHA512">HmacSHA512</Radio.Button>
           </Radio.Group>
         </Form.Item>
         <Form.Item>

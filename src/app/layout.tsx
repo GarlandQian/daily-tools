@@ -19,17 +19,22 @@ export function generateStaticParams() {
   return i18nConfig.locales.map(locale => ({ locale }))
 }
 
+import { Inter } from 'next/font/google'
+
+const inter = Inter({ subsets: ['latin'] })
+
 const RootLayout = async ({
   children,
-  params: { locale }
+  params
 }: Readonly<{
   children: React.ReactNode
-  params: { locale: string }
+  params: Promise<{ locale?: string }>
 }>) => {
+  const { locale = i18nConfig.defaultLocale } = await params
   const { resources } = await initTranslations(locale)
   return (
     <html lang={locale}>
-      <body className="flex min-h-screen w-full flex-col">
+      <body className={`${inter.className} flex min-h-screen w-full flex-col`}>
         <AntdRegistry>
           <NextTopLoader showSpinner={false} />
           <TranslationsProvider locale={locale} resources={resources}>
