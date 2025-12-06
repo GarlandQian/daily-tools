@@ -1,8 +1,10 @@
 'use client'
-import jsPreviewPdf, { JsPdfPreview } from '@js-preview/pdf'
-import { Button, Flex, Spin, Upload } from 'antd'
-import { UploadChangeParam } from 'antd/es/upload'
+import type { JsPdfPreview } from '@js-preview/pdf'
+import { Flex, Spin } from 'antd'
+import { RcFile } from 'antd/es/upload'
 import { useEffect, useRef, useState } from 'react'
+
+import FileUploader from '../../components/FileUploader'
 
 const PdfPreviewer = () => {
   const myPdfPreviewer = useRef<JsPdfPreview | null>(null)
@@ -10,48 +12,40 @@ const PdfPreviewer = () => {
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    if (pdfRef.current) {
-      myPdfPreviewer.current = jsPreviewPdf.init(pdfRef.current, {
-        onError: () => {
-          setLoading(false)
-        },
-        onRendered: () => {
-          setLoading(false)
-        }
-      })
+    const init = async () => {
+      if (pdfRef.current) {
+        const { default: jsPreviewPdf } = await import('@js-preview/pdf')
+        myPdfPreviewer.current = jsPreviewPdf.init(pdfRef.current, {
+          onError: () => {
+            setLoading(false)
+          },
+          onRendered: () => {
+            setLoading(false)
+          }
+        })
+      }
     }
+    init()
 
     return () => {
       myPdfPreviewer.current?.destroy()
     }
   }, [])
 
-  const onChange = ({ file }: UploadChangeParam) => {
-    if (file.status === 'done' && file.originFileObj) {
-      const url = URL.createObjectURL(file.originFileObj)
-      setLoading(true)
-      myPdfPreviewer.current?.preview(url)
-    }
+  const onUpload = (file: RcFile) => {
+    const url = URL.createObjectURL(file)
+    setLoading(true)
+    myPdfPreviewer.current?.preview(url)
   }
 
   return (
-    <>
-      <Flex
-        gap="middle"
-        vertical
-        style={{ height: '100%', overflow: 'hidden', marginRight: '-20px' }}
-      >
-        <Flex>
-          <Upload action="/" maxCount={1} showUploadList={false} onChange={onChange} accept=".pdf">
-            <Button>Click to Upload</Button>
-          </Upload>
-        </Flex>
-        <div style={{ overflow: 'auto', flex: 1, paddingRight: '10px' }}>
-          <Spin spinning={loading}></Spin>
-          <div style={{ height: '100%' }} ref={pdfRef}></div>
-        </div>
-      </Flex>
-    </>
+    <Flex gap="middle" vertical style={{ height: '100%', overflow: 'hidden' }}>
+      <FileUploader accept=".pdf" onUpload={onUpload} disabled={loading} />
+      <div style={{ overflow: 'auto', flex: 1, position: 'relative' }}>
+        <Spin spinning={loading} style={{ position: 'absolute', top: '20px', left: '50%', transform: 'translateX(-50%)', zIndex: 10 }} />
+        <div style={{ height: '100%' }} ref={pdfRef}></div>
+      </div>
+    </Flex>
   )
 }
 
