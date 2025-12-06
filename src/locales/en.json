@@ -29,7 +29,15 @@
   "app.hash.pbkdf.salt": "Salt",
   "app.hash.result": "Result",
   "app.hash.ripemd": "RIPEMD",
+
   "app.hash.sha": "SHA",
+  "app.hash.alg": "Algorithm",
+  "app.hash.generate": "Generate",
+  "app.hash.verify": "Decrypt",
+  "app.hash.target": "Hash to Decrypt",
+  "app.hash.verify.success": "Decryption Success! Message: ",
+  "app.hash.verify.fail": "Decryption Failed (Not found in dictionary)!",
+
   "app.preview": "Preview",
   "app.preview.docx": "Docx",
   "app.preview.excel": "Excel",
@@ -41,6 +49,8 @@
   "app.social.time": "Time",
   "public.confirm": "Confirm",
   "public.submit": "Submit",
+  "public.generate": "Generate",
+  "public.verify": "Decrypt",
   "rules.msg.required": "{{msg}} is required",
   "app.social.time.timezone": "Timezone"
 }

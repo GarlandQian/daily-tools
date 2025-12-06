@@ -30,6 +30,13 @@
   "app.hash.result": "结果",
   "app.hash.ripemd": "RIPEMD",
   "app.hash.sha": "SHA",
+  "app.hash.alg": "算法",
+  "app.hash.generate": "生成",
+  "app.hash.verify": "解密",
+  "app.hash.target": "待解密哈希",
+  "app.hash.verify.success": "解密成功！原文：",
+  "app.hash.verify.fail": "解密失败（字典中未找到）！",
+
   "app.preview": "预览",
   "app.preview.docx": "Docx",
   "app.preview.excel": "Excel",
@@ -41,6 +48,8 @@
   "app.social.time": "时间",
   "public.confirm": "确认",
   "public.submit": "提交",
+  "public.generate": "生成",
+  "public.verify": "解密",
   "rules.msg.required": "{{msg}}是必填的",
   "app.social.time.timezone": "时区"
 }

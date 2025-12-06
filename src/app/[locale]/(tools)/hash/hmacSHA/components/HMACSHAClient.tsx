@@ -1,95 +1,99 @@
 'use client'
-import { Button, Form, Input, Radio } from 'antd'
+import { Button, Form, Input, Radio, Typography } from 'antd'
 import CryptoJS from 'crypto-js'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import EllipsisMiddle from '@/components/EllipsisMiddle'
+import { commonPasswords } from '@/const/common-passwords'
 
 interface HMACSHAParams {
-  message: string
+  message?: string
   key: string
   mode: 'HmacSHA1' | 'HmacSHA224' | 'HmacSHA256' | 'HmacSHA3' | 'HmacSHA384' | 'HmacSHA512'
+  action: 'encrypt' | 'verify'
+  targetHash?: string
 }
 
 export default function HMACSHAClient() {
   const { t } = useTranslation()
 
   const [form] = Form.useForm<HMACSHAParams>()
-  const [result, setReult] = useState('')
+  const [result, setResult] = useState<{ text: string; success?: boolean } | null>(null)
+  const [action, setAction] = useState<'encrypt' | 'verify'>('encrypt')
 
   const changeMode = () => {
-    setReult('')
+    setResult(null)
+  }
+
+  const calculateHmac = (mode: string, msg: string, key: string): string => {
+    switch (mode) {
+      case 'HmacSHA1':
+        return CryptoJS.HmacSHA1(msg, key).toString()
+      case 'HmacSHA224':
+        return CryptoJS.HmacSHA224(msg, key).toString()
+      case 'HmacSHA256':
+        return CryptoJS.HmacSHA256(msg, key).toString()
+      case 'HmacSHA3':
+        return CryptoJS.HmacSHA3(msg, key).toString()
+      case 'HmacSHA384':
+        return CryptoJS.HmacSHA384(msg, key).toString()
+      case 'HmacSHA512':
+        return CryptoJS.HmacSHA512(msg, key).toString()
+      default:
+        return ''
+    }
   }
 
   const onFinish = (values: HMACSHAParams) => {
-    let value = ''
-    const { message, key } = values
-    switch (values.mode) {
-      case 'HmacSHA1':
-        value = CryptoJS.HmacSHA1(message, key).toString()
-        break
-      case 'HmacSHA224':
-        value = CryptoJS.HmacSHA224(message, key).toString()
-        break
-      case 'HmacSHA256':
-        value = CryptoJS.HmacSHA256(message, key).toString()
-        break
-      case 'HmacSHA3':
-        value = CryptoJS.HmacSHA3(message, key).toString()
-        break
-      case 'HmacSHA384':
-        value = CryptoJS.HmacSHA384(message, key).toString()
-        break
-      case 'HmacSHA512':
-        value = CryptoJS.HmacSHA512(message, key).toString()
-        break
+    if (values.action === 'encrypt' && values.message) {
+      const hash = calculateHmac(values.mode, values.message, values.key)
+      setResult({ text: hash })
+    } else if (values.action === 'verify' && values.targetHash) {
+      const target = values.targetHash.toLowerCase()
+      const found = commonPasswords.find(
+        (pwd) => calculateHmac(values.mode, pwd, values.key).toLowerCase() === target
+      )
+
+      if (found) {
+        setResult({ text: t('app.hash.verify.success') + found, success: true })
+      } else {
+        setResult({ text: t('app.hash.verify.fail'), success: false })
+      }
     }
-    setReult(value)
   }
+
   return (
     <>
       <Form
         labelAlign="left"
         layout="horizontal"
         form={form}
-        initialValues={{ mode: 'HmacSHA1' }}
+        initialValues={{ mode: 'HmacSHA1', action: 'encrypt' }}
         labelCol={{ xs: { span: 24 }, sm: { span: 6 }, md: { span: 4 } }}
         wrapperCol={{ xs: { span: 24 }, sm: { span: 18 }, md: { span: 16 } }}
         onFinish={onFinish}
+        onValuesChange={(changedValues) => {
+          if (changedValues.action) {
+            setAction(changedValues.action)
+          }
+        }}
       >
-        <Form.Item
-          name="message"
-          label={t('app.hash.message')}
-          rules={[
-            {
-              required: true,
-              message: t('rules.msg.required', { msg: t('app.hash.message') })
-            }
-          ]}
-        >
-          <Input.TextArea />
+        <Form.Item label={t('app.hash.mode')} name="action">
+          <Radio.Group>
+            <Radio value="encrypt">{t('app.hash.generate')}</Radio>
+            <Radio value="verify">{t('app.hash.verify')}</Radio>
+          </Radio.Group>
         </Form.Item>
-        <Form.Item
-          name="key"
-          label={t('app.hash.key')}
-          rules={[
-            {
-              required: true,
-              message: t('rules.msg.required', { msg: t('app.hash.key') })
-            }
-          ]}
-        >
-          <Input />
-        </Form.Item>
+
         <Form.Item
           name="mode"
-          label={t('app.hash.mode')}
+          label={t('app.hash.alg')}
           rules={[
             {
               required: true,
-              message: t('rules.msg.required', { msg: t('app.hash.mode') })
+              message: t('rules.msg.required', { msg: t('app.hash.alg') })
             }
           ]}
         >
@@ -102,11 +106,56 @@ export default function HMACSHAClient() {
             <Radio.Button value="HmacSHA512">HmacSHA512</Radio.Button>
           </Radio.Group>
         </Form.Item>
+
+        {action === 'encrypt' && (
+          <Form.Item
+            name="message"
+            label={t('app.hash.message')}
+            rules={[
+              {
+                required: true,
+                message: t('rules.msg.required', { msg: t('app.hash.message') })
+              }
+            ]}
+          >
+            <Input.TextArea rows={4} />
+          </Form.Item>
+        )}
+
+        <Form.Item
+          name="key"
+          label={t('app.hash.key')}
+          rules={[
+            {
+              required: true,
+              message: t('rules.msg.required', { msg: t('app.hash.key') })
+            }
+          ]}
+        >
+          <Input />
+        </Form.Item>
+
+        {action === 'verify' && (
+          <Form.Item
+            name="targetHash"
+            label={t('app.hash.target')}
+            rules={[
+              {
+                required: true,
+                message: t('rules.msg.required', { msg: t('app.hash.target') })
+              }
+            ]}
+          >
+            <Input />
+          </Form.Item>
+        )}
+
         <Form.Item>
           <Button type="primary" htmlType="submit">
-            {t('public.submit')}
+            {action === 'encrypt' ? t('public.generate') : t('public.verify')}
           </Button>
         </Form.Item>
+
         <AnimatePresence>
           {result && (
             <motion.div
@@ -116,7 +165,13 @@ export default function HMACSHAClient() {
               transition={{ duration: 1 }}
             >
               <Form.Item label={t('app.hash.result')}>
-                <EllipsisMiddle suffixCount={12}>{result}</EllipsisMiddle>
+                {result.success !== undefined ? (
+                  <Typography.Text type={result.success ? 'success' : 'danger'}>
+                    {result.text}
+                  </Typography.Text>
+                ) : (
+                  <EllipsisMiddle suffixCount={12}>{result.text}</EllipsisMiddle>
+                )}
               </Form.Item>
             </motion.div>
           )}

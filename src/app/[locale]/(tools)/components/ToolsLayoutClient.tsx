@@ -170,8 +170,8 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
         placement="left"
         onClose={() => setMobileMenuOpen(false)}
         open={mobileMenuOpen}
-        styles={{ body: { padding: 0 } }}
-        width={200}
+        styles={{ body: { padding: 0 }, wrapper: { width: 200 } }}
+
       >
         <div style={{ height: '100%', background: '#001529' }}>{menu}</div>
       </Drawer>
