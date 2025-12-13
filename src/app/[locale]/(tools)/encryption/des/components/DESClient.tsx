@@ -1,12 +1,12 @@
 'use client'
-import { Button, Form, Input, Radio, Select } from 'antd'
-import CryptoJS from 'crypto-js'
+import { CopyOutlined } from '@ant-design/icons'
+import { Button, Form, Input, message,Radio, Select } from 'antd'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import EllipsisMiddle from '@/components/EllipsisMiddle'
-import { type AesCryptoOptions, desCrypto } from '@/util'
+import { useHistory } from '@/hooks/useHistory'
+import { type AesCryptoOptions,desCrypto, desEncodings, desFormats, desModes, desPaddings } from '@/util'
 
 interface EncryptionType extends AesCryptoOptions {
   str: string
@@ -18,198 +18,158 @@ const DESClient = () => {
   const { t } = useTranslation()
   const [form] = Form.useForm<EncryptionType>()
   const [result, setResult] = useState<string>()
-  const onFinish = (values: EncryptionType) => {
-    setResult(desCrypto(values.str, values.secret, values, values.isEncrypt))
+  const { addHistory, lookupHistory } = useHistory('des')
+  const [isEncrypt, setIsEncrypt] = useState(true)
+
+  const onFinish = async (values: EncryptionType) => {
+    if (values.isEncrypt) {
+      const res = desCrypto(values.str, values.secret, values, true)
+      setResult(res)
+      addHistory({
+        content: values.str,
+        result: res,
+        options: {
+          isEncrypt: true,
+          secret: values.secret,
+          mode: values.mode,
+          padding: values.padding,
+          format: values.format,
+          encoding: values.encoding,
+          iv: values.iv,
+        },
+        status: 'SUCCESS',
+      })
+    } else {
+      try {
+        const res = desCrypto(values.str, values.secret, values, false)
+        if (!res) {
+          throw new Error('Decryption failed (empty result)')
+        }
+        setResult(res)
+      } catch (error) { // eslint-disable-line @typescript-eslint/no-unused-vars
+        // If decryption fails, try to look up in history
+        const historyRecord = await lookupHistory(values.str)
+        if (historyRecord) {
+          setResult(historyRecord.content)
+          message.success(t('app.encryption.des.history_found'))
+          return
+        }
+
+        message.warning(t('app.encryption.des.decrypt_failed'))
+        setResult(t('app.encryption.des.decrypt_failed'))
+        addHistory({
+          content: values.str,
+          result: 'Decryption Failed',
+          options: {
+            isEncrypt: false,
+            secret: values.secret,
+            mode: values.mode,
+            padding: values.padding,
+            format: values.format,
+            encoding: values.encoding,
+            iv: values.iv,
+          },
+          status: 'FAILED',
+        })
+      }
+    }
   }
+
   return (
     <>
       <Form
         labelAlign="left"
         layout="horizontal"
         form={form}
-        initialValues={{ isEncrypt: true }}
+        initialValues={{
+          mode: 'ECB',
+          padding: 'Pkcs7',
+          format: 'Hex',
+          encoding: 'Utf8',
+          isEncrypt: true,
+        }}
         labelCol={{ xs: { span: 24 }, sm: { span: 6 }, md: { span: 4 } }}
         wrapperCol={{ xs: { span: 24 }, sm: { span: 18 }, md: { span: 16 } }}
         onFinish={onFinish}
+        onValuesChange={(changedValues) => {
+          if (changedValues.isEncrypt !== undefined) {
+            setIsEncrypt(changedValues.isEncrypt)
+            setResult(undefined)
+          }
+        }}
       >
-        <Form.Item label={t('app.encryption.aes.encrypt')} name="isEncrypt">
-          <Radio.Group
-            options={[
-              { label: t('app.encryption.aes.encrypt.yes'), value: true },
-              { label: t('app.encryption.aes.encrypt.no'), value: false }
-            ]}
-          />
+        <Form.Item label={t('app.encryption.des.mode')} name="isEncrypt">
+          <Radio.Group>
+            <Radio value={true}>{t('app.encryption.des.encrypt')}</Radio>
+            <Radio value={false}>{t('app.encryption.des.decrypt')}</Radio>
+          </Radio.Group>
         </Form.Item>
+
         <Form.Item
-          label={t('app.encryption.aes.str')}
+          label={t('app.encryption.des.content')}
           name="str"
-          rules={[
-            {
-              required: true,
-              message: t('rules.msg.required', {
-                msg: t('app.encryption.aes.str')
-              })
-            }
-          ]}
+          rules={[{ required: true, message: t('app.encryption.des.content_required') }]}
         >
-          <Input />
+          <Input.TextArea rows={4} allowClear />
         </Form.Item>
+
         <Form.Item
-          label={t('app.encryption.aes.secret')}
+          label={t('app.encryption.des.password')}
           name="secret"
-          rules={[
-            {
-              required: true,
-              message: t('rules.msg.required', {
-                msg: t('app.encryption.aes.secret')
-              })
-            },
-            {
-              validator: (_rule, value) => {
-                if (value && ![16, 24, 32].includes(CryptoJS.enc.Utf8.parse(value).sigBytes)) {
-                  return Promise.reject(t('app.encryption.aes.iv.length'))
-                } else {
-                  return Promise.resolve()
-                }
-              }
-            }
-          ]}
+          rules={[{ required: true, message: t('app.encryption.des.password_required') }]}
         >
+          <Input.Password />
+        </Form.Item>
+
+        <Form.Item label={t('app.encryption.des.mode_select')} name="mode">
+          <Select options={desModes} />
+        </Form.Item>
+
+        <Form.Item label={t('app.encryption.des.padding_select')} name="padding">
+          <Select options={desPaddings} />
+        </Form.Item>
+
+        <Form.Item label={t('app.encryption.des.format_select')} name="format">
+          <Select options={desFormats} />
+        </Form.Item>
+
+        <Form.Item label={t('app.encryption.des.encoding_select')} name="encoding">
+          <Select options={desEncodings} />
+        </Form.Item>
+
+        <Form.Item label={t('app.encryption.des.iv')} name="iv">
           <Input />
         </Form.Item>
-        <Form.Item
-          label={t('app.encryption.aes.iv')}
-          name="iv"
-          rules={[
-            {
-              required: true,
-              message: t('rules.msg.required', {
-                msg: t('app.encryption.aes.iv')
-              })
-            },
-            {
-              validator: (_rule, value) => {
-                if (value && CryptoJS.enc.Utf8.parse(value).sigBytes !== 16) {
-                  return Promise.reject(t('app.encryption.aes.iv.length'))
-                } else {
-                  return Promise.resolve()
-                }
-              }
-            }
-          ]}
-        >
-          <Input />
-        </Form.Item>
-        <Form.Item
-          label={t('app.encryption.aes.mode')}
-          name="mode"
-          rules={[
-            {
-              required: true,
-              message: t('rules.msg.required', {
-                msg: t('app.encryption.aes.mode')
-              })
-            }
-          ]}
-        >
-          <Select
-            options={[
-              { label: 'CBC', value: 'CBC' },
-              { label: 'CFB', value: 'CFB' },
-              { label: 'CTR', value: 'CTR' },
-              { label: 'CTRGladman', value: 'CTRGladman' },
-              { label: 'ECB', value: 'ECB' },
-              { label: 'OFB', value: 'OFB' }
-            ]}
-          />
-        </Form.Item>
-        <Form.Item
-          label={t('app.encryption.aes.padding')}
-          name="padding"
-          rules={[
-            {
-              required: true,
-              message: t('rules.msg.required', {
-                msg: t('app.encryption.aes.padding')
-              })
-            }
-          ]}
-        >
-          <Select
-            options={[
-              { label: 'Pkcs7', value: 'Pkcs7' },
-              { label: 'AnsiX923', value: 'AnsiX923' },
-              { label: 'Iso10126', value: 'Iso10126' },
-              { label: 'Iso97971', value: 'Iso97971' },
-              { label: 'ZeroPadding', value: 'ZeroPadding' },
-              { label: 'NoPadding', value: 'NoPadding' }
-            ]}
-          />
-        </Form.Item>
-        <Form.Item
-          label={t('app.encryption.aes.format')}
-          name="format"
-          rules={[
-            {
-              required: true,
-              message: t('rules.msg.required', {
-                msg: t('app.encryption.aes.format')
-              })
-            }
-          ]}
-        >
-          <Select
-            options={[
-              { label: 'OpenSSL', value: 'OpenSSL' },
-              { label: 'Hex', value: 'Hex' }
-            ]}
-          />
-        </Form.Item>
-        <Form.Item
-          label={t('app.encryption.aes.encoding')}
-          name="encoding"
-          rules={[
-            {
-              required: true,
-              message: t('rules.msg.required', {
-                msg: t('app.encryption.aes.encoding')
-              })
-            }
-          ]}
-        >
-          <Select
-            options={[
-              { label: 'Hex', value: 'Hex' },
-              { label: 'Latin1', value: 'Latin1' },
-              { label: 'Utf8', value: 'Utf8' },
-              { label: 'Utf16', value: 'Utf16' },
-              { label: 'Utf16BE', value: 'Utf16BE' },
-              { label: 'Utf16LE', value: 'Utf16LE' },
-              { label: 'Base64', value: 'Base64' },
-              { label: 'Base64url', value: 'Base64url' }
-            ]}
-          />
-        </Form.Item>
-        <Form.Item>
+
+        <Form.Item wrapperCol={{ offset: 4, span: 16 }}>
           <Button type="primary" htmlType="submit">
-            {t('public.submit')}
+            {isEncrypt ? t('app.encryption.des.encrypt') : t('app.encryption.des.decrypt')}
           </Button>
         </Form.Item>
+
+        <AnimatePresence>
+          {result && (
+            <motion.div
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 20 }}
+              transition={{ duration: 1 }}
+            >
+              <Form.Item label={t('app.hash.result')}>
+                <div className="flex items-start gap-2">
+                  <Input.TextArea autoSize={{ minRows: 2, maxRows: 10 }} value={result} readOnly />
+                  <Button
+                    icon={<CopyOutlined />}
+                    onClick={() => {
+                      navigator.clipboard.writeText(result)
+                    }}
+                  />
+                </div>
+              </Form.Item>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </Form>
-      <AnimatePresence>
-        {result && (
-          <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 20 }}
-            transition={{ duration: 1 }}
-          >
-            <Form.Item label={t('app.hash.result')}>
-              <EllipsisMiddle suffixCount={12}>{result}</EllipsisMiddle>
-            </Form.Item>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </>
   )
 }

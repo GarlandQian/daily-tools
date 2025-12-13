@@ -9,7 +9,6 @@ import {
 } from '@ant-design/icons'
 import type { MenuProps } from 'antd'
 import { Breadcrumb, Drawer, Flex, Grid, Layout, Menu, theme } from 'antd'
-import { createStyles } from 'antd-style'
 import { usePathname } from 'next/navigation'
 import { useRouter } from 'nextjs-toploader/app'
 import React, { useMemo, useState } from 'react'
@@ -54,23 +53,12 @@ const getLevelKeys = (items1: LevelKeysProps[]) => {
   return key
 }
 
-const useStyles = createStyles(({ token, css }) => ({
-  header: css`
-    padding: '0 20px 0 0';
-    background: ${token.colorBgContainer};
-  `,
-  transformIcon: css`
-    &:hover {
-      color: ${token.colorPrimaryHover};
-    }
-  `
-}))
+
 
 const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
-  const {
-    token: { colorBgContainer, borderRadiusLG }
-  } = theme.useToken()
-  const { styles } = useStyles()
+  const { token } = theme.useToken()
+  const { colorBgContainer, borderRadiusLG } = token
+
   const router = useRouter()
   const pathname = usePathname()
   const {
@@ -94,7 +82,9 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
     getItem(t('app.encryption'), '/encryption', <RollbackOutlined />, [
       getItem(t('app.encryption.aes'), '/encryption/aes'),
       getItem(t('app.encryption.des'), '/encryption/des'),
-      getItem(t('app.encryption.tripleDes'), '/encryption/tripleDes')
+      getItem(t('app.encryption.tripleDes'), '/encryption/tripleDes'),
+      getItem(t('app.encryption.base64'), '/encryption/base64'),
+      getItem(t('app.encryption.urlEncode'), '/encryption/urlEncode')
     ]),
     getItem(t('app.preview'), '/preview', <VideoCameraOutlined />, [
       getItem(t('app.preview.docx'), '/preview/docx'),
@@ -176,7 +166,7 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
         <div style={{ height: '100%', background: '#001529' }}>{menu}</div>
       </Drawer>
       <Layout>
-        <Header className={styles.header}>
+        <Header className="pr-5" style={{ background: colorBgContainer }}>
           <Flex className="h-full" align="center" justify="space-between">
             <Flex align="center" gap={10}>
               {isMobile && (
@@ -191,7 +181,12 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
                 className="cursor-pointer text-[28px]"
                 onClick={() => window.open(process.env.NEXT_PUBLIC_GITHUB_URL)}
               />
-              <Flex align="center" gap={10} className={styles.transformIcon}>
+              <Flex
+                align="center"
+                gap={10}
+                className="hover:text-[var(--hover-color)]"
+                style={{ '--hover-color': token.colorPrimaryHover } as React.CSSProperties}
+              >
                 {language === 'cn' ? (
                   <IconFont
                     className="cursor-pointer text-[32px]"

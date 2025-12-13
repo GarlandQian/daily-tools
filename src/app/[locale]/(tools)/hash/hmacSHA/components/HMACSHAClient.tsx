@@ -1,12 +1,13 @@
 'use client'
-import { Button, Form, Input, Radio, Typography } from 'antd'
+import { CopyOutlined } from '@ant-design/icons'
+import { Button, Form, Input, message,Radio } from 'antd'
 import CryptoJS from 'crypto-js'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import EllipsisMiddle from '@/components/EllipsisMiddle'
 import { commonPasswords } from '@/const/common-passwords'
+import { useHistory } from '@/hooks/useHistory'
 
 interface HMACSHAParams {
   message?: string
@@ -22,6 +23,7 @@ export default function HMACSHAClient() {
   const [form] = Form.useForm<HMACSHAParams>()
   const [result, setResult] = useState<{ text: string; success?: boolean } | null>(null)
   const [action, setAction] = useState<'encrypt' | 'verify'>('encrypt')
+  const { addHistory, lookupHistory } = useHistory('hmacsha')
 
   const changeMode = () => {
     setResult(null)
@@ -46,10 +48,15 @@ export default function HMACSHAClient() {
     }
   }
 
-  const onFinish = (values: HMACSHAParams) => {
+  const onFinish = async (values: HMACSHAParams) => {
     if (values.action === 'encrypt' && values.message) {
       const hash = calculateHmac(values.mode, values.message, values.key)
       setResult({ text: hash })
+      addHistory({
+        content: values.message,
+        result: hash,
+        options: { mode: values.mode, action: 'encrypt', key: values.key }
+      })
     } else if (values.action === 'verify' && values.targetHash) {
       const target = values.targetHash.toLowerCase()
       const found = commonPasswords.find(
@@ -57,9 +64,25 @@ export default function HMACSHAClient() {
       )
 
       if (found) {
-        setResult({ text: t('app.hash.verify.success') + found, success: true })
+        setResult({ text: found, success: true })
+        message.success(t('app.hash.verify.success'))
       } else {
+        // Try to look up in history
+        const historyRecord = await lookupHistory(target)
+        if (historyRecord) {
+          setResult({ text: historyRecord.content, success: true })
+          message.success(t('app.hash.verify.success'))
+          return
+        }
+
+        message.warning(t('app.hash.verify.fail'))
         setResult({ text: t('app.hash.verify.fail'), success: false })
+        addHistory({
+          content: target,
+          result: 'Verify Failed',
+          options: { mode: values.mode, action: 'verify', key: values.key, success: false },
+          status: 'FAILED'
+        })
       }
     }
   }
@@ -77,6 +100,7 @@ export default function HMACSHAClient() {
         onValuesChange={(changedValues) => {
           if (changedValues.action) {
             setAction(changedValues.action)
+            setResult(null)
           }
         }}
       >
@@ -165,13 +189,15 @@ export default function HMACSHAClient() {
               transition={{ duration: 1 }}
             >
               <Form.Item label={t('app.hash.result')}>
-                {result.success !== undefined ? (
-                  <Typography.Text type={result.success ? 'success' : 'danger'}>
-                    {result.text}
-                  </Typography.Text>
-                ) : (
-                  <EllipsisMiddle suffixCount={12}>{result.text}</EllipsisMiddle>
-                )}
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+                  <Input.TextArea autoSize={{ minRows: 2, maxRows: 10 }} value={result.text} readOnly />
+                  <Button
+                    icon={<CopyOutlined />}
+                    onClick={() => {
+                      navigator.clipboard.writeText(result.text)
+                    }}
+                  />
+                </div>
               </Form.Item>
             </motion.div>
           )}

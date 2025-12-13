@@ -1,17 +1,18 @@
-generator client {
-  provider = "prisma-client-js"
+// Define database connection via the `DATABASE_URL` env var
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
-datasource db {
-  provider          = "mysql"
-  url               = env("DATABASE_URL")
-  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
+// Define custom output path for generated Prisma Client
+generator client {
+  provider = "prisma-client-js"
 }
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model Role {
   id          Int       @id @default(autoincrement())
-  create_time DateTime? @db.DateTime(0)
+  create_time DateTime?
   name        String?   @db.VarChar(255)
 }
 
@@ -21,4 +22,14 @@ model User {
   email     String   @unique
   createdAt DateTime @default(now())
   updatedAt DateTime
+}
+
+model DecryptionHistory {
+  id        String   @id @default(cuid())
+  tool      String
+  content   String   @db.Text
+  result    String   @db.Text
+  options   Json?
+  createdAt DateTime @default(now())
+  status    String   @default("SUCCESS") // SUCCESS, FAILED
 }

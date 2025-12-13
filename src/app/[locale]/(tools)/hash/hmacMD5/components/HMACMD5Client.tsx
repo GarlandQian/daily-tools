@@ -1,12 +1,13 @@
 'use client'
-import { Button, Form, Input, Radio, Typography } from 'antd'
+import { CopyOutlined } from '@ant-design/icons'
+import { Button, Form, Input, message,Radio } from 'antd'
 import CryptoJS from 'crypto-js'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import EllipsisMiddle from '@/components/EllipsisMiddle'
 import { commonPasswords } from '@/const/common-passwords'
+import { useHistory } from '@/hooks/useHistory'
 
 interface HMACMD5Params {
   message?: string
@@ -21,11 +22,17 @@ export default function HMACMD5Client() {
   const [form] = Form.useForm<HMACMD5Params>()
   const [result, setResult] = useState<{ text: string; success?: boolean } | null>(null)
   const [mode, setMode] = useState<'encrypt' | 'verify'>('encrypt')
+  const { addHistory, lookupHistory } = useHistory('hmacmd5')
 
-  const onFinish = (values: HMACMD5Params) => {
+  const onFinish = async (values: HMACMD5Params) => {
     if (values.mode === 'encrypt' && values.message) {
       const hash = CryptoJS.HmacMD5(values.message, values.key).toString()
       setResult({ text: hash })
+      addHistory({
+        content: values.message,
+        result: hash,
+        options: { mode: 'encrypt', key: values.key }
+      })
     } else if (values.mode === 'verify' && values.targetHash) {
       const target = values.targetHash.toLowerCase()
       const found = commonPasswords.find(
@@ -33,9 +40,25 @@ export default function HMACMD5Client() {
       )
 
       if (found) {
-        setResult({ text: t('app.hash.verify.success') + found, success: true })
+        setResult({ text: found, success: true })
+        message.success(t('app.hash.verify.success'))
       } else {
+        // Try to look up in history
+        const historyRecord = await lookupHistory(target)
+        if (historyRecord) {
+          setResult({ text: historyRecord.content, success: true })
+          message.success(t('app.hash.verify.success'))
+          return
+        }
+
+        message.warning(t('app.hash.verify.fail'))
         setResult({ text: t('app.hash.verify.fail'), success: false })
+        addHistory({
+          content: target,
+          result: 'Verify Failed',
+          options: { mode: 'verify', success: false, key: values.key },
+          status: 'FAILED'
+        })
       }
     }
   }
@@ -51,7 +74,10 @@ export default function HMACMD5Client() {
         wrapperCol={{ xs: { span: 24 }, sm: { span: 18 }, md: { span: 16 } }}
         onFinish={onFinish}
         onValuesChange={(changedValues) => {
-          if (changedValues.mode) setMode(changedValues.mode)
+          if (changedValues.mode) {
+            setMode(changedValues.mode)
+            setResult(null)
+          }
         }}
       >
         <Form.Item label={t('app.hash.mode')} name="mode">
@@ -119,13 +145,15 @@ export default function HMACMD5Client() {
               transition={{ duration: 1 }}
             >
               <Form.Item label={t('app.hash.result')}>
-                {result.success !== undefined ? (
-                  <Typography.Text type={result.success ? 'success' : 'danger'}>
-                    {result.text}
-                  </Typography.Text>
-                ) : (
-                  <EllipsisMiddle suffixCount={12}>{result.text}</EllipsisMiddle>
-                )}
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+                  <Input.TextArea autoSize={{ minRows: 2, maxRows: 10 }} value={result.text} readOnly />
+                  <Button
+                    icon={<CopyOutlined />}
+                    onClick={() => {
+                      navigator.clipboard.writeText(result.text)
+                    }}
+                  />
+                </div>
               </Form.Item>
             </motion.div>
           )}

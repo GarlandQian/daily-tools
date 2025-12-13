@@ -1,12 +1,13 @@
 'use client'
-import { Button, Form, Input, Radio, Typography } from 'antd'
+import { CopyOutlined } from '@ant-design/icons'
+import { Button, Form, Input, message,Radio } from 'antd'
 import CryptoJS from 'crypto-js'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import EllipsisMiddle from '@/components/EllipsisMiddle'
 import { commonPasswords } from '@/const/common-passwords'
+import { useHistory } from '@/hooks/useHistory'
 
 interface SHAParams {
   message?: string
@@ -21,6 +22,7 @@ export default function SHAForm() {
   const [form] = Form.useForm<SHAParams>()
   const [result, setResult] = useState<{ text: string; success?: boolean } | null>(null)
   const [action, setAction] = useState<'encrypt' | 'verify'>('encrypt')
+  const { addHistory, lookupHistory } = useHistory('sha')
 
   const changeMode = () => {
     setResult(null)
@@ -28,6 +30,8 @@ export default function SHAForm() {
 
   const calculateHash = (mode: string, msg: string): string => {
     switch (mode) {
+      case 'MD5':
+        return CryptoJS.MD5(msg).toString()
       case 'SHA1':
         return CryptoJS.SHA1(msg).toString()
       case 'SHA224':
@@ -40,15 +44,23 @@ export default function SHAForm() {
         return CryptoJS.SHA384(msg).toString()
       case 'SHA512':
         return CryptoJS.SHA512(msg).toString()
+      case 'RIPEMD160':
+        return CryptoJS.RIPEMD160(msg).toString()
       default:
         return ''
     }
   }
 
-  const onFinish = (values: SHAParams) => {
+  const onFinish = async (values: SHAParams) => {
     if (values.action === 'encrypt' && values.message) {
       const hash = calculateHash(values.mode, values.message)
       setResult({ text: hash })
+      addHistory({
+        content: values.message,
+        result: hash,
+        options: { mode: values.mode, action: 'encrypt' }
+      })
+      // Encrypt: Saved for Rainbow Table
     } else if (values.action === 'verify' && values.targetHash) {
       const target = values.targetHash.toLowerCase()
       const found = commonPasswords.find(
@@ -56,9 +68,26 @@ export default function SHAForm() {
       )
 
       if (found) {
-        setResult({ text: t('app.hash.verify.success') + found, success: true })
+        setResult({ text: found, success: true })
+        message.success(t('app.hash.verify.success'))
+        // Verify Success: Do not save
       } else {
+        // Try to look up in history
+        const historyRecord = await lookupHistory(target)
+        if (historyRecord) {
+          setResult({ text: historyRecord.content, success: true })
+          message.success(t('app.hash.verify.success'))
+          return
+        }
+
+        message.warning(t('app.hash.verify.fail'))
         setResult({ text: t('app.hash.verify.fail'), success: false })
+        addHistory({
+          content: target,
+          result: 'Verify Failed',
+          options: { mode: values.mode, action: 'verify', success: false },
+          status: 'FAILED'
+        })
       }
     }
   }
@@ -76,6 +105,7 @@ export default function SHAForm() {
         onValuesChange={(changedValues) => {
           if (changedValues.action) {
             setAction(changedValues.action)
+            setResult(null)
           }
           if (changedValues.mode) {
             changeMode()
@@ -154,13 +184,15 @@ export default function SHAForm() {
               transition={{ duration: 1 }}
             >
               <Form.Item label={t('app.hash.result')}>
-                {result.success !== undefined ? (
-                  <Typography.Text type={result.success ? 'success' : 'danger'}>
-                    {result.text}
-                  </Typography.Text>
-                ) : (
-                  <EllipsisMiddle suffixCount={12}>{result.text}</EllipsisMiddle>
-                )}
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+                  <Input.TextArea autoSize={{ minRows: 2, maxRows: 10 }} value={result.text} readOnly />
+                  <Button
+                    icon={<CopyOutlined />}
+                    onClick={() => {
+                      navigator.clipboard.writeText(result.text)
+                    }}
+                  />
+                </div>
               </Form.Item>
             </motion.div>
           )}
