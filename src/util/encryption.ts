@@ -18,16 +18,16 @@ export interface AesCryptoOptions {
  * 检查密钥和 IV 的长度是否有效
  * @param key 密钥
  * @param iv 初始化向量
+ * @param mode 加密模式
  */
-function validateKeyAndIvLength(key: string, iv?: CryptoJS.lib.WordArray) {
+function validateKeyAndIvLength(key: string, iv: CryptoJS.lib.WordArray | undefined, mode: AesMode) {
   const keyLength = CryptoJS.enc.Utf8.parse(key).sigBytes
   if (![16, 24, 32].includes(keyLength)) {
-    throw new Error(
-      '密钥长度无效。AES 密钥必须为 16 字节（128 位）、24 字节（192 位）或 32 字节（256 位）。'
-    )
+    throw new Error('app.encryption.aes.key.length')
   }
-  if (iv && iv.sigBytes !== 16) {
-    throw new Error('初始化向量（IV）长度无效。AES IV 必须为 16 字节（128 位）。')
+  // ECB 模式不需要 IV，忽略 IV 长度检查
+  if (mode !== 'ECB' && iv && iv.sigBytes !== 16) {
+    throw new Error('app.encryption.aes.iv.length')
   }
 }
 
@@ -48,13 +48,13 @@ export function aesCrypto(
   const { iv, mode, padding, format, encoding } = options
 
   // 检查密钥和 IV 的长度
-  validateKeyAndIvLength(secret, CryptoJS.enc.Utf8.parse(iv))
+  validateKeyAndIvLength(secret, iv ? CryptoJS.enc.Utf8.parse(iv) : undefined, mode)
 
   const secretKey = CryptoJS.enc[encoding].parse(secret) // 使用指定编码解析密钥
 
   if (isEncrypt) {
     const encrypted = CryptoJS.AES.encrypt(text, secretKey, {
-      iv: CryptoJS.enc.Utf8.parse(iv),
+      iv: iv ? CryptoJS.enc.Utf8.parse(iv) : undefined,
       mode: CryptoJS.mode[mode],
       padding: CryptoJS.pad[padding],
       format: CryptoJS.format[format]
@@ -62,7 +62,7 @@ export function aesCrypto(
     return encrypted.toString()
   } else {
     const decrypted = CryptoJS.AES.decrypt(text, secretKey, {
-      iv: CryptoJS.enc.Utf8.parse(iv),
+      iv: iv ? CryptoJS.enc.Utf8.parse(iv) : undefined,
       mode: CryptoJS.mode[mode],
       padding: CryptoJS.pad[padding],
       format: CryptoJS.format[format]
@@ -88,13 +88,13 @@ export function desCrypto(
   const { iv, mode, padding, format, encoding } = options
 
   // 检查密钥和 IV 的长度
-  validateKeyAndIvLength(secret, CryptoJS.enc.Utf8.parse(iv))
+  validateKeyAndIvLength(secret, iv ? CryptoJS.enc.Utf8.parse(iv) : undefined, mode)
 
   const secretKey = CryptoJS.enc[encoding].parse(secret) // 使用指定编码解析密钥
 
   if (isEncrypt) {
     const encrypted = CryptoJS.DES.encrypt(text, secretKey, {
-      iv: CryptoJS.enc.Utf8.parse(iv),
+      iv: iv ? CryptoJS.enc.Utf8.parse(iv) : undefined,
       mode: CryptoJS.mode[mode],
       padding: CryptoJS.pad[padding],
       format: CryptoJS.format[format]
@@ -102,7 +102,7 @@ export function desCrypto(
     return encrypted.toString()
   } else {
     const decrypted = CryptoJS.DES.decrypt(text, secretKey, {
-      iv: CryptoJS.enc.Utf8.parse(iv),
+      iv: iv ? CryptoJS.enc.Utf8.parse(iv) : undefined,
       mode: CryptoJS.mode[mode],
       padding: CryptoJS.pad[padding],
       format: CryptoJS.format[format]
@@ -128,13 +128,13 @@ export function TripleDesCrypto(
   const { iv, mode, padding, format, encoding } = options
 
   // 检查密钥和 IV 的长度
-  validateKeyAndIvLength(secret, CryptoJS.enc.Utf8.parse(iv))
+  validateKeyAndIvLength(secret, iv ? CryptoJS.enc.Utf8.parse(iv) : undefined, mode)
 
   const secretKey = CryptoJS.enc[encoding].parse(secret) // 使用指定编码解析密钥
 
   if (isEncrypt) {
     const encrypted = CryptoJS.TripleDES.encrypt(text, secretKey, {
-      iv: CryptoJS.enc.Utf8.parse(iv),
+      iv: iv ? CryptoJS.enc.Utf8.parse(iv) : undefined,
       mode: CryptoJS.mode[mode],
       padding: CryptoJS.pad[padding],
       format: CryptoJS.format[format]
@@ -142,7 +142,7 @@ export function TripleDesCrypto(
     return encrypted.toString()
   } else {
     const decrypted = CryptoJS.TripleDES.decrypt(text, secretKey, {
-      iv: CryptoJS.enc.Utf8.parse(iv),
+      iv: iv ? CryptoJS.enc.Utf8.parse(iv) : undefined,
       mode: CryptoJS.mode[mode],
       padding: CryptoJS.pad[padding],
       format: CryptoJS.format[format]
@@ -150,3 +150,32 @@ export function TripleDesCrypto(
     return decrypted.toString(CryptoJS.enc.Utf8) // 解密结果一般是字符串，保持 Utf8 解码输出
   }
 }
+
+export const aesModes = [
+  { label: 'ECB', value: 'ECB' },
+  { label: 'CBC', value: 'CBC' },
+  { label: 'CFB', value: 'CFB' },
+  { label: 'OFB', value: 'OFB' },
+  { label: 'CTR', value: 'CTR' }
+]
+
+export const aesPaddings = [
+  { label: 'Pkcs7', value: 'Pkcs7' },
+  { label: 'ZeroPadding', value: 'ZeroPadding' },
+  { label: 'NoPadding', value: 'NoPadding' },
+  { label: 'AnsiX923', value: 'AnsiX923' },
+  { label: 'Iso10126', value: 'Iso10126' },
+  { label: 'Iso97971', value: 'Iso97971' }
+]
+
+export const aesFormats = [
+  { label: 'OpenSSL', value: 'OpenSSL' },
+  { label: 'Hex', value: 'Hex' }
+]
+
+export const aesEncodings = [
+  { label: 'UTF-8', value: 'Utf8' },
+  { label: 'Hex', value: 'Hex' },
+  { label: 'Base64', value: 'Base64' },
+  { label: 'Latin1', value: 'Latin1' }
+]
