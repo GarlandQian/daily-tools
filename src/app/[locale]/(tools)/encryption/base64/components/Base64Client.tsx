@@ -35,7 +35,7 @@ export default function Base64Client() {
       }
     } catch {
        // crypto-js might throw or return empty string on invalid base64
-       setResult({ text: t('app.hash.verify.fail'), success: false })
+       setResult({ text: t('app.encryption.aes.decrypt_failed'), success: false })
     }
   }
 
@@ -52,7 +52,7 @@ export default function Base64Client() {
         if (changedValues.mode) setMode(changedValues.mode)
       }}
     >
-      <Form.Item label={t('app.hash.mode')} name="mode">
+      <Form.Item label={t('app.encryption.aes.action')} name="mode">
         <Radio.Group>
           <Radio value="encode">{t('app.encryption.aes.encrypt')}</Radio>
           <Radio value="decode">{t('app.encryption.aes.decrypt')}</Radio>

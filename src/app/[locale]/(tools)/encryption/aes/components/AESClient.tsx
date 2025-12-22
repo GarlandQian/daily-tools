@@ -23,27 +23,35 @@ const AESClient = () => {
 
   const onFinish = async (values: EncryptionType) => {
     if (values.isEncrypt) {
-      const res = aesCrypto(values.str, values.secret, values, true)
-      setResult(res)
-      addHistory({
-        content: values.str,
-        result: res,
-        options: {
-          isEncrypt: true,
-          secret: values.secret,
-          mode: values.mode,
-          padding: values.padding,
-          format: values.format,
-          encoding: values.encoding,
-          iv: values.iv,
-        },
-        status: 'SUCCESS',
-      })
+      try {
+        const res = aesCrypto(values.str, values.secret, values, true)
+        setResult(res)
+        addHistory({
+          content: values.str,
+          result: res,
+          options: {
+            isEncrypt: true,
+            secret: values.secret,
+            mode: values.mode,
+            padding: values.padding,
+            format: values.format,
+            encoding: values.encoding,
+            iv: values.iv,
+          },
+          status: 'SUCCESS',
+        })
+      } catch (error) {
+        if (error instanceof Error) {
+          message.error(t(error.message))
+        } else {
+          message.error(t('app.encryption.aes.encrypt_failed'))
+        }
+      }
     } else {
       try {
         const res = aesCrypto(values.str, values.secret, values, false)
         if (!res) {
-          throw new Error('Decryption failed (empty result)')
+          throw new Error(t('app.encryption.aes.decrypt_failed_empty'))
         }
         setResult(res)
       } catch (error) { // eslint-disable-line @typescript-eslint/no-unused-vars
@@ -59,7 +67,7 @@ const AESClient = () => {
         setResult(t('app.encryption.aes.decrypt_failed'))
         addHistory({
           content: values.str,
-          result: 'Decryption Failed',
+          result: t('app.encryption.aes.decrypt_failed_text'),
           options: {
             isEncrypt: false,
             secret: values.secret,
@@ -98,7 +106,7 @@ const AESClient = () => {
           }
         }}
       >
-        <Form.Item label={t('app.encryption.aes.mode')} name="isEncrypt">
+        <Form.Item label={t('app.encryption.aes.action')} name="isEncrypt">
           <Radio.Group>
             <Radio value={true}>{t('app.encryption.aes.encrypt')}</Radio>
             <Radio value={false}>{t('app.encryption.aes.decrypt')}</Radio>
@@ -121,19 +129,19 @@ const AESClient = () => {
           <Input.Password />
         </Form.Item>
 
-        <Form.Item label={t('app.encryption.aes.mode_select')} name="mode">
+        <Form.Item label={t('app.encryption.aes.mode')} name="mode">
           <Select options={aesModes} />
         </Form.Item>
 
-        <Form.Item label={t('app.encryption.aes.padding_select')} name="padding">
+        <Form.Item label={t('app.encryption.aes.padding')} name="padding">
           <Select options={aesPaddings} />
         </Form.Item>
 
-        <Form.Item label={t('app.encryption.aes.format_select')} name="format">
+        <Form.Item label={t('app.encryption.aes.format')} name="format">
           <Select options={aesFormats} />
         </Form.Item>
 
-        <Form.Item label={t('app.encryption.aes.encoding_select')} name="encoding">
+        <Form.Item label={t('app.encryption.aes.encoding')} name="encoding">
           <Select options={aesEncodings} />
         </Form.Item>
 

@@ -6,7 +6,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { useHistory } from '@/hooks/useHistory'
-import { type AesCryptoOptions,desCrypto, desEncodings, desFormats, desModes, desPaddings } from '@/util'
+import { type AesCryptoOptions,aesEncodings, aesFormats, aesModes, aesPaddings,desCrypto } from '@/util'
 
 interface EncryptionType extends AesCryptoOptions {
   str: string
@@ -23,27 +23,35 @@ const DESClient = () => {
 
   const onFinish = async (values: EncryptionType) => {
     if (values.isEncrypt) {
-      const res = desCrypto(values.str, values.secret, values, true)
-      setResult(res)
-      addHistory({
-        content: values.str,
-        result: res,
-        options: {
-          isEncrypt: true,
-          secret: values.secret,
-          mode: values.mode,
-          padding: values.padding,
-          format: values.format,
-          encoding: values.encoding,
-          iv: values.iv,
-        },
-        status: 'SUCCESS',
-      })
+      try {
+        const res = desCrypto(values.str, values.secret, values, true)
+        setResult(res)
+        addHistory({
+          content: values.str,
+          result: res,
+          options: {
+            isEncrypt: true,
+            secret: values.secret,
+            mode: values.mode,
+            padding: values.padding,
+            format: values.format,
+            encoding: values.encoding,
+            iv: values.iv,
+          },
+          status: 'SUCCESS',
+        })
+      } catch (error) {
+        if (error instanceof Error) {
+          message.error(t(error.message))
+        } else {
+          message.error(t('app.encryption.aes.encrypt_failed'))
+        }
+      }
     } else {
       try {
         const res = desCrypto(values.str, values.secret, values, false)
         if (!res) {
-          throw new Error('Decryption failed (empty result)')
+          throw new Error(t('app.encryption.aes.decrypt_failed_empty'))
         }
         setResult(res)
       } catch (error) { // eslint-disable-line @typescript-eslint/no-unused-vars
@@ -51,15 +59,15 @@ const DESClient = () => {
         const historyRecord = await lookupHistory(values.str)
         if (historyRecord) {
           setResult(historyRecord.content)
-          message.success(t('app.encryption.des.history_found'))
+          message.success(t('app.encryption.aes.history_found'))
           return
         }
 
-        message.warning(t('app.encryption.des.decrypt_failed'))
-        setResult(t('app.encryption.des.decrypt_failed'))
+        message.warning(t('app.encryption.aes.decrypt_failed'))
+        setResult(t('app.encryption.aes.decrypt_failed'))
         addHistory({
           content: values.str,
-          result: 'Decryption Failed',
+          result: t('app.encryption.aes.decrypt_failed_text'),
           options: {
             isEncrypt: false,
             secret: values.secret,
@@ -98,52 +106,52 @@ const DESClient = () => {
           }
         }}
       >
-        <Form.Item label={t('app.encryption.des.mode')} name="isEncrypt">
+        <Form.Item label={t('app.encryption.aes.action')} name="isEncrypt">
           <Radio.Group>
-            <Radio value={true}>{t('app.encryption.des.encrypt')}</Radio>
-            <Radio value={false}>{t('app.encryption.des.decrypt')}</Radio>
+            <Radio value={true}>{t('app.encryption.aes.encrypt')}</Radio>
+            <Radio value={false}>{t('app.encryption.aes.decrypt')}</Radio>
           </Radio.Group>
         </Form.Item>
 
         <Form.Item
-          label={t('app.encryption.des.content')}
+          label={t('app.encryption.aes.content')}
           name="str"
-          rules={[{ required: true, message: t('app.encryption.des.content_required') }]}
+          rules={[{ required: true, message: t('app.encryption.aes.content_required') }]}
         >
           <Input.TextArea rows={4} allowClear />
         </Form.Item>
 
         <Form.Item
-          label={t('app.encryption.des.password')}
+          label={t('app.encryption.aes.password')}
           name="secret"
-          rules={[{ required: true, message: t('app.encryption.des.password_required') }]}
+          rules={[{ required: true, message: t('app.encryption.aes.password_required') }]}
         >
           <Input.Password />
         </Form.Item>
 
-        <Form.Item label={t('app.encryption.des.mode_select')} name="mode">
-          <Select options={desModes} />
+        <Form.Item label={t('app.encryption.aes.mode')} name="mode">
+          <Select options={aesModes} />
         </Form.Item>
 
-        <Form.Item label={t('app.encryption.des.padding_select')} name="padding">
-          <Select options={desPaddings} />
+        <Form.Item label={t('app.encryption.aes.padding')} name="padding">
+          <Select options={aesPaddings} />
         </Form.Item>
 
-        <Form.Item label={t('app.encryption.des.format_select')} name="format">
-          <Select options={desFormats} />
+        <Form.Item label={t('app.encryption.aes.format')} name="format">
+          <Select options={aesFormats} />
         </Form.Item>
 
-        <Form.Item label={t('app.encryption.des.encoding_select')} name="encoding">
-          <Select options={desEncodings} />
+        <Form.Item label={t('app.encryption.aes.encoding')} name="encoding">
+          <Select options={aesEncodings} />
         </Form.Item>
 
-        <Form.Item label={t('app.encryption.des.iv')} name="iv">
+        <Form.Item label={t('app.encryption.aes.iv')} name="iv">
           <Input />
         </Form.Item>
 
         <Form.Item wrapperCol={{ offset: 4, span: 16 }}>
           <Button type="primary" htmlType="submit">
-            {isEncrypt ? t('app.encryption.des.encrypt') : t('app.encryption.des.decrypt')}
+            {isEncrypt ? t('app.encryption.aes.encrypt') : t('app.encryption.aes.decrypt')}
           </Button>
         </Form.Item>
 
