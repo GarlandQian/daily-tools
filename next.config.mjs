@@ -13,6 +13,7 @@ const nextConfig = {
   },
   transpilePackages: ['three'],
   poweredByHeader: false,
+  output: 'standalone',
 }
 
 export default withBundleAnalyzer({
