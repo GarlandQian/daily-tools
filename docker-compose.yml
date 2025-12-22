@@ -1,34 +1,40 @@
+version: '3.9'
+
 services:
-  mysql:
-    image: mysql:8.0
-    container_name: daily-mysql
+  app:
+    container_name: daily-tools-app
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: always
     ports:
-      - '3306:3306' # 暴露本地端口
+      - '3000:3000'
     environment:
-      MYSQL_ROOT_PASSWORD: root
-      MYSQL_DATABASE: daily_tools
-      MYSQL_USER: daily_tools_user
-      MYSQL_PASSWORD: garlandqian123
-    volumes:
-      - mysql-data:/var/lib/mysql
+      # Use the postgres service name as the host
+      - DATABASE_URL=postgresql://daily_tools_user:garlandqian123@postgres:5432/daily_tools
+    depends_on:
+      - postgres
     networks:
       - daily-network
 
-  app:
-    build:
-      context: .
-    container_name: daily_tools
-    ports:
-      - '8080:8080'
+  postgres:
+    image: postgres:18-alpine
+    container_name: daily-tools-postgres
+    restart: always
     environment:
-      DATABASE_URL: mysql://daily_tools_user:garlandqian123@mysql:3306/daily_tools
-    depends_on:
-      - mysql
+      POSTGRES_USER: daily_tools_user
+      POSTGRES_PASSWORD: garlandqian123
+      POSTGRES_DB: daily_tools
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
     networks:
       - daily-network
 
 networks:
   daily-network:
+    driver: bridge
 
 volumes:
-  mysql-data:
+  postgres-data:
