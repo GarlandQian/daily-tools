@@ -1,4 +1,4 @@
-import RetiresClient from './components/RetiresClient'
+import RetiresClient from '@/features/social/components/RetiresClient'
 
 const Retires = () => {
   return <RetiresClient />

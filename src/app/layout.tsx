@@ -5,6 +5,7 @@ import { AntdRegistry } from '@ant-design/nextjs-registry'
 import NextTopLoader from 'nextjs-toploader'
 import React from 'react'
 
+import ThemeProvider from '@/components/ThemeProvider'
 import TranslationsProvider from '@/components/TranslationsProvider'
 import initTranslations from '@/locales/i18n'
 import i18nConfig from '@/locales/i18nConfig'
@@ -37,9 +38,11 @@ const RootLayout = async ({
       <body className={`${inter.className} flex min-h-screen w-full flex-col`}>
         <AntdRegistry>
           <NextTopLoader showSpinner={false} />
-          <TranslationsProvider locale={locale} resources={resources}>
-            {children}
-          </TranslationsProvider>
+          <ThemeProvider>
+            <TranslationsProvider locale={locale} resources={resources}>
+              {children}
+            </TranslationsProvider>
+          </ThemeProvider>
         </AntdRegistry>
       </body>
     </html>

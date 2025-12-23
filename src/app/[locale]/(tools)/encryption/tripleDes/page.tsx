@@ -1,4 +1,4 @@
-import TripleDESClient from './components/TripleDESClient'
+import TripleDESClient from '@/features/encryption/components/TripleDESClient'
 
 const TripleDESPage = () => {
   return <TripleDESClient />

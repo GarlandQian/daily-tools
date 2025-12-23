@@ -1,11 +1,9 @@
 'use client'
 import {
-  FundOutlined,
   GithubOutlined,
   MenuOutlined,
-  RollbackOutlined,
-  UserOutlined,
-  VideoCameraOutlined
+  MoonOutlined,
+  SunOutlined,
 } from '@ant-design/icons'
 import type { MenuProps } from 'antd'
 import { Breadcrumb, Drawer, Flex, Grid, Layout, Menu, theme } from 'antd'
@@ -15,7 +13,9 @@ import React, { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import IconFont from '@/components/IconFont'
+import { useTheme } from '@/components/ThemeProvider'
 import TransitionLayout from '@/components/TransitionLayout'
+import { menus } from '@/config/menus'
 
 const { Header, Content, Footer, Sider } = Layout
 
@@ -53,11 +53,10 @@ const getLevelKeys = (items1: LevelKeysProps[]) => {
   return key
 }
 
-
-
 const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
   const { token } = theme.useToken()
-  const { colorBgContainer, borderRadiusLG } = token
+  const { colorBgContainer, borderRadiusLG, colorTextSecondary } = token
+  const { isDarkMode, toggleTheme } = useTheme()
 
   const router = useRouter()
   const pathname = usePathname()
@@ -65,34 +64,19 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
     t,
     i18n: { language, changeLanguage }
   } = useTranslation()
-  const items: MenuItem[] = [
-    getItem(t('app.social'), '/social', <UserOutlined />, [
-      getItem(t('app.social.retires'), '/social/retires'),
-      getItem(t('app.social.time'), '/social/time')
-    ]),
-    getItem(t('app.hash'), '/hash', <FundOutlined />, [
-      getItem(t('app.hash.md5'), '/hash/md5'),
-      getItem(t('app.hash.sha'), '/hash/sha'),
-      getItem(t('app.hash.hmacMD5'), '/hash/hmacMD5'),
-      getItem(t('app.hash.hmacSHA'), '/hash/hmacSHA'),
-      getItem(t('app.hash.ripemd'), '/hash/ripemd'),
-      getItem(t('app.hash.hmacRIPEMD'), '/hash/hmacRIPEMD'),
-      getItem(t('app.hash.pbkdf'), '/hash/pbkdf')
-    ]),
-    getItem(t('app.encryption'), '/encryption', <RollbackOutlined />, [
-      getItem(t('app.encryption.aes'), '/encryption/aes'),
-      getItem(t('app.encryption.des'), '/encryption/des'),
-      getItem(t('app.encryption.tripleDes'), '/encryption/tripleDes'),
-      getItem(t('app.encryption.base64'), '/encryption/base64'),
-      getItem(t('app.encryption.urlEncode'), '/encryption/urlEncode')
-    ]),
-    getItem(t('app.preview'), '/preview', <VideoCameraOutlined />, [
-      getItem(t('app.preview.docx'), '/preview/docx'),
-      getItem(t('app.preview.excel'), '/preview/excel'),
-      getItem(t('app.preview.pdf'), '/preview/pdf'),
-      getItem(t('app.preview.pptx'), '/preview/pptx')
-    ])
-  ]
+  const items: MenuItem[] = useMemo(() => {
+    return menus.map(item => {
+      // /social -> app.social
+      const key = `app${item.path.replaceAll('/', '.')}`
+
+      const children = item.children?.map(child => {
+        const childKey = `app${child.path.replaceAll('/', '.')}`
+        return getItem(t(childKey), child.path)
+      })
+
+      return getItem(t(key), item.path, item.icon, children)
+    })
+  }, [t])
   const [collapsed, setCollapsed] = useState(false)
   const [stateOpenKeys, setStateOpenKeys] = useState([`/${pathname.split('/')[1]}`])
   const [selectKeys, setSelectKeys] = useState([pathname])
@@ -181,6 +165,9 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
                 className="cursor-pointer text-[28px]"
                 onClick={() => window.open(process.env.NEXT_PUBLIC_GITHUB_URL)}
               />
+              <div onClick={toggleTheme} className="cursor-pointer text-[28px] flex items-center">
+                {isDarkMode ? <SunOutlined /> : <MoonOutlined />}
+              </div>
               <Flex
                 align="center"
                 gap={10}
@@ -220,7 +207,7 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
             </TransitionLayout>
           </Flex>
         </Content>
-        <Footer style={{ textAlign: 'center' }}>
+        <Footer style={{ textAlign: 'center', color: colorTextSecondary }}>
           Tools ©2024-{new Date().getFullYear()} Created by GarlandQian
         </Footer>
       </Layout>

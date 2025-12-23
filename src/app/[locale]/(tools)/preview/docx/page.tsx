@@ -1,4 +1,4 @@
-import DocxClient from './components/DocxClient'
+import DocxClient from '@/features/preview/components/DocxClient'
 
 const DocxPage = () => {
   return <DocxClient />

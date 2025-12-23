@@ -1,4 +1,4 @@
-import PdfClient from './components/PdfClient'
+import PdfClient from '@/features/preview/components/PdfClient'
 
 const PdfPage = () => {
   return <PdfClient />

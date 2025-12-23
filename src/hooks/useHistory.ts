@@ -1,6 +1,6 @@
 import { DecryptionHistory } from '@prisma/client'
 import { useRequest } from 'ahooks'
-import { message } from 'antd'
+import { App } from 'antd'
 import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -8,6 +8,7 @@ import { clearHistory, findHistoryByResult, getHistory, saveHistory } from '@/ac
 
 export function useHistory(tool: string) {
   const { t } = useTranslation()
+  const { message } = App.useApp()
   const [history, setHistory] = useState<DecryptionHistory[]>([])
 
   const { run: refresh, loading } = useRequest(
@@ -36,7 +37,7 @@ export function useHistory(tool: string) {
         message.error(res.error)
       }
     },
-    [tool, refresh]
+    [tool, refresh, message]
   )
 
   const removeHistory = useCallback(async () => {
@@ -47,7 +48,7 @@ export function useHistory(tool: string) {
     } else {
       message.error(res.error)
     }
-  }, [tool, t])
+  }, [tool, t, message])
 
   const lookupHistory = useCallback(
     async (result: string) => {

@@ -1,4 +1,4 @@
-import HMACRIPEMDClient from './components/HMACRIPEMDClient'
+import HMACRIPEMDClient from '@/features/hash/components/HMACRIPEMDClient'
 
 export default function HAMCRIPEMD() {
   return <HMACRIPEMDClient />

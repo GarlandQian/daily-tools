@@ -1,4 +1,4 @@
-import MD5Form from './components/MD5Form'
+import MD5Form from '@/features/hash/components/MD5Form'
 
 export const metadata = {
   title: 'MD5', // 页面标题

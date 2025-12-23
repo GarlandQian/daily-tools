@@ -1,4 +1,4 @@
-import DESClient from './components/DESClient'
+import DESClient from '@/features/encryption/components/DESClient'
 
 const DESPage = () => {
   return <DESClient />
