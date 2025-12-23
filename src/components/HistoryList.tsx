@@ -9,7 +9,7 @@ interface HistoryItem {
   id: string
   content: string
   result: string
-  options?: any
+  options?: Record<string, unknown>
   createdAt: Date | string
 }
 
