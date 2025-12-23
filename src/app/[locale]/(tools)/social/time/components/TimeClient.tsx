@@ -1,3 +1,4 @@
+/* eslint-disable react/prop-types */
 'use client'
 import { Select } from 'antd'
 import FormItem from 'antd/es/form/FormItem'
@@ -12,6 +13,28 @@ import { Clock } from '@/components/Clock'
 import { tzListMap } from '@/const/timezone'
 dayjs.extend(utc)
 dayjs.extend(timezone)
+
+const GridList = React.forwardRef<
+  HTMLDivElement,
+  React.HTMLAttributes<HTMLDivElement>
+>(({ style, children, ...props }, ref) => (
+  <div
+    ref={ref}
+    {...props}
+    style={style}
+    className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
+  >
+    {children}
+  </div>
+))
+GridList.displayName = 'GridList'
+
+const GridItem = ({ children, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
+  <div {...props} className="flex justify-center">
+    {children}
+  </div>
+)
+GridItem.displayName = 'GridItem'
 
 const TimeClient = () => {
   const { t } = useTranslation()
@@ -56,24 +79,8 @@ const TimeClient = () => {
         style={{ height: '100%', flex: 1 }}
         data={Object.keys(tzListFilterMap)}
         components={{
-          List: React.forwardRef<
-            HTMLDivElement,
-            React.HTMLAttributes<HTMLDivElement>
-          >(({ style, children, ...props }, ref) => (
-            <div
-              ref={ref}
-              {...props}
-              style={style}
-              className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
-            >
-              {children}
-            </div>
-          )),
-          Item: ({ children, ...props }) => (
-            <div {...props} className="flex justify-center">
-              {children}
-            </div>
-          )
+          List: GridList,
+          Item: GridItem
         }}
         itemContent={(index, tz) => (
           <Clock key={tz} tz={tz as keyof typeof tzListMap} />
