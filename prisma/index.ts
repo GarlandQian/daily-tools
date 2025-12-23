@@ -4,8 +4,9 @@ import { withAccelerate } from '@prisma/extension-accelerate'
 
 const prismaClientSingleton = () => {
     return new PrismaClient({
-        datasourceUrl: process.env.PRISMA_DATABASE_URL || process.env.DATABASE_URL,
-    }).$extends(withAccelerate())
+        accelerateUrl: process.env.PRISMA_DATABASE_URL || process.env.DATABASE_URL,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any).$extends(withAccelerate())
 }
 
 declare global {
