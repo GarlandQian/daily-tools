@@ -1,4 +1,4 @@
-import SHAForm from './components/SHAForm'
+import SHAForm from '@/features/hash/components/SHAForm'
 
 export const metadata = {
   title: 'SHA', // 页面标题

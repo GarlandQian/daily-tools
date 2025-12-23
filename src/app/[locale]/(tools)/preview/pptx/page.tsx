@@ -1,4 +1,4 @@
-import PptxClient from './components/PptxClient'
+import PptxClient from '@/features/preview/components/PptxClient'
 
 const PptxPage = () => {
   return <PptxClient />

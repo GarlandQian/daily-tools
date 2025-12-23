@@ -1,4 +1,4 @@
-import AESClient from './components/AESClient'
+import AESClient from '@/features/encryption/components/AESClient'
 
 const AESPage = () => {
   return <AESClient />

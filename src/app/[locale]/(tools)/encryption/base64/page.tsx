@@ -1,6 +1,6 @@
 
 
-import Base64Client from './components/Base64Client'
+import Base64Client from '@/features/encryption/components/Base64Client'
 
 export default function Page() {
   return <Base64Client />

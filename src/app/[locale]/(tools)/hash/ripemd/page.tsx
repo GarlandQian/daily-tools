@@ -1,4 +1,4 @@
-import RIPEMDClient from './components/RIPEMDClient'
+import RIPEMDClient from '@/features/hash/components/RIPEMDClient'
 
 export default function RIPEMD() {
   return <RIPEMDClient />
