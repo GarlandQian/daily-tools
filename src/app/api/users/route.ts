@@ -1,4 +1,4 @@
-import prisma from '@prisma/index'
+import prisma from '@db/index'
 
 export async function GET() {
   try {
