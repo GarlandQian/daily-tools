@@ -39,5 +39,5 @@ jobs:
       - name: Build and push Docker image
         run: |
           # 使用小写的用户名来构建并推送 Docker 镜像
-          docker build -t ghcr.io/${{ env.USERNAME_LOWER }}/docker-repo/daily-mysql:latest .
-          docker push ghcr.io/${{ env.USERNAME_LOWER }}/docker-repo/daily-mysql:latest
+          docker build -t ghcr.io/${{ env.USERNAME_LOWER }}/daily-tools:latest .
+          docker push ghcr.io/${{ env.USERNAME_LOWER }}/daily-tools:latest
