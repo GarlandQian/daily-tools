@@ -98,5 +98,8 @@
   "app.history.title": "历史记录",
   "app.history.clear": "清除历史",
   "app.history.cleared": "历史记录已清除",
-  "app.history.empty": "暂无历史记录"
+  "app.history.empty": "暂无历史记录",
+  "app.theme.light": "浅色",
+  "app.theme.dark": "深色",
+  "app.theme.system": "跟随系统"
 }

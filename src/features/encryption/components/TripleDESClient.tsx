@@ -11,7 +11,8 @@ import {
   aesFormats,
   aesModes,
   aesPaddings,
-  TripleDesCrypto} from '@/utils'
+  TripleDesCrypto
+} from '../utils'
 
 interface EncryptionType extends AesCryptoOptions {
   str: string
@@ -45,7 +46,7 @@ const TripleDESClient = () => {
           throw new Error(t('app.encryption.aes.decrypt_failed_empty'))
         }
         setResult(res)
-      } catch (error) { // eslint-disable-line @typescript-eslint/no-unused-vars
+      } catch {
         message.warning(t('app.encryption.aes.decrypt_failed'))
         setResult(t('app.encryption.aes.decrypt_failed'))
       }
@@ -63,12 +64,12 @@ const TripleDESClient = () => {
           padding: 'Pkcs7',
           format: 'Hex',
           encoding: 'Utf8',
-          isEncrypt: true,
+          isEncrypt: true
         }}
         labelCol={{ xs: { span: 24 }, sm: { span: 6 }, md: { span: 4 } }}
         wrapperCol={{ xs: { span: 24 }, sm: { span: 18 }, md: { span: 16 } }}
         onFinish={onFinish}
-        onValuesChange={(changedValues) => {
+        onValuesChange={changedValues => {
           if (changedValues.isEncrypt !== undefined) {
             setIsEncrypt(changedValues.isEncrypt)
             setResult(undefined)

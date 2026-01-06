@@ -98,5 +98,8 @@
   "app.history.title": "History",
   "app.history.clear": "Clear History",
   "app.history.cleared": "History cleared",
-  "app.history.empty": "No history yet"
+  "app.history.empty": "No history yet",
+  "app.theme.light": "Light",
+  "app.theme.dark": "Dark",
+  "app.theme.system": "System"
 }

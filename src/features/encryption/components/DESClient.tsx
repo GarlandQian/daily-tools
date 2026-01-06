@@ -6,7 +6,15 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { useHistory } from '@/hooks/useHistory'
-import { type AesCryptoOptions,aesEncodings, aesFormats, aesModes, aesPaddings,desCrypto } from '@/utils'
+
+import {
+  type AesCryptoOptions,
+  aesEncodings,
+  aesFormats,
+  aesModes,
+  aesPaddings,
+  desCrypto
+} from '../utils'
 
 interface EncryptionType extends AesCryptoOptions {
   str: string
@@ -37,9 +45,9 @@ const DESClient = () => {
             padding: values.padding,
             format: values.format,
             encoding: values.encoding,
-            iv: values.iv,
+            iv: values.iv
           },
-          status: 'SUCCESS',
+          status: 'SUCCESS'
         })
       } catch (error) {
         if (error instanceof Error) {
@@ -55,7 +63,7 @@ const DESClient = () => {
           throw new Error(t('app.encryption.aes.decrypt_failed_empty'))
         }
         setResult(res)
-      } catch (error) { // eslint-disable-line @typescript-eslint/no-unused-vars
+      } catch {
         // If decryption fails, try to look up in history
         const historyRecord = await lookupHistory(values.str)
         if (historyRecord) {
@@ -76,9 +84,9 @@ const DESClient = () => {
             padding: values.padding,
             format: values.format,
             encoding: values.encoding,
-            iv: values.iv,
+            iv: values.iv
           },
-          status: 'FAILED',
+          status: 'FAILED'
         })
       }
     }
@@ -95,12 +103,12 @@ const DESClient = () => {
           padding: 'Pkcs7',
           format: 'Hex',
           encoding: 'Utf8',
-          isEncrypt: true,
+          isEncrypt: true
         }}
         labelCol={{ xs: { span: 24 }, sm: { span: 6 }, md: { span: 4 } }}
         wrapperCol={{ xs: { span: 24 }, sm: { span: 18 }, md: { span: 16 } }}
         onFinish={onFinish}
-        onValuesChange={(changedValues) => {
+        onValuesChange={changedValues => {
           if (changedValues.isEncrypt !== undefined) {
             setIsEncrypt(changedValues.isEncrypt)
             setResult(undefined)
