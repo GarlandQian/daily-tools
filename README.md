@@ -2,56 +2,69 @@
 
 # Daily Tools
 
-A collection of command-line utilities and scripts designed to enhance daily development workflow.
+A modern, comprehensive web application designed to enhance daily development workflows, built with the latest web technologies.
+
+## Tech Stack
+
+- **Framework**: [Next.js 16](https://nextjs.org/) (App Router)
+- **Core**: React 19, TypeScript
+- **UI Components**: [Ant Design 6](https://ant.design/)
+- **Styling**: [Tailwind CSS 4](https://tailwindcss.com/)
+- **Database**: [Prisma 7](https://www.prisma.io/)
+- **Visualization**: ECharts, React Three Fiber (Three.js)
+- **Package Manager**: pnpm
 
 ## Features
 
-### File Operations
+### 📄 Document Preview
 
-- PDF Processing: Convert, merge, and split PDF files
-- Image Processing: Batch resize, format conversion, and optimization
-- File Organization: Sort and organize files by type, date, or custom rules
+- Support for viewing PDF, Excel, Word (Docx), and PowerPoint (PPTX) files directly in the browser.
 
-### Text Processing
+### 🔐 Security & Cryptography
 
-- Code Formatters: Format various programming language files
-- String Utilities: Case conversion, encoding/decoding, and text transformation
-- Data Converters: Convert between JSON, CSV, XML, and YAML formats
+- **Encryption**: AES, DES, Rabbit, RC4 and other encryption/decryption tools.
+- **Hashing**: MD5, SHA-1, SHA-256, SHA-512, etc.
 
-### Development Utilities
+### 📊 Visualization
 
-- Git Helpers: Automate common git operations
-- Project Scaffolding: Quick project setup templates
-- Build Tools: Compilation and bundling utilities
+- Interactive data visualization using ECharts.
+- 3D model rendering capabilities.
 
-## Requirements
+## Development Guidelines
 
-- Node.js 14.x or above
-- TypeScript 4.x or above
-- Python 3.x (for certain utilities)
+To ensure code maintainability and scalability, please adhere to the following principles when contributing:
+
+### 1. Modular Architecture (`src/features`)
+
+**Rule**: All new features and domain-specific logic MUST be implemented within the `src/features` directory.
+
+- **Structure**: `src/features/[feature-name]`
+- **Goal**: Isolate feature-specific code (components, hooks, utils) from the global app routing and shared components.
+
+### 2. Next.js App Router Best Practices
+
+- **Server Components**: Use Server Components by default for data fetching and static markup.
+- **Client Components**: Use `"use client"` only for interactive components (state, event listeners). Push Client Components down to the leaf nodes of your component tree.
 
 ## Installation
 
 1. Clone the repository
 
-```bash
-git clone https://github.com/GarlandQian/daily-tools.git
-cd daily-tools
-```
+   ```bash
+   git clone https://github.com/GarlandQian/daily-tools.git
+   cd daily-tools
+   ```
 
-2. Install dependencies:
+2. Install dependencies
 
-```bash
-pnpm install
-```
+   ```bash
+   pnpm install
+   ```
 
-## Contributing
-
-1. Fork the repository
-2. Create your feature branch: `git checkout -b feature/amazing-feature`
-3. Commit your changes: `git commit -m 'Add amazing feature'`
-4. Push to the branch: `git push origin feature/amazing-feature`
-5. Open a Pull Request
+3. Run development server
+   ```bash
+   pnpm dev
+   ```
 
 ## License
 

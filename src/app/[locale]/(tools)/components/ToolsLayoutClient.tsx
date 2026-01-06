@@ -1,12 +1,13 @@
 'use client'
 import {
   GithubOutlined,
+  LaptopOutlined,
   MenuOutlined,
   MoonOutlined,
-  SunOutlined,
+  SunOutlined
 } from '@ant-design/icons'
 import type { MenuProps } from 'antd'
-import { Breadcrumb, Drawer, Flex, Grid, Layout, Menu, theme } from 'antd'
+import { Breadcrumb, Drawer, Dropdown, Flex, Grid, Layout, Menu, theme } from 'antd'
 import { usePathname } from 'next/navigation'
 import { useRouter } from 'nextjs-toploader/app'
 import React, { useMemo, useState } from 'react'
@@ -56,7 +57,7 @@ const getLevelKeys = (items1: LevelKeysProps[]) => {
 const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
   const { token } = theme.useToken()
   const { colorBgContainer, borderRadiusLG, colorTextSecondary } = token
-  const { isDarkMode, toggleTheme } = useTheme()
+  const { themeMode, setThemeMode } = useTheme()
 
   const router = useRouter()
   const pathname = usePathname()
@@ -145,49 +146,110 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
         onClose={() => setMobileMenuOpen(false)}
         open={mobileMenuOpen}
         styles={{ body: { padding: 0 }, wrapper: { width: 200 } }}
-
       >
         <div style={{ height: '100%', background: '#001529' }}>{menu}</div>
       </Drawer>
       <Layout>
-        <Header className="pr-5" style={{ background: colorBgContainer }}>
-          <Flex className="h-full" align="center" justify="space-between">
-            <Flex align="center" gap={10}>
-              {isMobile && (
-                <MenuOutlined
-                  className="cursor-pointer text-[20px] ml-4"
-                  onClick={() => setMobileMenuOpen(true)}
+        <Header
+          className="pr-5"
+          style={{
+            background: colorBgContainer,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between'
+          }}
+        >
+          <Flex align="center" gap={10}>
+            {isMobile && (
+              <MenuOutlined
+                className="cursor-pointer text-[20px] ml-4"
+                onClick={() => setMobileMenuOpen(true)}
+              />
+            )}
+          </Flex>
+          <Flex align="center" gap={10} style={{ marginLeft: 'auto' }}>
+            <GithubOutlined
+              className="cursor-pointer text-[28px]"
+              onClick={() => window.open(process.env.NEXT_PUBLIC_GITHUB_URL)}
+            />
+            <Dropdown
+              menu={{
+                items: [
+                  {
+                    key: 'light',
+                    label: (
+                      <Flex
+                        align="center"
+                        gap={8}
+                        justify="space-between"
+                        style={{ minWidth: 100 }}
+                      >
+                        {t('app.theme.light')}
+                        <SunOutlined />
+                      </Flex>
+                    ),
+                    onClick: () => setThemeMode('light')
+                  },
+                  {
+                    key: 'dark',
+                    label: (
+                      <Flex
+                        align="center"
+                        gap={8}
+                        justify="space-between"
+                        style={{ minWidth: 100 }}
+                      >
+                        {t('app.theme.dark')}
+                        <MoonOutlined />
+                      </Flex>
+                    ),
+                    onClick: () => setThemeMode('dark')
+                  },
+                  {
+                    key: 'system',
+                    label: (
+                      <Flex
+                        align="center"
+                        gap={8}
+                        justify="space-between"
+                        style={{ minWidth: 100 }}
+                      >
+                        {t('app.theme.system')}
+                        <LaptopOutlined />
+                      </Flex>
+                    ),
+                    onClick: () => setThemeMode('system')
+                  }
+                ],
+                selectedKeys: [themeMode]
+              }}
+              trigger={['click']}
+            >
+              <div className="cursor-pointer text-[28px] flex items-center">
+                {themeMode === 'light' && <SunOutlined />}
+                {themeMode === 'dark' && <MoonOutlined />}
+                {themeMode === 'system' && <LaptopOutlined />}
+              </div>
+            </Dropdown>
+            <Flex
+              align="center"
+              gap={10}
+              className="hover:text-[var(--hover-color)]"
+              style={{ '--hover-color': token.colorPrimaryHover } as React.CSSProperties}
+            >
+              {language === 'cn' ? (
+                <IconFont
+                  className="cursor-pointer text-[32px]"
+                  type="icon-chinese"
+                  onClick={() => changeLanguage('en')}
+                />
+              ) : (
+                <IconFont
+                  className="cursor-pointer text-[32px]"
+                  type="icon-english"
+                  onClick={() => changeLanguage('cn')}
                 />
               )}
-            </Flex>
-            <Flex align="center" gap={10}>
-              <GithubOutlined
-                className="cursor-pointer text-[28px]"
-                onClick={() => window.open(process.env.NEXT_PUBLIC_GITHUB_URL)}
-              />
-              <div onClick={toggleTheme} className="cursor-pointer text-[28px] flex items-center">
-                {isDarkMode ? <SunOutlined /> : <MoonOutlined />}
-              </div>
-              <Flex
-                align="center"
-                gap={10}
-                className="hover:text-[var(--hover-color)]"
-                style={{ '--hover-color': token.colorPrimaryHover } as React.CSSProperties}
-              >
-                {language === 'cn' ? (
-                  <IconFont
-                    className="cursor-pointer text-[32px]"
-                    type="icon-chinese"
-                    onClick={() => changeLanguage('en')}
-                  />
-                ) : (
-                  <IconFont
-                    className="cursor-pointer text-[32px]"
-                    type="icon-english"
-                    onClick={() => changeLanguage('cn')}
-                  />
-                )}
-              </Flex>
             </Flex>
           </Flex>
         </Header>

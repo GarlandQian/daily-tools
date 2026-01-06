@@ -20,7 +20,11 @@ export interface AesCryptoOptions {
  * @param iv 初始化向量
  * @param mode 加密模式
  */
-function validateKeyAndIvLength(key: string, iv: CryptoJS.lib.WordArray | undefined, mode: AesMode) {
+function validateKeyAndIvLength(
+  key: string,
+  iv: CryptoJS.lib.WordArray | undefined,
+  mode: AesMode
+) {
   const keyLength = CryptoJS.enc.Utf8.parse(key).sigBytes
   if (![16, 24, 32].includes(keyLength)) {
     throw new Error('app.encryption.aes.key.length')
