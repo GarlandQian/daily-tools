@@ -1,5 +1,7 @@
 import {
   BarcodeOutlined,
+  BgColorsOutlined,
+  FileTextOutlined,
   FundOutlined,
   RollbackOutlined,
   UserOutlined,
@@ -17,10 +19,7 @@ export const menus: MenuConfig[] = [
   {
     path: '/social',
     icon: <UserOutlined />,
-    children: [
-      { path: '/social/retires' },
-      { path: '/social/time' }
-    ]
+    children: [{ path: '/social/retires' }, { path: '/social/time' }]
   },
   {
     path: '/hash',
@@ -60,7 +59,19 @@ export const menus: MenuConfig[] = [
     path: '/generation',
     icon: <BarcodeOutlined />,
     children: [
-      { path: '/generation/uuid' }
+      { path: '/generation/uuid' },
+      { path: '/generation/qrcode' },
+      { path: '/generation/password' }
     ]
+  },
+  {
+    path: '/format',
+    icon: <FileTextOutlined />,
+    children: [{ path: '/format/json' }]
+  },
+  {
+    path: '/converter',
+    icon: <BgColorsOutlined />,
+    children: [{ path: '/converter/color' }]
   }
 ]

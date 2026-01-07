@@ -101,5 +101,41 @@
   "app.history.empty": "No history yet",
   "app.theme.light": "Light",
   "app.theme.dark": "Dark",
-  "app.theme.system": "System"
+  "app.theme.system": "System",
+
+  "app.generation.qrcode": "QR Code Generator",
+  "app.generation.qrcode.content": "Content",
+  "app.generation.qrcode.content_placeholder": "Enter text or URL",
+  "app.generation.qrcode.size": "Size",
+  "app.generation.qrcode.fgColor": "Foreground",
+  "app.generation.qrcode.bgColor": "Background",
+  "app.generation.qrcode.preview": "Preview",
+  "app.generation.qrcode.download": "Download",
+
+  "app.generation.password": "Password Generator",
+  "app.generation.password.length": "Length",
+  "app.generation.password.count": "Count",
+  "app.generation.password.charset": "Character Set",
+  "app.generation.password.uppercase": "Uppercase",
+  "app.generation.password.lowercase": "Lowercase",
+  "app.generation.password.numbers": "Numbers",
+  "app.generation.password.symbols": "Symbols",
+  "app.generation.password.result": "Result",
+  "app.generation.password.no_charset": "Please select at least one character type",
+
+  "app.format": "Format",
+  "app.format.json": "JSON Formatter",
+  "app.format.json.format": "Format",
+  "app.format.json.minify": "Minify",
+  "app.format.json.validate": "Validate",
+  "app.format.json.clear": "Clear",
+  "app.format.json.input": "Input",
+  "app.format.json.output": "Output",
+  "app.format.json.input_placeholder": "Paste your JSON here",
+  "app.format.json.empty": "Please enter JSON content",
+  "app.format.json.valid": "Valid JSON",
+  "app.format.json.error": "Error",
+
+  "app.converter": "Converter",
+  "app.converter.color": "Color Converter"
 }

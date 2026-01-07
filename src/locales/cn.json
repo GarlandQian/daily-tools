@@ -101,5 +101,41 @@
   "app.history.empty": "暂无历史记录",
   "app.theme.light": "浅色",
   "app.theme.dark": "深色",
-  "app.theme.system": "跟随系统"
+  "app.theme.system": "跟随系统",
+
+  "app.generation.qrcode": "二维码生成",
+  "app.generation.qrcode.content": "内容",
+  "app.generation.qrcode.content_placeholder": "请输入文本或URL",
+  "app.generation.qrcode.size": "尺寸",
+  "app.generation.qrcode.fgColor": "前景色",
+  "app.generation.qrcode.bgColor": "背景色",
+  "app.generation.qrcode.preview": "预览",
+  "app.generation.qrcode.download": "下载",
+
+  "app.generation.password": "密码生成",
+  "app.generation.password.length": "长度",
+  "app.generation.password.count": "数量",
+  "app.generation.password.charset": "字符集",
+  "app.generation.password.uppercase": "大写字母",
+  "app.generation.password.lowercase": "小写字母",
+  "app.generation.password.numbers": "数字",
+  "app.generation.password.symbols": "符号",
+  "app.generation.password.result": "结果",
+  "app.generation.password.no_charset": "请至少选择一种字符类型",
+
+  "app.format": "格式化",
+  "app.format.json": "JSON格式化",
+  "app.format.json.format": "格式化",
+  "app.format.json.minify": "压缩",
+  "app.format.json.validate": "校验",
+  "app.format.json.clear": "清空",
+  "app.format.json.input": "输入",
+  "app.format.json.output": "输出",
+  "app.format.json.input_placeholder": "请粘贴JSON文本",
+  "app.format.json.empty": "请输入JSON内容",
+  "app.format.json.valid": "JSON格式正确",
+  "app.format.json.error": "错误",
+
+  "app.converter": "转换工具",
+  "app.converter.color": "颜色转换"
 }
