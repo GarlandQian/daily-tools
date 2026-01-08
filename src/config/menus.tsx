@@ -42,7 +42,8 @@ export const menus: MenuConfig[] = [
       { path: '/encryption/des' },
       { path: '/encryption/tripleDes' },
       { path: '/encryption/base64' },
-      { path: '/encryption/urlEncode' }
+      { path: '/encryption/urlEncode' },
+      { path: '/encryption/jwt' }
     ]
   },
   {
@@ -61,17 +62,30 @@ export const menus: MenuConfig[] = [
     children: [
       { path: '/generation/uuid' },
       { path: '/generation/qrcode' },
-      { path: '/generation/password' }
+      { path: '/generation/password' },
+      { path: '/generation/cron' },
+      { path: '/generation/shadow' },
+      { path: '/generation/lorem' }
     ]
   },
   {
     path: '/format',
     icon: <FileTextOutlined />,
-    children: [{ path: '/format/json' }]
+    children: [
+      { path: '/format/json' },
+      { path: '/format/diff' },
+      { path: '/format/regex' },
+      { path: '/format/sql' }
+    ]
   },
   {
     path: '/converter',
     icon: <BgColorsOutlined />,
-    children: [{ path: '/converter/color' }]
+    children: [
+      { path: '/converter/color' },
+      { path: '/converter/image' },
+      { path: '/converter/timestamp' },
+      { path: '/converter/base' }
+    ]
   }
 ]
