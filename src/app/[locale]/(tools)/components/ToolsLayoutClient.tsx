@@ -262,7 +262,7 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
                 background: colorBgContainer,
                 borderRadius: borderRadiusLG,
                 flex: 1,
-                overflow: 'hidden'
+                overflow: 'auto'
               }}
             >
               {children}

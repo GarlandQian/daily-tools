@@ -223,5 +223,13 @@
   "app.generation.lorem.sentences": "句子",
   "app.generation.lorem.words": "单词",
   "app.generation.lorem.output": "生成结果",
-  "app.generation.lorem.placeholder": "点击生成按钮生成文本..."
+  "app.generation.lorem.placeholder": "点击生成按钮生成文本...",
+
+  "app.format.url": "URL解析",
+  "app.format.case": "大小写转换",
+  "app.format.text": "文本统计",
+
+  "app.converter.html": "HTML实体转换",
+
+  "app.preview.markdown": "Markdown预览"
 }

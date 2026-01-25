@@ -223,5 +223,13 @@
   "app.generation.lorem.sentences": "Sentences",
   "app.generation.lorem.words": "Words",
   "app.generation.lorem.output": "Generated Text",
-  "app.generation.lorem.placeholder": "Click generate to create text..."
+  "app.generation.lorem.placeholder": "Click generate to create text...",
+
+  "app.format.url": "URL Parser",
+  "app.format.case": "Case Converter",
+  "app.format.text": "Text Statistics",
+
+  "app.converter.html": "HTML Encoder",
+
+  "app.preview.markdown": "Markdown Preview"
 }
