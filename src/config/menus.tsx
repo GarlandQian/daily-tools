@@ -53,7 +53,8 @@ export const menus: MenuConfig[] = [
       { path: '/preview/docx' },
       { path: '/preview/excel' },
       { path: '/preview/pdf' },
-      { path: '/preview/pptx' }
+      { path: '/preview/pptx' },
+      { path: '/preview/markdown' }
     ]
   },
   {
@@ -75,7 +76,10 @@ export const menus: MenuConfig[] = [
       { path: '/format/json' },
       { path: '/format/diff' },
       { path: '/format/regex' },
-      { path: '/format/sql' }
+      { path: '/format/sql' },
+      { path: '/format/url' },
+      { path: '/format/case' },
+      { path: '/format/text' }
     ]
   },
   {
@@ -85,7 +89,8 @@ export const menus: MenuConfig[] = [
       { path: '/converter/color' },
       { path: '/converter/image' },
       { path: '/converter/timestamp' },
-      { path: '/converter/base' }
+      { path: '/converter/base' },
+      { path: '/converter/html' }
     ]
   }
 ]
