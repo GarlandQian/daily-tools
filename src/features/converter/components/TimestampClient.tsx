@@ -2,7 +2,6 @@
 
 import { CopyOutlined, PauseCircleOutlined, PlayCircleOutlined } from '@ant-design/icons'
 import {
-  App,
   Button,
   Card,
   Col,
@@ -17,15 +16,17 @@ import {
   Typography
 } from 'antd'
 import dayjs from 'dayjs'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+
+import { useCopy } from '@/hooks/useCopy'
 
 type TimestampUnit = 'seconds' | 'milliseconds'
 
 const TimestampClient = () => {
   const { t } = useTranslation()
-  const { message } = App.useApp()
   const { token: theme } = antTheme.useToken()
+  const { copy } = useCopy()
 
   // Use lazy initializer to set initial timestamp - avoids setState in useEffect
   const [currentTimestamp, setCurrentTimestamp] = useState(() => Date.now())
@@ -73,14 +74,6 @@ const TimestampClient = () => {
     }
   }, [inputDate])
 
-  const handleCopy = useCallback(
-    (text: string | number) => {
-      navigator.clipboard.writeText(String(text))
-      message.success(t('app.social.retires.copy_success'))
-    },
-    [message, t]
-  )
-
   return (
     <Flex className="size-full" gap={20} vertical>
       {/* Current Timestamp */}
@@ -107,7 +100,7 @@ const TimestampClient = () => {
             >
               {isPaused ? t('app.converter.timestamp.resume') : t('app.converter.timestamp.pause')}
             </Button>
-            <Button icon={<CopyOutlined />} onClick={() => handleCopy(displayTimestamp)}>
+            <Button icon={<CopyOutlined />} onClick={() => copy(displayTimestamp)}>
               {t('app.generation.uuid.copy')}
             </Button>
           </Space>
@@ -142,7 +135,7 @@ const TimestampClient = () => {
                       <Button
                         type="text"
                         icon={<CopyOutlined />}
-                        onClick={() => handleCopy(convertedDate.format('YYYY-MM-DD HH:mm:ss'))}
+                        onClick={() => copy(convertedDate.format('YYYY-MM-DD HH:mm:ss'))}
                       />
                     </Flex>
                     <Typography.Text type="secondary">
@@ -190,7 +183,7 @@ const TimestampClient = () => {
                       <Button
                         type="text"
                         icon={<CopyOutlined />}
-                        onClick={() => handleCopy(convertedTimestamp.seconds)}
+                        onClick={() => copy(convertedTimestamp.seconds)}
                       />
                     </Flex>
                     <Flex justify="space-between" align="center">
@@ -205,7 +198,7 @@ const TimestampClient = () => {
                       <Button
                         type="text"
                         icon={<CopyOutlined />}
-                        onClick={() => handleCopy(convertedTimestamp.milliseconds)}
+                        onClick={() => copy(convertedTimestamp.milliseconds)}
                       />
                     </Flex>
                   </Flex>

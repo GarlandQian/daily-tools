@@ -11,6 +11,8 @@ const nextConfig = {
       },
     ]
   },
+  // Vercel best practice: bundle-barrel-imports optimization
+  optimizePackageImports: ['antd', '@ant-design/icons', 'dayjs', 'lodash', 'crypto-js'],
   transpilePackages: ['three'],
   poweredByHeader: false,
   output: 'standalone',
