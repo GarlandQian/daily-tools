@@ -35,4 +35,18 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-.vercel
+# tools
+.gemini/
+.agent/
+.agents/
+
+# ide
+.vscode/
+.idea/
+
+# logging
+*.log
+
+# database
+*.db
+*.sqlite

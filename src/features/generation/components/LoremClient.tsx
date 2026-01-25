@@ -1,10 +1,12 @@
 'use client'
 
 import { CopyOutlined, ReloadOutlined } from '@ant-design/icons'
-import { App, Button, Card, Flex, Form, InputNumber, Radio, theme as antTheme } from 'antd'
+import { Button, Card, Flex, Form, InputNumber, Radio, theme as antTheme } from 'antd'
 import { LoremIpsum } from 'lorem-ipsum'
 import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+
+import { useCopy } from '@/hooks/useCopy'
 
 type LoremUnit = 'paragraphs' | 'sentences' | 'words'
 
@@ -20,40 +22,30 @@ const lorem = new LoremIpsum({
 
 const LoremClient = () => {
   const { t } = useTranslation()
-  const { message } = App.useApp()
   const { token: theme } = antTheme.useToken()
+  const { copy } = useCopy()
   const [form] = Form.useForm<LoremForm>()
 
   const [output, setOutput] = useState('')
 
-  const handleGenerate = useCallback(
-    (values: LoremForm) => {
-      const { count, unit } = values
-      let text = ''
+  const handleGenerate = useCallback((values: LoremForm) => {
+    const { count, unit } = values
+    let text = ''
 
-      switch (unit) {
-        case 'paragraphs':
-          text = lorem.generateParagraphs(count)
-          break
-        case 'sentences':
-          text = lorem.generateSentences(count)
-          break
-        case 'words':
-          text = lorem.generateWords(count)
-          break
-      }
+    switch (unit) {
+      case 'paragraphs':
+        text = lorem.generateParagraphs(count)
+        break
+      case 'sentences':
+        text = lorem.generateSentences(count)
+        break
+      case 'words':
+        text = lorem.generateWords(count)
+        break
+    }
 
-      setOutput(text)
-      message.success(t('public.success'))
-    },
-    [message, t]
-  )
-
-  const handleCopy = useCallback(() => {
-    if (!output) return
-    navigator.clipboard.writeText(output)
-    message.success(t('app.social.retires.copy_success'))
-  }, [output, message, t])
+    setOutput(text)
+  }, [])
 
   return (
     <Flex className="size-full" gap={20} vertical>
@@ -79,7 +71,7 @@ const LoremClient = () => {
               <Button type="primary" htmlType="submit" icon={<ReloadOutlined />}>
                 {t('public.generate')}
               </Button>
-              <Button icon={<CopyOutlined />} onClick={handleCopy} disabled={!output}>
+              <Button icon={<CopyOutlined />} onClick={() => copy(output)} disabled={!output}>
                 {t('app.generation.uuid.copy')}
               </Button>
             </Flex>

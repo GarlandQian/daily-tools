@@ -6,6 +6,8 @@ import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { format } from 'sql-formatter'
 
+import { useCopy } from '@/hooks/useCopy'
+
 type SqlLanguage =
   | 'sql'
   | 'mysql'
@@ -38,6 +40,7 @@ const caseOptions: { label: string; value: KeywordCase }[] = [
 const SqlClient = () => {
   const { t } = useTranslation()
   const { message } = App.useApp()
+  const { copy } = useCopy()
 
   const [input, setInput] = useState('')
   const [output, setOutput] = useState('')
@@ -66,12 +69,6 @@ const SqlClient = () => {
     }
   }, [input, language, keywordCase, message, t])
 
-  const handleCopy = useCallback(() => {
-    if (!output) return
-    navigator.clipboard.writeText(output)
-    message.success(t('app.social.retires.copy_success'))
-  }, [output, message, t])
-
   const handleClear = useCallback(() => {
     setInput('')
     setOutput('')
@@ -99,7 +96,7 @@ const SqlClient = () => {
             <Button type="primary" icon={<FormatPainterOutlined />} onClick={handleFormat}>
               {t('app.format.json.format')}
             </Button>
-            <Button icon={<CopyOutlined />} onClick={handleCopy} disabled={!output}>
+            <Button icon={<CopyOutlined />} onClick={() => copy(output)} disabled={!output}>
               {t('app.generation.uuid.copy')}
             </Button>
             <Button icon={<ClearOutlined />} onClick={handleClear}>

@@ -2,7 +2,6 @@
 
 import { CopyOutlined, ReloadOutlined } from '@ant-design/icons'
 import {
-  App,
   Button,
   Card,
   Checkbox,
@@ -17,6 +16,8 @@ import {
 } from 'antd'
 import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+
+import { useCopy } from '@/hooks/useCopy'
 
 interface ShadowConfig {
   offsetX: number
@@ -39,8 +40,8 @@ const sliderConfigs = [
 
 const ShadowClient = () => {
   const { t } = useTranslation()
-  const { message } = App.useApp()
   const { token: theme } = antTheme.useToken()
+  const { copy } = useCopy()
 
   // Detect dark mode from theme
   const isDarkMode = theme.colorBgContainer !== '#ffffff'
@@ -72,11 +73,6 @@ const ShadowClient = () => {
     const shadow = `${inset ? 'inset ' : ''}${offsetX}px ${offsetY}px ${blur}px ${spread}px rgba(${r}, ${g}, ${b}, ${a})`
     return `box-shadow: ${shadow};`
   }, [config])
-
-  const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(cssCode)
-    message.success(t('app.social.retires.copy_success'))
-  }, [cssCode, message, t])
 
   const handleReset = useCallback(() => {
     setConfig(getDefaultConfig())
@@ -174,7 +170,7 @@ const ShadowClient = () => {
       <Card
         title={t('app.generation.shadow.code')}
         extra={
-          <Button icon={<CopyOutlined />} onClick={handleCopy}>
+          <Button icon={<CopyOutlined />} onClick={() => copy(cssCode)}>
             {t('app.generation.uuid.copy')}
           </Button>
         }

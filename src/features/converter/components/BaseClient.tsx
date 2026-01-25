@@ -1,9 +1,11 @@
 'use client'
 
 import { ClearOutlined, SwapOutlined } from '@ant-design/icons'
-import { App, Button, Card, Col, Flex, Input, Row, Typography } from 'antd'
+import { Button, Card, Col, Flex, Input, Row, Typography } from 'antd'
 import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+
+import { useCopy } from '@/hooks/useCopy'
 
 interface BaseValues {
   binary: string
@@ -14,7 +16,7 @@ interface BaseValues {
 
 const BaseClient = () => {
   const { t } = useTranslation()
-  const { message } = App.useApp()
+  const { copy } = useCopy()
 
   const [values, setValues] = useState<BaseValues>({
     binary: '',
@@ -90,14 +92,6 @@ const BaseClient = () => {
     [updateAllBases]
   )
 
-  const handleCopy = useCallback(
-    (text: string) => {
-      navigator.clipboard.writeText(text)
-      message.success(t('app.social.retires.copy_success'))
-    },
-    [message, t]
-  )
-
   const handleClear = useCallback(() => {
     setValues({ binary: '', octal: '', decimal: '', hex: '' })
     setError(null)
@@ -165,7 +159,7 @@ const BaseClient = () => {
                   style={{ fontFamily: 'monospace', flex: 1 }}
                   size="large"
                 />
-                <Button onClick={() => handleCopy(item.value)} disabled={!item.value}>
+                <Button onClick={() => copy(item.value)} disabled={!item.value}>
                   {t('app.generation.uuid.copy')}
                 </Button>
               </Flex>
