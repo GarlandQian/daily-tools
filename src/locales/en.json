@@ -231,5 +231,14 @@
 
   "app.converter.html": "HTML Encoder",
 
-  "app.preview.markdown": "Markdown Preview"
+  "app.preview.markdown": "Markdown Preview",
+
+  "app.format.xml": "XML Formatter",
+  "app.format.ua": "UA Parser",
+
+  "app.converter.unit": "Unit Converter",
+
+  "app.generation.gradient": "Gradient Generator",
+
+  "app.social.keycode": "KeyCode Info"
 }

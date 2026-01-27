@@ -231,5 +231,14 @@
 
   "app.converter.html": "HTML实体转换",
 
-  "app.preview.markdown": "Markdown预览"
+  "app.preview.markdown": "Markdown预览",
+
+  "app.format.xml": "XML格式化",
+  "app.format.ua": "UA解析",
+
+  "app.converter.unit": "单位转换",
+
+  "app.generation.gradient": "渐变生成",
+
+  "app.social.keycode": "按键检测"
 }
