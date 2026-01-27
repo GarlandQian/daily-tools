@@ -19,7 +19,7 @@ export const menus: MenuConfig[] = [
   {
     path: '/social',
     icon: <UserOutlined />,
-    children: [{ path: '/social/retires' }, { path: '/social/time' }]
+    children: [{ path: '/social/retires' }, { path: '/social/time' }, { path: '/social/keycode' }]
   },
   {
     path: '/hash',
@@ -66,7 +66,8 @@ export const menus: MenuConfig[] = [
       { path: '/generation/password' },
       { path: '/generation/cron' },
       { path: '/generation/shadow' },
-      { path: '/generation/lorem' }
+      { path: '/generation/lorem' },
+      { path: '/generation/gradient' }
     ]
   },
   {
@@ -79,7 +80,9 @@ export const menus: MenuConfig[] = [
       { path: '/format/sql' },
       { path: '/format/url' },
       { path: '/format/case' },
-      { path: '/format/text' }
+      { path: '/format/text' },
+      { path: '/format/xml' },
+      { path: '/format/ua' }
     ]
   },
   {
@@ -90,7 +93,8 @@ export const menus: MenuConfig[] = [
       { path: '/converter/image' },
       { path: '/converter/timestamp' },
       { path: '/converter/base' },
-      { path: '/converter/html' }
+      { path: '/converter/html' },
+      { path: '/converter/unit' }
     ]
   }
 ]
