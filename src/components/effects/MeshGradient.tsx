@@ -5,14 +5,19 @@ import { useEffect, useState } from 'react'
 
 import { MeshGradientCSS } from './MeshGradientCSS'
 
-type RendererTier = 'detecting' | 'gpu' | 'css'
+type RendererTier = 'detecting' | 'webgpu' | 'webgl' | 'css'
 
-// Lazy-load the GPU implementation so three.js / R3F never ships with the
-// initial bundle and never executes during SSR.
-const MeshGradientGL = dynamic(() => import('./MeshGradientGL').then(m => m.MeshGradientGL), {
-  ssr: false,
-  loading: () => null
-})
+// Lazy-load GPU implementations so three.js never ships with the initial bundle
+// and never executes during SSR.
+const MeshGradientWebGPU = dynamic(
+  () => import('./MeshGradientWebGPU').then(m => m.MeshGradientWebGPU),
+  { ssr: false, loading: () => null }
+)
+
+const MeshGradientWebGL = dynamic(
+  () => import('./MeshGradientWebGL').then(m => m.MeshGradientWebGL),
+  { ssr: false, loading: () => null }
+)
 
 async function detectRenderer(): Promise<Exclude<RendererTier, 'detecting'>> {
   if (typeof window === 'undefined') return 'css'
@@ -23,7 +28,7 @@ async function detectRenderer(): Promise<Exclude<RendererTier, 'detecting'>> {
   if (gpu && typeof gpu.requestAdapter === 'function') {
     try {
       const adapter = await gpu.requestAdapter()
-      if (adapter) return 'gpu'
+      if (adapter) return 'webgpu'
     } catch {
       // fall through to WebGL probe
     }
@@ -36,7 +41,7 @@ async function detectRenderer(): Promise<Exclude<RendererTier, 'detecting'>> {
       canvas.getContext('webgl2') ||
       canvas.getContext('webgl') ||
       canvas.getContext('experimental-webgl')
-    if (ctx) return 'gpu'
+    if (ctx) return 'webgl'
   } catch {
     // ignore
   }
@@ -48,8 +53,8 @@ async function detectRenderer(): Promise<Exclude<RendererTier, 'detecting'>> {
  * Animated Liquid Glass Mesh Gradient background.
  *
  * Renderer selection (best-effort, with safe fallbacks):
- *   1. WebGPU adapter available → GPU shader path (premium)
- *   2. WebGL2 / WebGL available → GPU shader path (standard)
+ *   1. WebGPU adapter available → WebGPU + TSL shader (premium)
+ *   2. WebGL2 / WebGL available → WebGL + GLSL shader via R3F (standard)
  *   3. Neither, or SSR          → CSS-only animated radial gradients
  */
 export function MeshGradient() {
@@ -70,8 +75,12 @@ export function MeshGradient() {
     return <MeshGradientCSS />
   }
 
-  if (tier === 'gpu') {
-    return <MeshGradientGL />
+  if (tier === 'webgpu') {
+    return <MeshGradientWebGPU />
+  }
+
+  if (tier === 'webgl') {
+    return <MeshGradientWebGL />
   }
 
   return <MeshGradientCSS />
