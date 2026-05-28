@@ -186,7 +186,7 @@ function MeshGradientScene({ isDarkMode }: { isDarkMode: boolean }) {
   )
 }
 
-export function MeshGradientGL() {
+export function MeshGradientWebGL() {
   const { isDarkMode } = useTheme()
   const bg = isDarkMode ? DARK_BG : LIGHT_BG
   const bgCss = `rgb(${Math.round(bg[0] * 255)}, ${Math.round(bg[1] * 255)}, ${Math.round(bg[2] * 255)})`
