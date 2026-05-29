@@ -1,10 +1,13 @@
 'use client'
 
-import { ClearOutlined, SwapOutlined } from '@ant-design/icons'
-import { Button, Card, Col, Flex, Input, Row, theme as antTheme, Typography } from 'antd'
+import { ArrowLeftRight, Trash2 } from 'lucide-react'
 import * as Diff from 'diff'
 import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Textarea } from '@/components/ui/textarea'
 
 interface DiffPart {
   value: string
@@ -14,7 +17,6 @@ interface DiffPart {
 
 const DiffClient = () => {
   const { t } = useTranslation()
-  const { token: theme } = antTheme.useToken()
 
   const [oldText, setOldText] = useState('')
   const [newText, setNewText] = useState('')
@@ -45,93 +47,81 @@ const DiffClient = () => {
   }, [diffResult])
 
   return (
-    <Flex className="size-full" gap={20} vertical>
-      <Card
-        title={t('app.format.diff')}
-        extra={
-          <Flex gap={8}>
-            <Button icon={<SwapOutlined />} onClick={handleSwap}>
-              {t('app.format.diff.swap')}
-            </Button>
-            <Button icon={<ClearOutlined />} onClick={handleClear}>
-              {t('app.format.json.clear')}
-            </Button>
-          </Flex>
-        }
-      >
-        <Row gutter={16}>
-          <Col xs={24} md={12}>
-            <Typography.Text strong style={{ display: 'block', marginBottom: 8 }}>
-              {t('app.format.diff.original')}
-            </Typography.Text>
-            <Input.TextArea
-              value={oldText}
-              onChange={e => setOldText(e.target.value)}
-              placeholder={t('app.format.diff.original_placeholder')}
-              rows={8}
-              style={{ fontFamily: 'monospace' }}
-            />
-          </Col>
-          <Col xs={24} md={12}>
-            <Typography.Text strong style={{ display: 'block', marginBottom: 8 }}>
-              {t('app.format.diff.modified')}
-            </Typography.Text>
-            <Input.TextArea
-              value={newText}
-              onChange={e => setNewText(e.target.value)}
-              placeholder={t('app.format.diff.modified_placeholder')}
-              rows={8}
-              style={{ fontFamily: 'monospace' }}
-            />
-          </Col>
-        </Row>
+    <div className="flex flex-col gap-5 size-full">
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle>{t('app.format.diff')}</CardTitle>
+            <div className="flex gap-2">
+              <Button icon={<ArrowLeftRight className="w-4 h-4" />} onClick={handleSwap}>
+                {t('app.format.diff.swap')}
+              </Button>
+              <Button icon={<Trash2 className="w-4 h-4" />} onClick={handleClear}>
+                {t('app.format.json.clear')}
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <span className="font-semibold text-[var(--text-primary)] block mb-2">
+                {t('app.format.diff.original')}
+              </span>
+              <Textarea
+                value={oldText}
+                onChange={e => setOldText(e.target.value)}
+                placeholder={t('app.format.diff.original_placeholder')}
+                rows={8}
+                className="font-mono"
+              />
+            </div>
+            <div>
+              <span className="font-semibold text-[var(--text-primary)] block mb-2">
+                {t('app.format.diff.modified')}
+              </span>
+              <Textarea
+                value={newText}
+                onChange={e => setNewText(e.target.value)}
+                placeholder={t('app.format.diff.modified_placeholder')}
+                rows={8}
+                className="font-mono"
+              />
+            </div>
+          </div>
+        </CardContent>
       </Card>
 
-      <Card
-        title={t('app.format.diff.result')}
-        extra={
-          <Typography.Text type="secondary">
-            <span style={{ color: theme.colorSuccess }}>+{stats.added}</span>
-            {' / '}
-            <span style={{ color: theme.colorError }}>-{stats.removed}</span>
-          </Typography.Text>
-        }
-        style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
-        styles={{ body: { flex: 1, overflow: 'auto' } }}
-      >
-        <div
-          style={{
-            fontFamily: 'monospace',
-            fontSize: 14,
-            whiteSpace: 'pre-wrap',
-            wordBreak: 'break-all',
-            lineHeight: 1.6
-          }}
-        >
-          {diffResult.map((part, index) => {
-            let style: React.CSSProperties = {}
-            if (part.added) {
-              style = {
-                backgroundColor: `${theme.colorSuccess}22`,
-                color: theme.colorSuccess,
-                textDecoration: 'none'
+      <Card className="flex-1 overflow-hidden flex flex-col">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle>{t('app.format.diff.result')}</CardTitle>
+            <span className="text-[var(--text-secondary)] text-sm">
+              <span className="text-[var(--success)]">+{stats.added}</span>
+              {' / '}
+              <span className="text-[var(--error)]">-{stats.removed}</span>
+            </span>
+          </div>
+        </CardHeader>
+        <CardContent className="flex-1 overflow-auto">
+          <div className="font-mono text-sm whitespace-pre-wrap break-all leading-relaxed">
+            {diffResult.map((part, index) => {
+              let className = ''
+              if (part.added) {
+                className = 'bg-[var(--success-subtle)] text-[var(--success)]'
+              } else if (part.removed) {
+                className = 'bg-[var(--error-subtle)] text-[var(--error)] line-through'
               }
-            } else if (part.removed) {
-              style = {
-                backgroundColor: `${theme.colorError}22`,
-                color: theme.colorError,
-                textDecoration: 'line-through'
-              }
-            }
-            return (
-              <span key={index} style={style}>
-                {part.value}
-              </span>
-            )
-          })}
-        </div>
+              return (
+                <span key={index} className={className}>
+                  {part.value}
+                </span>
+              )
+            })}
+          </div>
+        </CardContent>
       </Card>
-    </Flex>
+    </div>
   )
 }
 

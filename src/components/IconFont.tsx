@@ -1,7 +1,15 @@
-import { createFromIconfontCN } from '@ant-design/icons'
+'use client'
 
-const IconFont = createFromIconfontCN({
-  scriptUrl: [process.env.NEXT_PUBLIC_ICON_FONT_URL]
-})
+type IconFontProps = {
+  className?: string
+  type?: string
+  onClick?: () => void
+}
 
-export default IconFont
+export default function IconFont({ className, type, onClick }: IconFontProps) {
+  return (
+    <span className={className} onClick={onClick} aria-hidden="true">
+      {type?.includes('chinese') ? '中' : 'EN'}
+    </span>
+  )
+}

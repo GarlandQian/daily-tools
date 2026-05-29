@@ -1,16 +1,20 @@
 'use client'
 
-import { CopyOutlined, ReloadOutlined } from '@ant-design/icons'
-import { Button, Card, Flex, Form, InputNumber, Radio, theme as antTheme } from 'antd'
+import { Copy, RotateCcw } from 'lucide-react'
 import { LoremIpsum } from 'lorem-ipsum'
 import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { useCopy } from '@/hooks/useCopy'
 
 type LoremUnit = 'paragraphs' | 'sentences' | 'words'
 
-interface LoremForm {
+interface LoremFormData {
   count: number
   unit: LoremUnit
 }
@@ -22,14 +26,16 @@ const lorem = new LoremIpsum({
 
 const LoremClient = () => {
   const { t } = useTranslation()
-  const { token: theme } = antTheme.useToken()
   const { copy } = useCopy()
-  const [form] = Form.useForm<LoremForm>()
 
+  const [formData, setFormData] = useState<LoremFormData>({
+    count: 3,
+    unit: 'paragraphs'
+  })
   const [output, setOutput] = useState('')
 
-  const handleGenerate = useCallback((values: LoremForm) => {
-    const { count, unit } = values
+  const handleGenerate = useCallback(() => {
+    const { count, unit } = formData
     let text = ''
 
     switch (unit) {
@@ -45,60 +51,72 @@ const LoremClient = () => {
     }
 
     setOutput(text)
-  }, [])
+  }, [formData])
 
   return (
-    <Flex className="size-full" gap={20} vertical>
-      <Card title={t('app.generation.lorem')}>
-        <Form
-          form={form}
-          layout="inline"
-          initialValues={{ count: 3, unit: 'paragraphs' }}
-          onFinish={handleGenerate}
-        >
-          <Form.Item label={t('app.generation.lorem.count')} name="count">
-            <InputNumber min={1} max={100} style={{ width: 80 }} />
-          </Form.Item>
-          <Form.Item name="unit">
-            <Radio.Group>
-              <Radio.Button value="paragraphs">{t('app.generation.lorem.paragraphs')}</Radio.Button>
-              <Radio.Button value="sentences">{t('app.generation.lorem.sentences')}</Radio.Button>
-              <Radio.Button value="words">{t('app.generation.lorem.words')}</Radio.Button>
-            </Radio.Group>
-          </Form.Item>
-          <Form.Item>
-            <Flex gap={8}>
-              <Button type="primary" htmlType="submit" icon={<ReloadOutlined />}>
+    <div className="size-full flex flex-col gap-5">
+      <Card>
+        <CardHeader>
+          <CardTitle>{t('app.generation.lorem')}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap items-end gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="count">{t('app.generation.lorem.count')}</Label>
+              <Input
+                id="count"
+                type="number"
+                min={1}
+                max={100}
+                value={formData.count}
+                onChange={(e) => setFormData(prev => ({ ...prev, count: Number(e.target.value) }))}
+                className="w-20"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>{t('app.generation.lorem.unit')}</Label>
+              <RadioGroup
+                value={formData.unit}
+                onValueChange={(value) => setFormData(prev => ({ ...prev, unit: value as LoremUnit }))}
+                className="flex gap-2"
+              >
+                <label className="flex items-center gap-2 glass-panel px-3 py-2 rounded-lg cursor-pointer hover:glass-panel-strong transition-all">
+                  <RadioGroupItem value="paragraphs" />
+                  <span className="text-sm">{t('app.generation.lorem.paragraphs')}</span>
+                </label>
+                <label className="flex items-center gap-2 glass-panel px-3 py-2 rounded-lg cursor-pointer hover:glass-panel-strong transition-all">
+                  <RadioGroupItem value="sentences" />
+                  <span className="text-sm">{t('app.generation.lorem.sentences')}</span>
+                </label>
+                <label className="flex items-center gap-2 glass-panel px-3 py-2 rounded-lg cursor-pointer hover:glass-panel-strong transition-all">
+                  <RadioGroupItem value="words" />
+                  <span className="text-sm">{t('app.generation.lorem.words')}</span>
+                </label>
+              </RadioGroup>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="primary" icon={<RotateCcw className="w-4 h-4" />} onClick={handleGenerate}>
                 {t('public.generate')}
               </Button>
-              <Button icon={<CopyOutlined />} onClick={() => copy(output)} disabled={!output}>
+              <Button icon={<Copy className="w-4 h-4" />} onClick={() => copy(output)} disabled={!output}>
                 {t('app.generation.uuid.copy')}
               </Button>
-            </Flex>
-          </Form.Item>
-        </Form>
+            </div>
+          </div>
+        </CardContent>
       </Card>
 
-      <Card
-        title={t('app.generation.lorem.output')}
-        style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
-        styles={{ body: { flex: 1, overflow: 'auto' } }}
-      >
-        <div
-          style={{
-            whiteSpace: 'pre-wrap',
-            lineHeight: 1.8,
-            fontSize: 14,
-            padding: 16,
-            background: theme.colorBgLayout,
-            borderRadius: 8,
-            minHeight: 200
-          }}
-        >
-          {output || t('app.generation.lorem.placeholder')}
-        </div>
+      <Card className="flex-1 overflow-hidden flex flex-col">
+        <CardHeader>
+          <CardTitle>{t('app.generation.lorem.output')}</CardTitle>
+        </CardHeader>
+        <CardContent className="flex-1 overflow-auto">
+          <div className="whitespace-pre-wrap leading-relaxed text-sm p-4 glass-input rounded-lg min-h-[200px]">
+            {output || t('app.generation.lorem.placeholder')}
+          </div>
+        </CardContent>
       </Card>
-    </Flex>
+    </div>
   )
 }
 

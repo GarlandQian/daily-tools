@@ -1,14 +1,14 @@
 import { DecryptionHistory } from '@prisma/client'
 import { useRequest } from 'ahooks'
-import { App } from 'antd'
 import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { clearHistory, findHistoryByResult, getHistory, saveHistory } from '@/actions/history'
+import { useToast } from '@/components/ui/toast'
 
 export function useHistory(tool: string) {
   const { t } = useTranslation()
-  const { message } = App.useApp()
+  const toast = useToast()
   const [history, setHistory] = useState<DecryptionHistory[]>([])
 
   const { run: refresh, loading } = useRequest(
@@ -17,7 +17,7 @@ export function useHistory(tool: string) {
       if (res.success) {
         setHistory(res.data || [])
       } else {
-        message.error(res.error)
+        toast.error(res.error)
       }
     },
     {
@@ -34,21 +34,21 @@ export function useHistory(tool: string) {
       if (res.success) {
         refresh()
       } else {
-        message.error(res.error)
+        toast.error(res.error)
       }
     },
-    [tool, refresh, message]
+    [tool, refresh, toast]
   )
 
   const removeHistory = useCallback(async () => {
     const res = await clearHistory(tool)
     if (res.success) {
       setHistory([])
-      message.success(t('app.history.cleared'))
+      toast.success(t('app.history.cleared'))
     } else {
-      message.error(res.error)
+      toast.error(res.error)
     }
-  }, [tool, t, message])
+  }, [tool, t, toast])
 
   const lookupHistory = useCallback(
     async (result: string) => {

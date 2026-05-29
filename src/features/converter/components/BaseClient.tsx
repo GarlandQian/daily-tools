@@ -1,10 +1,12 @@
 'use client'
 
-import { ClearOutlined, SwapOutlined } from '@ant-design/icons'
-import { Button, Card, Col, Flex, Input, Row, Typography } from 'antd'
+import { ArrowLeftRight, Trash2 } from 'lucide-react'
 import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
 import { useCopy } from '@/hooks/useCopy'
 
 interface BaseValues {
@@ -129,45 +131,58 @@ const BaseClient = () => {
   ]
 
   return (
-    <Flex className="size-full" gap={20} vertical>
-      <Card
-        title={t('app.converter.base')}
-        extra={
-          <Button icon={<ClearOutlined />} onClick={handleClear}>
-            {t('app.format.json.clear')}
-          </Button>
-        }
-      >
-        <Typography.Text type="secondary">{t('app.converter.base.hint')}</Typography.Text>
-        {error && (
-          <Typography.Text type="danger" style={{ display: 'block', marginTop: 8 }}>
-            {error}
-          </Typography.Text>
-        )}
+    <div className="size-full flex flex-col gap-5">
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle>{t('app.converter.base')}</CardTitle>
+            <Button variant="ghost" size="sm" icon={<Trash2 className="w-4 h-4" />} onClick={handleClear}>
+              {t('app.format.json.clear')}
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-[var(--text-secondary)]">{t('app.converter.base.hint')}</p>
+          {error && (
+            <p className="text-sm text-red-500 mt-2">
+              {error}
+            </p>
+          )}
+        </CardContent>
       </Card>
 
-      <Row gutter={[16, 16]}>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {baseInputs.map(item => (
-          <Col xs={24} sm={12} key={item.label}>
-            <Card title={item.label} size="small">
-              <Flex gap={8}>
-                <Input
-                  prefix={item.prefix || <SwapOutlined />}
-                  value={item.value}
-                  onChange={item.onChange}
-                  placeholder={item.placeholder}
-                  style={{ fontFamily: 'monospace', flex: 1 }}
-                  size="large"
-                />
+          <Card key={item.label}>
+            <CardHeader>
+              <CardTitle className="text-base">{item.label}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  {item.prefix ? (
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)] text-sm font-mono">
+                      {item.prefix}
+                    </span>
+                  ) : (
+                    <ArrowLeftRight className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-tertiary)]" />
+                  )}
+                  <Input
+                    value={item.value}
+                    onChange={item.onChange}
+                    placeholder={item.placeholder}
+                    className={`font-mono h-12 text-base ${item.prefix ? 'pl-10' : 'pl-10'}`}
+                  />
+                </div>
                 <Button onClick={() => copy(item.value)} disabled={!item.value}>
                   {t('app.generation.uuid.copy')}
                 </Button>
-              </Flex>
-            </Card>
-          </Col>
+              </div>
+            </CardContent>
+          </Card>
         ))}
-      </Row>
-    </Flex>
+      </div>
+    </div>
   )
 }
 

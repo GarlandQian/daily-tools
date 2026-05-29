@@ -1,21 +1,13 @@
 'use client'
 
-import { CopyOutlined, SwapOutlined } from '@ant-design/icons'
-import {
-  App,
-  Button,
-  Card,
-  Col,
-  ColorPicker,
-  Flex,
-  Input,
-  Row,
-  Space,
-  theme as antTheme,
-  Typography
-} from 'antd'
+import { ArrowLeftRight, Copy } from 'lucide-react'
 import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { useToast } from '@/components/ui/toast'
 
 interface ColorValues {
   hex: string
@@ -104,8 +96,7 @@ const hslToRgb = (h: number, s: number, l: number): { r: number; g: number; b: n
 
 const ColorClient = () => {
   const { t } = useTranslation()
-  const { message } = App.useApp()
-  const { token: theme } = antTheme.useToken()
+  const toast = useToast()
 
   const [colors, setColors] = useState<ColorValues>({
     hex: '#1677ff',
@@ -148,8 +139,8 @@ const ColorClient = () => {
   )
 
   const handleColorPickerChange = useCallback(
-    (color: { toHexString: () => string }) => {
-      handleHexChange(color.toHexString())
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      handleHexChange(e.target.value)
     },
     [handleHexChange]
   )
@@ -157,9 +148,9 @@ const ColorClient = () => {
   const copyToClipboard = useCallback(
     (text: string) => {
       navigator.clipboard.writeText(text)
-      message.success(t('app.social.retires.copy_success'))
+      toast.success(t('app.social.retires.copy_success'))
     },
-    [message, t]
+    [toast, t]
   )
 
   const hexStr = colors.hex.toUpperCase()

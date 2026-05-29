@@ -1,279 +1,339 @@
 'use client'
-import {
-  GithubOutlined,
-  LaptopOutlined,
-  MenuOutlined,
-  MoonOutlined,
-  SunOutlined
-} from '@ant-design/icons'
-import type { MenuProps } from 'antd'
-import { Breadcrumb, Drawer, Dropdown, Flex, Grid, Layout, Menu, theme } from 'antd'
+
+import { Github, Laptop, Menu, Moon, Sun, ChevronRight } from 'lucide-react'
 import { usePathname } from 'next/navigation'
 import { useRouter } from 'nextjs-toploader/app'
 import React, { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { motion, AnimatePresence } from 'framer-motion'
 
-import IconFont from '@/components/IconFont'
 import { useTheme } from '@/components/ThemeProvider'
 import TransitionLayout from '@/components/TransitionLayout'
 import { menus } from '@/config/menus'
-
-const { Header, Content, Footer, Sider } = Layout
-
-type MenuItem = Required<MenuProps>['items'][number]
-function getItem(
-  label: React.ReactNode,
-  key: React.Key,
-  icon?: React.ReactNode,
-  children?: MenuItem[]
-): MenuItem {
-  return {
-    key,
-    icon,
-    children,
-    label
-  } as MenuItem
-}
-interface LevelKeysProps {
-  key?: string
-  children?: LevelKeysProps[]
-}
-const getLevelKeys = (items1: LevelKeysProps[]) => {
-  const key: Record<string, number> = {}
-  const func = (items2: LevelKeysProps[], level = 1) => {
-    items2.forEach(item => {
-      if (item.key) {
-        key[item.key] = level
-      }
-      if (item.children) {
-        func(item.children, level + 1)
-      }
-    })
-  }
-  func(items1)
-  return key
-}
+import { cn } from '@/lib/utils'
 
 const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
-  const { token } = theme.useToken()
-  const { colorBgContainer, borderRadiusLG, colorTextSecondary } = token
   const { themeMode, setThemeMode } = useTheme()
-
   const router = useRouter()
   const pathname = usePathname()
   const {
     t,
     i18n: { language, changeLanguage }
   } = useTranslation()
-  const items: MenuItem[] = useMemo(() => {
-    return menus.map(item => {
-      // /social -> app.social
-      const key = `app${item.path.replaceAll('/', '.')}`
 
-      const children = item.children?.map(child => {
-        const childKey = `app${child.path.replaceAll('/', '.')}`
-        return getItem(t(childKey), child.path)
-      })
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [expandedCategory, setExpandedCategory] = useState<string | null>(null)
 
-      return getItem(t(key), item.path, item.icon, children)
+  // Get current category and breadcrumbs
+  const { currentCategory, breadcrumbs } = useMemo(() => {
+    const pathParts = pathname.split('/').filter(Boolean)
+    const category = pathParts.length > 0 ? `/${pathParts[0]}` : null
+    const crumbs = pathParts.map((_part, index) => {
+      const path = `/${pathParts.slice(0, index + 1).join('/')}`
+      const key = `app.${pathParts.slice(0, index + 1).join('.')}`
+      return { path, label: t(key) }
     })
-  }, [t])
-  const [collapsed, setCollapsed] = useState(false)
-  const [stateOpenKeys, setStateOpenKeys] = useState([`/${pathname.split('/')[1]}`])
-  const [selectKeys, setSelectKeys] = useState([pathname])
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-  const screens = Grid.useBreakpoint()
-  const isMobile = !screens.md
+    return { currentCategory: category, breadcrumbs: crumbs }
+  }, [pathname, t])
 
-  const onOpenChange: MenuProps['onOpenChange'] = openKeys => {
-    const levelKeys = getLevelKeys(items as LevelKeysProps[])
-    const currentOpenKey = openKeys.find(key => stateOpenKeys.indexOf(key) === -1)
-    // open
-    if (currentOpenKey !== undefined) {
-      const repeatIndex = openKeys
-        .filter(key => key !== currentOpenKey)
-        .findIndex(key => levelKeys[key] === levelKeys[currentOpenKey])
-
-      setStateOpenKeys(
-        openKeys
-          // remove repeat key
-          .filter((_, index) => index !== repeatIndex)
-          // remove current level all child
-          .filter(key => levelKeys[key] <= levelKeys[currentOpenKey])
-      )
-    } else {
-      // close
-      setStateOpenKeys(openKeys)
+  // Auto-expand current category
+  React.useEffect(() => {
+    if (currentCategory && !expandedCategory) {
+      setExpandedCategory(currentCategory)
     }
+  }, [currentCategory, expandedCategory])
+
+  const handleNavigate = (path: string) => {
+    router.push(path)
+    setSidebarOpen(false)
   }
 
-  const onSelect = ({ selectedKeys }: { selectedKeys: string[] }) => {
-    setSelectKeys(selectedKeys)
-    router.push(selectedKeys[0])
-    if (isMobile) {
-      setMobileMenuOpen(false)
-    }
+  const toggleCategory = (path: string) => {
+    setExpandedCategory(expandedCategory === path ? null : path)
   }
-
-  const breadcrumbItems = useMemo(() => {
-    const keyList = selectKeys[0].split('/').filter(Boolean)
-    return keyList.map((_key, index) => ({
-      title: t(`app.${[...new Array(index + 1)].map((_item, i) => `${keyList[i]}`).join('.')}`)
-    }))
-  }, [selectKeys, t])
-
-  const menu = (
-    <Menu
-      theme="dark"
-      selectedKeys={selectKeys}
-      openKeys={stateOpenKeys}
-      onOpenChange={onOpenChange}
-      mode="inline"
-      items={items}
-      onSelect={onSelect}
-    />
-  )
 
   return (
-    <Layout style={{ height: '100vh', overflow: 'hidden' }}>
-      {!isMobile && (
-        <Sider collapsible collapsed={collapsed} onCollapse={value => setCollapsed(value)}>
-          {menu}
-        </Sider>
-      )}
-      <Drawer
-        placement="left"
-        onClose={() => setMobileMenuOpen(false)}
-        open={mobileMenuOpen}
-        styles={{ body: { padding: 0 }, wrapper: { width: 200 } }}
-      >
-        <div style={{ height: '100%', background: '#001529' }}>{menu}</div>
-      </Drawer>
-      <Layout>
-        <Header
-          className="pr-5"
-          style={{
-            background: colorBgContainer,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between'
-          }}
-        >
-          <Flex align="center" gap={10}>
-            {isMobile && (
-              <MenuOutlined
-                className="cursor-pointer text-[20px] ml-4"
-                onClick={() => setMobileMenuOpen(true)}
-              />
-            )}
-          </Flex>
-          <Flex align="center" gap={10} style={{ marginLeft: 'auto' }}>
-            <GithubOutlined
-              className="cursor-pointer text-[28px]"
-              onClick={() => window.open(process.env.NEXT_PUBLIC_GITHUB_URL)}
-            />
-            <Dropdown
-              menu={{
-                items: [
-                  {
-                    key: 'light',
-                    label: (
-                      <Flex
-                        align="center"
-                        gap={8}
-                        justify="space-between"
-                        style={{ minWidth: 100 }}
-                      >
-                        {t('app.theme.light')}
-                        <SunOutlined />
-                      </Flex>
-                    ),
-                    onClick: () => setThemeMode('light')
-                  },
-                  {
-                    key: 'dark',
-                    label: (
-                      <Flex
-                        align="center"
-                        gap={8}
-                        justify="space-between"
-                        style={{ minWidth: 100 }}
-                      >
-                        {t('app.theme.dark')}
-                        <MoonOutlined />
-                      </Flex>
-                    ),
-                    onClick: () => setThemeMode('dark')
-                  },
-                  {
-                    key: 'system',
-                    label: (
-                      <Flex
-                        align="center"
-                        gap={8}
-                        justify="space-between"
-                        style={{ minWidth: 100 }}
-                      >
-                        {t('app.theme.system')}
-                        <LaptopOutlined />
-                      </Flex>
-                    ),
-                    onClick: () => setThemeMode('system')
-                  }
-                ],
-                selectedKeys: [themeMode]
-              }}
-              trigger={['click']}
-            >
-              <div className="cursor-pointer text-[28px] flex items-center">
-                {themeMode === 'light' && <SunOutlined />}
-                {themeMode === 'dark' && <MoonOutlined />}
-                {themeMode === 'system' && <LaptopOutlined />}
+    <div className="flex h-screen w-full overflow-hidden bg-[var(--bg-base)]">
+      {/* Sidebar - Desktop */}
+      <aside className="hidden lg:flex w-64 flex-col glass-panel-strong border-r border-[var(--glass-border-strong)] relative">
+        <div className="glass-specular" />
+
+        {/* Logo */}
+        <div className="p-6 border-b border-[var(--glass-border)]">
+          <h1 className="text-xl font-semibold text-[var(--text-primary)]">
+            Daily Tools
+          </h1>
+          <p className="text-xs text-[var(--text-tertiary)] mt-1">by GarlandQian</p>
+        </div>
+
+        {/* Navigation */}
+        <nav className="flex-1 overflow-y-auto p-4 space-y-1">
+          {menus.map(category => {
+            const isExpanded = expandedCategory === category.path
+            const isActive = currentCategory === category.path
+
+            return (
+              <div key={category.path}>
+                <button
+                  onClick={() => toggleCategory(category.path)}
+                  className={cn(
+                    'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all',
+                    'hover:bg-[var(--glass-bg-hover)] hover:scale-[1.02]',
+                    isActive && 'bg-[var(--glass-bg-active)] text-[var(--primary)]'
+                  )}
+                >
+                  {category.icon}
+                  <span className="flex-1 text-left">{t(`app${category.path.replaceAll('/', '.')}`)}</span>
+                  <ChevronRight
+                    className={cn(
+                      'w-4 h-4 transition-transform',
+                      isExpanded && 'rotate-90'
+                    )}
+                  />
+                </button>
+
+                <AnimatePresence>
+                  {isExpanded && category.children && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.2 }}
+                      className="overflow-hidden"
+                    >
+                      <div className="ml-7 mt-1 space-y-0.5 border-l border-[var(--border-subtle)] pl-3">
+                        {category.children.map(child => {
+                          const isChildActive = pathname === child.path
+                          return (
+                            <button
+                              key={child.path}
+                              onClick={() => handleNavigate(child.path)}
+                              className={cn(
+                                'w-full text-left px-3 py-1.5 rounded-md text-sm transition-all',
+                                'hover:bg-[var(--glass-bg-hover)] hover:translate-x-0.5',
+                                isChildActive
+                                  ? 'text-[var(--primary)] font-medium bg-[var(--primary-subtle)]'
+                                  : 'text-[var(--text-secondary)]'
+                              )}
+                            >
+                              {t(`app${child.path.replaceAll('/', '.')}`)}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
-            </Dropdown>
-            <Flex
-              align="center"
-              gap={10}
-              className="hover:text-[var(--hover-color)]"
-              style={{ '--hover-color': token.colorPrimaryHover } as React.CSSProperties}
+            )
+          })}
+        </nav>
+      </aside>
+
+      {/* Mobile Sidebar Overlay */}
+      <AnimatePresence>
+        {sidebarOpen && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setSidebarOpen(false)}
+              className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40 lg:hidden"
+            />
+            <motion.aside
+              initial={{ x: -280 }}
+              animate={{ x: 0 }}
+              exit={{ x: -280 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="fixed left-0 top-0 bottom-0 w-64 glass-panel-strong border-r border-[var(--glass-border-strong)] z-50 lg:hidden flex flex-col"
             >
-              {language === 'cn' ? (
-                <IconFont
-                  className="cursor-pointer text-[32px]"
-                  type="icon-chinese"
-                  onClick={() => changeLanguage('en')}
-                />
-              ) : (
-                <IconFont
-                  className="cursor-pointer text-[32px]"
-                  type="icon-english"
-                  onClick={() => changeLanguage('cn')}
-                />
-              )}
-            </Flex>
-          </Flex>
-        </Header>
-        <Content style={{ margin: '0 16px' }}>
-          <Flex vertical style={{ height: '100%', overflow: 'hidden' }}>
-            <Breadcrumb style={{ margin: '16px 0' }} items={breadcrumbItems} />
-            <TransitionLayout
-              style={{
-                padding: 24,
-                background: colorBgContainer,
-                borderRadius: borderRadiusLG,
-                flex: 1,
-                overflow: 'auto'
-              }}
-            >
-              {children}
-            </TransitionLayout>
-          </Flex>
-        </Content>
-        <Footer style={{ textAlign: 'center', color: colorTextSecondary }}>
+              <div className="glass-specular" />
+
+              <div className="p-6 border-b border-[var(--glass-border)]">
+                <h1 className="text-xl font-semibold text-[var(--text-primary)]">
+                  Daily Tools
+                </h1>
+                <p className="text-xs text-[var(--text-tertiary)] mt-1">by GarlandQian</p>
+              </div>
+
+              <nav className="flex-1 overflow-y-auto p-4 space-y-1">
+                {menus.map(category => {
+                  const isExpanded = expandedCategory === category.path
+                  const isActive = currentCategory === category.path
+
+                  return (
+                    <div key={category.path}>
+                      <button
+                        onClick={() => toggleCategory(category.path)}
+                        className={cn(
+                          'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all',
+                          'hover:bg-[var(--glass-bg-hover)]',
+                          isActive && 'bg-[var(--glass-bg-active)] text-[var(--primary)]'
+                        )}
+                      >
+                        {category.icon}
+                        <span className="flex-1 text-left">{t(`app${category.path.replaceAll('/', '.')}`)}</span>
+                        <ChevronRight
+                          className={cn(
+                            'w-4 h-4 transition-transform',
+                            isExpanded && 'rotate-90'
+                          )}
+                        />
+                      </button>
+
+                      <AnimatePresence>
+                        {isExpanded && category.children && (
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: 'auto', opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            transition={{ duration: 0.2 }}
+                            className="overflow-hidden"
+                          >
+                            <div className="ml-7 mt-1 space-y-0.5 border-l border-[var(--border-subtle)] pl-3">
+                              {category.children.map(child => {
+                                const isChildActive = pathname === child.path
+                                return (
+                                  <button
+                                    key={child.path}
+                                    onClick={() => handleNavigate(child.path)}
+                                    className={cn(
+                                      'w-full text-left px-3 py-1.5 rounded-md text-sm transition-all',
+                                      'hover:bg-[var(--glass-bg-hover)]',
+                                      isChildActive
+                                        ? 'text-[var(--primary)] font-medium bg-[var(--primary-subtle)]'
+                                        : 'text-[var(--text-secondary)]'
+                                    )}
+                                  >
+                                    {t(`app${child.path.replaceAll('/', '.')}`)}
+                                  </button>
+                                )
+                              })}
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  )
+                })}
+              </nav>
+            </motion.aside>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Top Bar */}
+        <header className="glass-panel border-b border-[var(--glass-border)] relative">
+          <div className="glass-specular" />
+          <div className="flex items-center justify-between h-14 px-4 lg:px-6">
+            {/* Left: Mobile Menu + Breadcrumbs */}
+            <div className="flex items-center gap-4">
+              <button
+                onClick={() => setSidebarOpen(true)}
+                className="lg:hidden p-2 hover:bg-[var(--glass-bg-hover)] rounded-lg transition-all"
+              >
+                <Menu className="w-5 h-5" />
+              </button>
+
+              {/* Breadcrumbs */}
+              <div className="hidden sm:flex items-center gap-2 text-sm">
+                {breadcrumbs.map((crumb, index) => (
+                  <React.Fragment key={crumb.path}>
+                    {index > 0 && (
+                      <ChevronRight className="w-4 h-4 text-[var(--text-tertiary)]" />
+                    )}
+                    <button
+                      onClick={() => handleNavigate(crumb.path)}
+                      className={cn(
+                        'px-2 py-1 rounded-md transition-all hover:bg-[var(--glass-bg-hover)]',
+                        index === breadcrumbs.length - 1
+                          ? 'text-[var(--text-primary)] font-medium'
+                          : 'text-[var(--text-secondary)]'
+                      )}
+                    >
+                      {crumb.label}
+                    </button>
+                  </React.Fragment>
+                ))}
+              </div>
+            </div>
+
+            {/* Right: Actions */}
+            <div className="flex items-center gap-2">
+              {/* GitHub */}
+              <a
+                href={process.env.NEXT_PUBLIC_GITHUB_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="p-2 hover:bg-[var(--glass-bg-hover)] rounded-lg transition-all hover:scale-110"
+              >
+                <Github className="w-5 h-5" />
+              </a>
+
+              {/* Theme Toggle */}
+              <div className="flex items-center glass-input rounded-lg p-1">
+                <button
+                  onClick={() => setThemeMode('light')}
+                  className={cn(
+                    'p-1.5 rounded-md transition-all',
+                    themeMode === 'light' && 'bg-[var(--primary)] text-white'
+                  )}
+                >
+                  <Sun className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => setThemeMode('dark')}
+                  className={cn(
+                    'p-1.5 rounded-md transition-all',
+                    themeMode === 'dark' && 'bg-[var(--primary)] text-white'
+                  )}
+                >
+                  <Moon className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => setThemeMode('system')}
+                  className={cn(
+                    'p-1.5 rounded-md transition-all',
+                    themeMode === 'system' && 'bg-[var(--primary)] text-white'
+                  )}
+                >
+                  <Laptop className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Language Toggle */}
+              <button
+                onClick={() => changeLanguage(language === 'cn' ? 'en' : 'cn')}
+                className="px-3 py-1.5 glass-input rounded-lg text-sm font-medium hover:bg-[var(--glass-bg-hover)] transition-all"
+              >
+                {language === 'cn' ? '中' : 'EN'}
+              </button>
+            </div>
+          </div>
+        </header>
+
+        {/* Content Area */}
+        <main className="flex-1 overflow-auto p-4 lg:p-6">
+          <TransitionLayout
+            style={{
+              maxWidth: 'var(--content-max)',
+              margin: '0 auto',
+              width: '100%'
+            }}
+          >
+            {children}
+          </TransitionLayout>
+        </main>
+
+        {/* Footer */}
+        <footer className="glass-panel border-t border-[var(--glass-border)] py-4 px-6 text-center text-sm text-[var(--text-tertiary)]">
           Tools ©2024-{new Date().getFullYear()} Created by GarlandQian
-        </Footer>
-      </Layout>
-    </Layout>
+        </footer>
+      </div>
+    </div>
   )
 }
 

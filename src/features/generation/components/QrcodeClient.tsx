@@ -1,12 +1,19 @@
 'use client'
 
-import { DownloadOutlined } from '@ant-design/icons'
-import { App, Button, Card, Col, ColorPicker, Flex, Form, Input, Row, Slider } from 'antd'
+import { Download } from 'lucide-react'
 import { QRCodeCanvas } from 'qrcode.react'
 import { useCallback, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-interface QrcodeForm {
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Slider } from '@/components/ui/slider'
+import { Textarea } from '@/components/ui/textarea'
+import { useToast } from '@/components/ui/toast'
+
+interface QrcodeFormData {
   content: string
   size: number
   fgColor: string
@@ -15,10 +22,9 @@ interface QrcodeForm {
 
 const QrcodeClient = () => {
   const { t } = useTranslation()
-  const { message } = App.useApp()
-  const [form] = Form.useForm<QrcodeForm>()
+  const toast = useToast()
   const qrRef = useRef<HTMLDivElement>(null)
-  const [formValues, setFormValues] = useState<QrcodeForm>({
+  const [formData, setFormData] = useState<QrcodeFormData>({
     content: 'https://github.com',
     size: 256,
     fgColor: '#000000',
@@ -28,7 +34,7 @@ const QrcodeClient = () => {
   const handleDownload = useCallback(() => {
     const canvas = qrRef.current?.querySelector('canvas')
     if (!canvas) {
-      message.error(t('public.generate_failed'))
+      toast.error(t('public.generate_failed'))
       return
     }
     const url = canvas.toDataURL('image/png')
@@ -36,101 +42,87 @@ const QrcodeClient = () => {
     link.download = 'qrcode.png'
     link.href = url
     link.click()
-    message.success(t('public.success'))
-  }, [message, t])
-
-  const handleValuesChange = (_: Partial<QrcodeForm>, allValues: QrcodeForm) => {
-    setFormValues({
-      ...allValues,
-      fgColor: typeof allValues.fgColor === 'string' ? allValues.fgColor : formValues.fgColor,
-      bgColor: typeof allValues.bgColor === 'string' ? allValues.bgColor : formValues.bgColor
-    })
-  }
+    toast.success(t('public.success'))
+  }, [toast, t])
 
   return (
-    <Flex className="size-full" gap={20} vertical>
-      <Card title={t('app.generation.qrcode')}>
-        <Form
-          form={form}
-          layout="vertical"
-          initialValues={formValues}
-          onValuesChange={handleValuesChange}
-        >
-          <Row gutter={16}>
-            <Col xs={24} md={12}>
-              <Form.Item
-                label={t('app.generation.qrcode.content')}
-                name="content"
-                rules={[
-                  {
-                    required: true,
-                    message: t('rules.msg.required', {
-                      msg: t('app.generation.qrcode.content')
-                    })
-                  }
-                ]}
-              >
-                <Input.TextArea
-                  rows={3}
-                  placeholder={t('app.generation.qrcode.content_placeholder')}
+    <div className="size-full flex flex-col gap-5">
+      <Card>
+        <CardHeader>
+          <CardTitle>{t('app.generation.qrcode')}</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="content">{t('app.generation.qrcode.content')}</Label>
+              <Textarea
+                id="content"
+                rows={3}
+                value={formData.content}
+                onChange={(e) => setFormData(prev => ({ ...prev, content: e.target.value }))}
+                placeholder={t('app.generation.qrcode.content_placeholder')}
+              />
+            </div>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>{t('app.generation.qrcode.size')}: {formData.size}px</Label>
+                <Slider
+                  value={formData.size}
+                  min={128}
+                  max={512}
+                  step={8}
+                  onChange={(value) => setFormData(prev => ({ ...prev, size: value }))}
                 />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12} md={6}>
-              <Form.Item label={t('app.generation.qrcode.size')} name="size">
-                <Slider min={128} max={512} step={8} />
-              </Form.Item>
-            </Col>
-            <Col xs={12} sm={6} md={3}>
-              <Form.Item label={t('app.generation.qrcode.fgColor')} name="fgColor">
-                <ColorPicker
-                  format="hex"
-                  onChange={color => {
-                    const hex = color.toHexString()
-                    form.setFieldValue('fgColor', hex)
-                    setFormValues(prev => ({ ...prev, fgColor: hex }))
-                  }}
-                />
-              </Form.Item>
-            </Col>
-            <Col xs={12} sm={6} md={3}>
-              <Form.Item label={t('app.generation.qrcode.bgColor')} name="bgColor">
-                <ColorPicker
-                  format="hex"
-                  onChange={color => {
-                    const hex = color.toHexString()
-                    form.setFieldValue('bgColor', hex)
-                    setFormValues(prev => ({ ...prev, bgColor: hex }))
-                  }}
-                />
-              </Form.Item>
-            </Col>
-          </Row>
-        </Form>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="fgColor">{t('app.generation.qrcode.fgColor')}</Label>
+                  <input
+                    id="fgColor"
+                    type="color"
+                    value={formData.fgColor}
+                    onChange={(e) => setFormData(prev => ({ ...prev, fgColor: e.target.value }))}
+                    className="w-full h-10 rounded-lg cursor-pointer glass-input"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="bgColor">{t('app.generation.qrcode.bgColor')}</Label>
+                  <input
+                    id="bgColor"
+                    type="color"
+                    value={formData.bgColor}
+                    onChange={(e) => setFormData(prev => ({ ...prev, bgColor: e.target.value }))}
+                    className="w-full h-10 rounded-lg cursor-pointer glass-input"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </CardContent>
       </Card>
 
-      <Card
-        title={t('app.generation.qrcode.preview')}
-        style={{ flex: 1 }}
-        extra={
-          <Button type="primary" icon={<DownloadOutlined />} onClick={handleDownload}>
+      <Card className="flex-1">
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle>{t('app.generation.qrcode.preview')}</CardTitle>
+          <Button variant="primary" icon={<Download className="w-4 h-4" />} onClick={handleDownload}>
             {t('app.generation.qrcode.download')}
           </Button>
-        }
-      >
-        <Flex justify="center" align="center" style={{ padding: 24 }}>
-          <div ref={qrRef}>
-            <QRCodeCanvas
-              value={formValues.content || ' '}
-              size={formValues.size}
-              fgColor={formValues.fgColor}
-              bgColor={formValues.bgColor}
-              level="H"
-            />
+        </CardHeader>
+        <CardContent>
+          <div className="flex justify-center items-center p-6">
+            <div ref={qrRef}>
+              <QRCodeCanvas
+                value={formData.content || ' '}
+                size={formData.size}
+                fgColor={formData.fgColor}
+                bgColor={formData.bgColor}
+                level="H"
+              />
+            </div>
           </div>
-        </Flex>
+        </CardContent>
       </Card>
-    </Flex>
+    </div>
   )
 }
 

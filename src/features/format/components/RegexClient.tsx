@@ -1,21 +1,15 @@
 'use client'
 
-import { ClearOutlined } from '@ant-design/icons'
-import {
-  Button,
-  Card,
-  Checkbox,
-  Col,
-  Flex,
-  Form,
-  Input,
-  Row,
-  Table,
-  theme as antTheme,
-  Typography
-} from 'antd'
+import { Trash2 } from 'lucide-react'
 import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 
 interface RegexForm {
   pattern: string

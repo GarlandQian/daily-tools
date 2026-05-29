@@ -1,10 +1,10 @@
 'use client'
-import { UploadOutlined } from '@ant-design/icons'
 import type { JsPdfPreview } from '@js-preview/pdf'
-import { Button,Flex, Spin, Upload } from 'antd'
-import { RcFile } from 'antd/es/upload'
+import { Upload } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+
+import { Button } from '@/components/ui/button'
 
 import FileUploader from './FileUploader'
 
