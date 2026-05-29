@@ -1,43 +1,38 @@
 'use client'
-import { InboxOutlined } from '@ant-design/icons'
-import { Upload, UploadProps } from 'antd'
-import { RcFile } from 'antd/es/upload'
+import { Inbox } from 'lucide-react'
 
-const { Dragger } = Upload
+import { FileUploadZone } from '@/components/ui/file-upload'
 
 interface FileUploaderProps {
   accept: string
-  onUpload: (file: RcFile) => void
+  onUpload: (file: File) => void
   disabled?: boolean
   tip?: string
 }
 
 const FileUploader = ({ accept, onUpload, disabled = false, tip }: FileUploaderProps) => {
-  const props: UploadProps = {
-    name: 'file',
-    multiple: false,
-    showUploadList: false,
-    accept,
-    disabled,
-    customRequest: ({ file, onSuccess }) => {
-      setTimeout(() => {
-        onSuccess?.('ok')
-        onUpload(file as RcFile)
-      }, 0)
-    },
-    onDrop(e) {
-      console.log('Dropped files', e.dataTransfer.files)
+  const handleFiles = (files: File[]) => {
+    if (files.length > 0) {
+      onUpload(files[0])
     }
   }
 
   return (
-    <Dragger {...props} style={{ padding: '20px' }}>
-      <p className="ant-upload-drag-icon">
-        <InboxOutlined />
+    <FileUploadZone
+      accept={accept}
+      multiple={false}
+      onChange={handleFiles}
+      disabled={disabled}
+      className="p-8"
+    >
+      <Inbox className="w-12 h-12 text-[var(--text-tertiary)]" />
+      <p className="text-base text-[var(--text-primary)] font-medium">
+        Click or drag file to this area to upload
       </p>
-      <p className="ant-upload-text">Click or drag file to this area to upload</p>
-      <p className="ant-upload-hint">{tip || `Support for ${accept} files`}</p>
-    </Dragger>
+      <p className="text-sm text-[var(--text-secondary)]">
+        {tip || `Support for ${accept} files`}
+      </p>
+    </FileUploadZone>
   )
 }
 

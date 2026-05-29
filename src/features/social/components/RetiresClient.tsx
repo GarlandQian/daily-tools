@@ -1,28 +1,40 @@
 'use client'
-import { CopyOutlined } from '@ant-design/icons'
-import { Button, DatePicker, Form, Progress, Radio, theme as antTheme, Typography } from 'antd'
+
+import { Copy } from 'lucide-react'
 import dayjs from 'dayjs'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { Button } from '@/components/ui/button'
+import { DatePicker } from '@/components/ui/date-picker'
+import { Label } from '@/components/ui/label'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+import { Progress } from '@/components/ui/progress'
 import { calcRetires, type calcRetiresParams, type calcRetiresReturnType } from '../utils'
 
 const RetiresClient = () => {
-  const { token: theme } = antTheme.useToken()
   const { t } = useTranslation()
 
-  const [form] = Form.useForm<calcRetiresParams>()
-  const gender = Form.useWatch('gender', form)
-  const birth = Form.useWatch('birth', form)
-  const isFemale = useMemo(() => gender === 'female', [gender])
+  const [birth, setBirth] = useState<Date>()
+  const [gender, setGender] = useState<'male' | 'female'>()
+  const [occupation, setOccupation] = useState<'worker' | 'staff'>()
 
   const [retirement, setRetirement] = useState<calcRetiresReturnType>()
-  const onFinish = (values: calcRetiresParams) => {
-    setRetirement(calcRetires(values))
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!birth || !gender) return
+    if (gender === 'female' && !occupation) return
+
+    const params: calcRetiresParams = {
+      birth: dayjs(birth).format('YYYY-MM-DD'),
+      gender,
+      ...(gender === 'female' && occupation ? { occupation } : {})
+    }
+    setRetirement(calcRetires(params))
   }
 
-  // Calculate Extra Stats
   const stats = useMemo(() => {
     if (!retirement || !birth) return null
     const birthDay = dayjs(birth)
@@ -60,66 +72,61 @@ const RetiresClient = () => {
     <>
       <div className="flex justify-center">
         <div className="w-full max-w-[700px]">
-          <Form
-            labelAlign="left"
-            layout="horizontal"
-            form={form}
-            labelCol={{ xs: { span: 24 }, sm: { span: 6 }, md: { span: 6 } }}
-            wrapperCol={{ xs: { span: 24 }, sm: { span: 18 }, md: { span: 18 } }}
-            onFinish={onFinish}
-          >
-            <Form.Item
-              name="birth"
-              label={t('app.social.retires.birthday')}
-              rules={[
-                {
-                  required: true,
-                  message: t('rules.msg.required', {
-                    msg: t('app.social.retires.birthday')
-                  })
-                }
-              ]}
-            >
-              <DatePicker style={{ width: '100%' }} />
-            </Form.Item>
-            <Form.Item
-              name="gender"
-              label={t('app.social.retires.gender')}
-              rules={[{ required: true, message: 'Please select your gender!' }]}
-            >
-              <Radio.Group
-                options={[
-                  { label: t('app.social.retires.male'), value: 'male' },
-                  { label: t('app.social.retires.female'), value: 'female' }
-                ]}
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <div className="grid grid-cols-1 sm:grid-cols-[200px_1fr] gap-4 items-start">
+              <Label className="sm:pt-3">{t('app.social.retires.birthday')}</Label>
+              <DatePicker
+                value={birth}
+                onChange={setBirth}
+                placeholder={t('app.social.retires.birthday')}
               />
-            </Form.Item>
-            {isFemale && (
-              <Form.Item
-                name="occupation"
-                label={t('app.social.retires.occupation')}
-                rules={[{ required: true, message: 'Please select your occupation!' }]}
-              >
-                <Radio.Group
-                  options={[
-                    { label: t('app.social.retires.occupation.worker'), value: 'worker' },
-                    { label: t('app.social.retires.occupation.staff'), value: 'staff' }
-                  ]}
-                />
-              </Form.Item>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-[200px_1fr] gap-4 items-start">
+              <Label className="sm:pt-3">{t('app.social.retires.gender')}</Label>
+              <RadioGroup value={gender} onValueChange={(v) => setGender(v as 'male' | 'female')}>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="male" id="male" />
+                  <Label htmlFor="male" className="cursor-pointer">
+                    {t('app.social.retires.male')}
+                  </Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="female" id="female" />
+                  <Label htmlFor="female" className="cursor-pointer">
+                    {t('app.social.retires.female')}
+                  </Label>
+                </div>
+              </RadioGroup>
+            </div>
+
+            {gender === 'female' && (
+              <div className="grid grid-cols-1 sm:grid-cols-[200px_1fr] gap-4 items-start">
+                <Label className="sm:pt-3">{t('app.social.retires.occupation')}</Label>
+                <RadioGroup value={occupation} onValueChange={(v) => setOccupation(v as 'worker' | 'staff')}>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="worker" id="worker" />
+                    <Label htmlFor="worker" className="cursor-pointer">
+                      {t('app.social.retires.occupation.worker')}
+                    </Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="staff" id="staff" />
+                    <Label htmlFor="staff" className="cursor-pointer">
+                      {t('app.social.retires.occupation.staff')}
+                    </Label>
+                  </div>
+                </RadioGroup>
+              </div>
             )}
-            <Form.Item
-              wrapperCol={{
-                xs: { span: 24 },
-                sm: { span: 18, offset: 6 },
-                md: { span: 18, offset: 6 }
-              }}
-            >
-              <Button type="primary" htmlType="submit" block>
+
+            <div className="grid grid-cols-1 sm:grid-cols-[200px_1fr] gap-4">
+              <div />
+              <Button type="submit" variant="primary" className="w-full sm:w-auto">
                 {t('public.submit')}
               </Button>
-            </Form.Item>
-          </Form>
+            </div>
+          </form>
         </div>
       </div>
 
@@ -132,107 +139,76 @@ const RetiresClient = () => {
             transition={{ type: 'spring', stiffness: 260, damping: 20 }}
             className="mt-10 flex justify-center"
           >
-            <div
-              className={`w-full max-w-[700px] rounded-3xl p-8 relative overflow-hidden before:absolute before:top-0 before:left-0 before:right-0 before:h-[2px] before:bg-gradient-to-r before:from-transparent before:via-[var(--primary-color)] before:to-transparent before:animate-[scan_2s_linear_infinite]`}
-              style={
-                {
-                  background: theme.colorBgContainer,
-                  border: `1px solid ${theme.colorBorderSecondary}`,
-                  boxShadow: theme.boxShadowSecondary,
-                  color: theme.colorText,
-                  '--primary-color': theme.colorPrimary
-                } as React.CSSProperties
-              }
-            >
-              <div style={{ textAlign: 'center' }}>
-                <Typography.Title level={4} style={{ margin: 0, opacity: 0.7 }}>
+            <div className="w-full max-w-[700px] glass-panel rounded-3xl p-8 relative overflow-hidden">
+              <div className="glass-specular" />
+
+              <div className="text-center">
+                <h4 className="text-lg font-medium text-[var(--text-secondary)] mb-2">
                   {t('app.social.retires.target')}
-                </Typography.Title>
-                <div
-                  className="text-[32px] font-extrabold my-[10px]"
-                  style={{ color: theme.colorPrimary }}
-                >
+                </h4>
+                <div className="text-4xl font-extrabold text-[var(--primary)] my-4">
                   {stats.retireDateStr}
                 </div>
-                <Typography.Text type="secondary">
+                <p className="text-sm text-[var(--text-tertiary)]">
                   {retirement.newRetirementPolicy
                     ? t('app.social.retires.policy.new')
                     : t('app.social.retires.policy.std')}
-                </Typography.Text>
+                </p>
               </div>
 
-              <div style={{ marginTop: 32 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                  <Typography.Text strong>{t('app.social.retires.progress')}</Typography.Text>
-                  <Typography.Text type="secondary">{stats.percent}%</Typography.Text>
+              <div className="mt-8">
+                <div className="flex justify-between mb-2">
+                  <span className="text-sm font-medium text-[var(--text-primary)]">
+                    {t('app.social.retires.progress')}
+                  </span>
+                  <span className="text-sm text-[var(--text-secondary)]">{stats.percent}%</span>
                 </div>
                 <Progress
-                  percent={parseFloat(stats.percent)}
+                  value={parseFloat(stats.percent)}
                   showInfo={false}
                   strokeColor={{
-                    '0%': theme.colorPrimary,
+                    '0%': 'var(--primary)',
                     '100%': '#f9c61a'
                   }}
-                  size={['100%', 12]}
-                  railColor="rgba(0,0,0,0.05)"
                 />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mt-6">
-                <div
-                  className="rounded-xl p-4 text-center"
-                  style={{
-                    background: theme.colorBgLayout,
-                    border: `1px solid ${theme.colorBorderSecondary}`
-                  }}
-                >
-                  <div className="text-sm mb-1" style={{ color: theme.colorTextSecondary }}>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-6">
+                <div className="glass-input rounded-xl p-4 text-center">
+                  <div className="text-sm text-[var(--text-secondary)] mb-1">
                     {t('app.social.retires.age')}
                   </div>
-                  <div className="text-[20px] font-semibold" style={{ color: theme.colorText }}>
+                  <div className="text-2xl font-semibold text-[var(--text-primary)]">
                     {retirement.baseRetirementAge}
-                    <span style={{ fontSize: 14, fontWeight: 400 }}> Y </span>
+                    <span className="text-sm font-normal"> Y </span>
                     {retirement.baseRetirementMonth > 0 && (
                       <>
                         {retirement.baseRetirementMonth}
-                        <span style={{ fontSize: 14, fontWeight: 400 }}> M</span>
+                        <span className="text-sm font-normal"> M</span>
                       </>
                     )}
                   </div>
                 </div>
-                <div
-                  className="rounded-xl p-4 text-center"
-                  style={{
-                    background: theme.colorBgLayout,
-                    border: `1px solid ${theme.colorBorderSecondary}`
-                  }}
-                >
-                  <div className="text-sm mb-1" style={{ color: theme.colorTextSecondary }}>
+                <div className="glass-input rounded-xl p-4 text-center">
+                  <div className="text-sm text-[var(--text-secondary)] mb-1">
                     {t('app.social.retires.remaining')}
                   </div>
-                  <div
-                    className="text-[20px] font-semibold"
-                    style={{
-                      color:
-                        Number(stats.remainingDays) < 365 ? theme.colorSuccess : theme.colorText
-                    }}
-                  >
+                  <div className="text-2xl font-semibold text-[var(--success)]">
                     {stats.remainingDays.toLocaleString()}
                   </div>
                 </div>
               </div>
 
-              <div style={{ marginTop: 32, textAlign: 'center' }}>
+              <div className="mt-8 text-center">
                 <Button
-                  type="default"
-                  shape="round"
-                  size="large"
-                  icon={<CopyOutlined />}
+                  variant="default"
+                  shape="pill"
+                  size="lg"
+                  icon={<Copy className="w-4 h-4" />}
                   onClick={() => {
                     navigator.clipboard.writeText(resultText)
-                    // Feedback could be added here
                   }}
-                  style={{ minWidth: 200 }}
+                  className="min-w-[200px]"
                 >
                   {t('app.social.retires.copy')}
                 </Button>

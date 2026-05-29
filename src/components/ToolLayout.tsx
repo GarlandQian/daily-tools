@@ -1,36 +1,25 @@
 'use client'
 
-import { ClearOutlined, CopyOutlined, ReloadOutlined } from '@ant-design/icons'
-import { Button, Card, Flex } from 'antd'
+import { Copy, RotateCcw, Trash2 } from 'lucide-react'
 import React from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+
 interface ToolLayoutProps {
-  /** Tool title - uses i18n key */
   title: string
-  /** Whether to show copy button */
   showCopy?: boolean
-  /** Whether copy button is disabled */
   copyDisabled?: boolean
-  /** Copy button click handler */
   onCopy?: () => void
-  /** Whether to show clear button */
   showClear?: boolean
-  /** Clear button click handler */
   onClear?: () => void
-  /** Whether to show reset button */
   showReset?: boolean
-  /** Reset button click handler */
   onReset?: () => void
-  /** Additional extra content for card header */
   extra?: React.ReactNode
-  /** Card body content */
   children: React.ReactNode
 }
 
-/**
- * Standardized layout wrapper for tool pages
- */
 const ToolLayout: React.FC<ToolLayoutProps> = ({
   title,
   showCopy,
@@ -46,29 +35,41 @@ const ToolLayout: React.FC<ToolLayoutProps> = ({
   const { t } = useTranslation()
 
   const extraContent = (
-    <Flex gap={8} wrap>
+    <div className="flex gap-2 flex-wrap">
       {extra}
       {showReset && (
-        <Button icon={<ReloadOutlined />} onClick={onReset}>
+        <Button variant="ghost" size="sm" icon={<RotateCcw className="w-4 h-4" />} onClick={onReset}>
           {t('app.generation.cron.reset')}
         </Button>
       )}
       {showCopy && (
-        <Button icon={<CopyOutlined />} onClick={onCopy} disabled={copyDisabled}>
+        <Button
+          variant="ghost"
+          size="sm"
+          icon={<Copy className="w-4 h-4" />}
+          onClick={onCopy}
+          disabled={copyDisabled}
+        >
           {t('app.generation.uuid.copy')}
         </Button>
       )}
       {showClear && (
-        <Button icon={<ClearOutlined />} onClick={onClear}>
+        <Button variant="ghost" size="sm" icon={<Trash2 className="w-4 h-4" />} onClick={onClear}>
           {t('app.format.json.clear')}
         </Button>
       )}
-    </Flex>
+    </div>
   )
 
   return (
-    <Card title={t(title)} extra={extraContent}>
-      {children}
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <CardTitle>{t(title)}</CardTitle>
+          {extraContent}
+        </div>
+      </CardHeader>
+      <CardContent>{children}</CardContent>
     </Card>
   )
 }

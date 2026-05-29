@@ -1,18 +1,17 @@
 'use client'
 
-import {
-  ClearOutlined,
-  CompressOutlined,
-  CopyOutlined,
-  FormatPainterOutlined
-} from '@ant-design/icons'
-import { App, Button, Card, Col, Flex, Input, Row, Typography } from 'antd'
+import { Copy, Minimize2, Paintbrush, Trash2 } from 'lucide-react'
 import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Textarea } from '@/components/ui/textarea'
+import { useToast } from '@/components/ui/toast'
+
 const JsonClient = () => {
   const { t } = useTranslation()
-  const { message } = App.useApp()
+  const toast = useToast()
   const [input, setInput] = useState('')
   const [output, setOutput] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -30,45 +29,45 @@ const JsonClient = () => {
 
   const handleFormat = useCallback(() => {
     if (!input.trim()) {
-      message.warning(t('app.format.json.empty'))
+      toast.warning(t('app.format.json.empty'))
       return
     }
     const parsed = parseJson(input)
     if (parsed !== null) {
       setOutput(JSON.stringify(parsed, null, 2))
-      message.success(t('public.success'))
+      toast.success(t('public.success'))
     }
-  }, [input, parseJson, message, t])
+  }, [input, parseJson, toast, t])
 
   const handleMinify = useCallback(() => {
     if (!input.trim()) {
-      message.warning(t('app.format.json.empty'))
+      toast.warning(t('app.format.json.empty'))
       return
     }
     const parsed = parseJson(input)
     if (parsed !== null) {
       setOutput(JSON.stringify(parsed))
-      message.success(t('public.success'))
+      toast.success(t('public.success'))
     }
-  }, [input, parseJson, message, t])
+  }, [input, parseJson, toast, t])
 
   const handleValidate = useCallback(() => {
     if (!input.trim()) {
-      message.warning(t('app.format.json.empty'))
+      toast.warning(t('app.format.json.empty'))
       return
     }
     const parsed = parseJson(input)
     if (parsed !== null) {
       setError(null)
-      message.success(t('app.format.json.valid'))
+      toast.success(t('app.format.json.valid'))
     }
-  }, [input, parseJson, message, t])
+  }, [input, parseJson, toast, t])
 
   const handleCopy = useCallback(() => {
     if (!output) return
     navigator.clipboard.writeText(output)
-    message.success(t('app.social.retires.copy_success'))
-  }, [output, message, t])
+    toast.success(t('app.social.retires.copy_success'))
+  }, [output, toast, t])
 
   const handleClear = useCallback(() => {
     setInput('')
@@ -77,61 +76,64 @@ const JsonClient = () => {
   }, [])
 
   return (
-    <Flex className="size-full" gap={20} vertical>
-      <Card title={t('app.format.json')}>
-        <Flex gap={10} wrap>
-          <Button type="primary" icon={<FormatPainterOutlined />} onClick={handleFormat}>
-            {t('app.format.json.format')}
-          </Button>
-          <Button icon={<CompressOutlined />} onClick={handleMinify}>
-            {t('app.format.json.minify')}
-          </Button>
-          <Button onClick={handleValidate}>{t('app.format.json.validate')}</Button>
-          <Button icon={<CopyOutlined />} onClick={handleCopy} disabled={!output}>
-            {t('app.generation.uuid.copy')}
-          </Button>
-          <Button icon={<ClearOutlined />} onClick={handleClear}>
-            {t('app.format.json.clear')}
-          </Button>
-        </Flex>
+    <div className="flex flex-col gap-5 size-full">
+      <Card>
+        <CardHeader>
+          <CardTitle>{t('app.format.json')}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="primary" icon={<Paintbrush className="w-4 h-4" />} onClick={handleFormat}>
+              {t('app.format.json.format')}
+            </Button>
+            <Button icon={<Minimize2 className="w-4 h-4" />} onClick={handleMinify}>
+              {t('app.format.json.minify')}
+            </Button>
+            <Button onClick={handleValidate}>{t('app.format.json.validate')}</Button>
+            <Button icon={<Copy className="w-4 h-4" />} onClick={handleCopy} disabled={!output}>
+              {t('app.generation.uuid.copy')}
+            </Button>
+            <Button icon={<Trash2 className="w-4 h-4" />} onClick={handleClear}>
+              {t('app.format.json.clear')}
+            </Button>
+          </div>
+        </CardContent>
       </Card>
 
       {error && (
-        <Typography.Text type="danger" style={{ padding: '0 8px' }}>
+        <span className="text-[var(--error)] px-2 text-sm">
           {t('app.format.json.error')}: {error}
-        </Typography.Text>
+        </span>
       )}
 
-      <Row gutter={16} style={{ flex: 1, minHeight: 0 }}>
-        <Col xs={24} md={12} style={{ height: '100%', minHeight: 300 }}>
-          <Card
-            title={t('app.format.json.input')}
-            style={{ height: '100%', display: 'flex', flexDirection: 'column' }}
-            styles={{ body: { flex: 1, overflow: 'hidden' } }}
-          >
-            <Input.TextArea
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1 min-h-0">
+        <Card className="flex flex-col h-full min-h-[300px]">
+          <CardHeader>
+            <CardTitle>{t('app.format.json.input')}</CardTitle>
+          </CardHeader>
+          <CardContent className="flex-1 overflow-hidden">
+            <Textarea
               value={input}
               onChange={e => setInput(e.target.value)}
               placeholder={t('app.format.json.input_placeholder')}
-              style={{ height: '100%', resize: 'none', fontFamily: 'monospace' }}
+              className="h-full resize-none font-mono"
             />
-          </Card>
-        </Col>
-        <Col xs={24} md={12} style={{ height: '100%', minHeight: 300 }}>
-          <Card
-            title={t('app.format.json.output')}
-            style={{ height: '100%', display: 'flex', flexDirection: 'column' }}
-            styles={{ body: { flex: 1, overflow: 'hidden' } }}
-          >
-            <Input.TextArea
+          </CardContent>
+        </Card>
+        <Card className="flex flex-col h-full min-h-[300px]">
+          <CardHeader>
+            <CardTitle>{t('app.format.json.output')}</CardTitle>
+          </CardHeader>
+          <CardContent className="flex-1 overflow-hidden">
+            <Textarea
               value={output}
               readOnly
-              style={{ height: '100%', resize: 'none', fontFamily: 'monospace' }}
+              className="h-full resize-none font-mono"
             />
-          </Card>
-        </Col>
-      </Row>
-    </Flex>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
   )
 }
 

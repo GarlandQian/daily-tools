@@ -1,16 +1,15 @@
 'use client'
 
-import { App, ConfigProvider, theme } from 'antd'
 import React, { createContext, useContext, useEffect, useState } from 'react'
 
-import themeConfig from '@/theme/themeConfig'
+import { ToastProvider } from '@/components/ui/toast'
 
 export type ThemeMode = 'light' | 'dark' | 'system'
 
 interface ThemeContextType {
   themeMode: ThemeMode
   setThemeMode: (mode: ThemeMode) => void
-  isDarkMode: boolean // Keep for backward compatibility or ease of use
+  isDarkMode: boolean
 }
 
 const ThemeContext = createContext<ThemeContextType>({
@@ -57,52 +56,11 @@ export default function ThemeProvider({ children }: { children: React.ReactNode 
   const resolvedTheme = themeMode === 'system' ? systemTheme : themeMode
   const isDarkMode = resolvedTheme === 'dark'
 
-  const darkConfig = {
-    token: {
-      colorBgContainer: '#141414',
-      colorBgLayout: '#000000'
-    },
-    components: {
-      Layout: {
-        headerBg: '#001529',
-        bodyBg: '#000000'
-      },
-      Card: {
-        colorBgContainer: '#1f1f1f',
-        colorBorderSecondary: '#303030'
-      }
+  useEffect(() => {
+    if (mounted) {
+      document.documentElement.setAttribute('data-theme', isDarkMode ? 'dark' : 'light')
     }
-  }
-
-  const lightConfig = {
-    token: {
-      colorBgContainer: '#ffffff',
-      colorBgLayout: '#f0f2f5'
-    },
-    components: {
-      Layout: {
-        headerBg: '#ffffff',
-        bodyBg: '#f0f2f5'
-      },
-      Card: {
-        colorBgContainer: '#ffffff',
-        border: '1px solid #f0f0f0'
-      }
-    }
-  }
-
-  const currentTheme = {
-    ...themeConfig,
-    algorithm: isDarkMode ? theme.darkAlgorithm : theme.defaultAlgorithm,
-    token: {
-      ...themeConfig.token,
-      ...(isDarkMode ? darkConfig.token : lightConfig.token)
-    },
-    components: {
-      ...themeConfig.components,
-      ...(isDarkMode ? darkConfig.components : lightConfig.components)
-    }
-  }
+  }, [isDarkMode, mounted])
 
   if (!mounted) {
     return <div style={{ visibility: 'hidden' }}>{children}</div>
@@ -110,9 +68,7 @@ export default function ThemeProvider({ children }: { children: React.ReactNode 
 
   return (
     <ThemeContext.Provider value={{ themeMode, setThemeMode, isDarkMode }}>
-      <ConfigProvider theme={currentTheme}>
-        <App>{children}</App>
-      </ConfigProvider>
+      <ToastProvider>{children}</ToastProvider>
     </ThemeContext.Provider>
   )
 }

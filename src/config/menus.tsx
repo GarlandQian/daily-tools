@@ -1,12 +1,12 @@
 import {
-  BarcodeOutlined,
-  BgColorsOutlined,
-  FileTextOutlined,
-  FundOutlined,
-  RollbackOutlined,
-  UserOutlined,
-  VideoCameraOutlined
-} from '@ant-design/icons'
+  Barcode,
+  FileText,
+  Hash,
+  Palette,
+  Shield,
+  User,
+  Video
+} from 'lucide-react'
 import React from 'react'
 
 export interface MenuConfig {
@@ -18,12 +18,12 @@ export interface MenuConfig {
 export const menus: MenuConfig[] = [
   {
     path: '/social',
-    icon: <UserOutlined />,
+    icon: <User className="w-4 h-4" />,
     children: [{ path: '/social/retires' }, { path: '/social/time' }, { path: '/social/keycode' }]
   },
   {
     path: '/hash',
-    icon: <FundOutlined />,
+    icon: <Hash className="w-4 h-4" />,
     children: [
       { path: '/hash/md5' },
       { path: '/hash/sha' },
@@ -36,7 +36,7 @@ export const menus: MenuConfig[] = [
   },
   {
     path: '/encryption',
-    icon: <RollbackOutlined />,
+    icon: <Shield className="w-4 h-4" />,
     children: [
       { path: '/encryption/aes' },
       { path: '/encryption/des' },
@@ -48,7 +48,7 @@ export const menus: MenuConfig[] = [
   },
   {
     path: '/preview',
-    icon: <VideoCameraOutlined />,
+    icon: <Video className="w-4 h-4" />,
     children: [
       { path: '/preview/docx' },
       { path: '/preview/excel' },
@@ -59,7 +59,7 @@ export const menus: MenuConfig[] = [
   },
   {
     path: '/generation',
-    icon: <BarcodeOutlined />,
+    icon: <Barcode className="w-4 h-4" />,
     children: [
       { path: '/generation/uuid' },
       { path: '/generation/qrcode' },
@@ -72,7 +72,7 @@ export const menus: MenuConfig[] = [
   },
   {
     path: '/format',
-    icon: <FileTextOutlined />,
+    icon: <FileText className="w-4 h-4" />,
     children: [
       { path: '/format/json' },
       { path: '/format/diff' },
@@ -87,7 +87,7 @@ export const menus: MenuConfig[] = [
   },
   {
     path: '/converter',
-    icon: <BgColorsOutlined />,
+    icon: <Palette className="w-4 h-4" />,
     children: [
       { path: '/converter/color' },
       { path: '/converter/image' },

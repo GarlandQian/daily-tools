@@ -1,9 +1,16 @@
 'use client'
-import { CopyOutlined } from '@ant-design/icons'
-import { App, Button, Form, Input, Radio, Select } from 'antd'
+import { Copy } from 'lucide-react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Textarea } from '@/components/ui/textarea'
+import { useToast } from '@/components/ui/toast'
 
 import {
   aesCrypto,
@@ -22,32 +29,52 @@ interface EncryptionType extends AesCryptoOptions {
 
 const AESClient = () => {
   const { t } = useTranslation()
-  const { message } = App.useApp()
-  const [form] = Form.useForm<EncryptionType>()
+  const toast = useToast()
   const [result, setResult] = useState<string>()
   const [isEncrypt, setIsEncrypt] = useState(true)
 
-  const onFinish = async (values: EncryptionType) => {
-    if (values.isEncrypt) {
+  const [str, setStr] = useState('')
+  const [secret, setSecret] = useState('')
+  const [mode, setMode] = useState('ECB')
+  const [padding, setPadding] = useState('Pkcs7')
+  const [format, setFormat] = useState('Hex')
+  const [encoding, setEncoding] = useState('Utf8')
+  const [iv, setIv] = useState('')
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+
+    if (!str.trim()) {
+      toast.warning(t('app.encryption.aes.content_required'))
+      return
+    }
+    if (!secret.trim()) {
+      toast.warning(t('app.encryption.aes.password_required'))
+      return
+    }
+
+    const values: AesCryptoOptions = { mode, padding, format, encoding, iv }
+
+    if (isEncrypt) {
       try {
-        const res = aesCrypto(values.str, values.secret, values, true)
+        const res = aesCrypto(str, secret, values, true)
         setResult(res)
       } catch (error) {
         if (error instanceof Error) {
-          message.error(t(error.message))
+          toast.error(t(error.message))
         } else {
-          message.error(t('app.encryption.aes.encrypt_failed'))
+          toast.error(t('app.encryption.aes.encrypt_failed'))
         }
       }
     } else {
       try {
-        const res = aesCrypto(values.str, values.secret, values, false)
+        const res = aesCrypto(str, secret, values, false)
         if (!res) {
           throw new Error(t('app.encryption.aes.decrypt_failed_empty'))
         }
         setResult(res)
       } catch {
-        message.warning(t('app.encryption.aes.decrypt_failed'))
+        toast.warning(t('app.encryption.aes.decrypt_failed'))
         setResult(t('app.encryption.aes.decrypt_failed'))
       }
     }

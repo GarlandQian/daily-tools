@@ -19,7 +19,11 @@
     ],
     "paths": {
       "@/*": ["./src/*"],
-      "@db/*": ["./prisma/*"]
+      "@db/*": ["./prisma/*"],
+      "antd": ["./src/lib/antd-compat/index.tsx"],
+      "antd/es/upload": ["./src/lib/antd-compat/upload.ts"],
+      "antd/es/form/FormItem": ["./src/lib/antd-compat/form-item.tsx"],
+      "@ant-design/icons": ["./src/lib/antd-compat/icons.tsx"]
     },
     "target": "ES2017"
   },

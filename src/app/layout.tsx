@@ -1,7 +1,6 @@
 import 'normalize.css/normalize.css'
 import './globals.css'
 
-import { AntdRegistry } from '@ant-design/nextjs-registry'
 import NextTopLoader from 'nextjs-toploader'
 import React from 'react'
 
@@ -36,14 +35,12 @@ const RootLayout = async ({
   return (
     <html lang={locale}>
       <body className={`${inter.className} flex min-h-screen w-full flex-col`}>
-        <AntdRegistry>
-          <NextTopLoader showSpinner={false} />
-          <ThemeProvider>
-            <TranslationsProvider locale={locale} resources={resources}>
-              {children}
-            </TranslationsProvider>
-          </ThemeProvider>
-        </AntdRegistry>
+        <NextTopLoader showSpinner={false} />
+        <ThemeProvider>
+          <TranslationsProvider locale={locale} resources={resources}>
+            {children}
+          </TranslationsProvider>
+        </ThemeProvider>
       </body>
     </html>
   )
