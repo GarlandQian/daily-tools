@@ -1,10 +1,13 @@
 'use client'
 
-import { ClearOutlined, SafetyOutlined } from '@ant-design/icons'
-import { Button, Card, Col, Flex, Input, Row, theme as antTheme, Typography } from 'antd'
 import { jwtDecode } from 'jwt-decode'
-import { useCallback, useMemo, useState } from 'react'
+import { ShieldCheck, X } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Textarea } from '@/components/ui/textarea'
 
 interface JwtPayload {
   [key: string]: unknown
@@ -18,10 +21,15 @@ interface DecodedResult {
 
 const JwtClient = () => {
   const { t } = useTranslation()
-  const { token: theme } = antTheme.useToken()
 
   const [token, setToken] = useState('')
-  const [checkTime, setCheckTime] = useState<number | null>(null)
+  const [now, setNow] = useState(() => Date.now())
+
+  // Tick every second so expiration status stays current after the user pastes a token
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(interval)
+  }, [])
 
   const { decoded, error, expTimestamp }: DecodedResult = useMemo(() => {
     if (!token.trim()) {
@@ -29,7 +37,6 @@ const JwtClient = () => {
     }
 
     try {
-      // Decode header
       const parts = token.split('.')
       if (parts.length !== 3) {
         return {
@@ -42,7 +49,6 @@ const JwtClient = () => {
       const header = JSON.parse(atob(parts[0]))
       const payload = jwtDecode<JwtPayload>(token)
 
-      // Get expiration timestamp if exists
       const expTs = payload.exp ? (payload.exp as number) * 1000 : null
 
       return { decoded: { header, payload }, error: null, expTimestamp: expTs }
@@ -52,21 +58,17 @@ const JwtClient = () => {
     }
   }, [token, t])
 
-  // Calculate expiration status based on checkTime
   const isExpired = useMemo(() => {
-    if (expTimestamp === null || checkTime === null) return null
-    return checkTime >= expTimestamp
-  }, [expTimestamp, checkTime])
+    if (expTimestamp === null) return null
+    return now >= expTimestamp
+  }, [expTimestamp, now])
 
   const handleTokenChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setToken(e.target.value)
-    // Capture time when token changes
-    setCheckTime(Date.now())
   }, [])
 
   const handleClear = useCallback(() => {
     setToken('')
-    setCheckTime(null)
   }, [])
 
   const formatJson = (obj: unknown) => {
@@ -78,84 +80,75 @@ const JwtClient = () => {
   }
 
   return (
-    <Flex className="size-full" gap={20} vertical>
-      <Card
-        title={t('app.encryption.jwt')}
-        extra={
-          <Button icon={<ClearOutlined />} onClick={handleClear}>
+    <div className="flex flex-col gap-5 size-full">
+      <Card>
+        <CardHeader className="flex-row items-center justify-between">
+          <CardTitle>{t('app.encryption.jwt')}</CardTitle>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleClear}
+            icon={<X className="w-4 h-4" />}
+          >
             {t('app.format.json.clear')}
           </Button>
-        }
-      >
-        <Input.TextArea
-          value={token}
-          onChange={handleTokenChange}
-          placeholder={t('app.encryption.jwt.placeholder')}
-          rows={4}
-          style={{ fontFamily: 'monospace' }}
-        />
-        {error && (
-          <Typography.Text type="danger" style={{ display: 'block', marginTop: 8 }}>
-            {t('app.format.json.error')}: {error}
-          </Typography.Text>
-        )}
-        {isExpired !== null && (
-          <Flex align="center" gap={8} style={{ marginTop: 8 }}>
-            <SafetyOutlined style={{ color: isExpired ? theme.colorError : theme.colorSuccess }} />
-            <Typography.Text type={isExpired ? 'danger' : 'success'}>
-              {isExpired ? t('app.encryption.jwt.expired') : t('app.encryption.jwt.valid')}
-            </Typography.Text>
-          </Flex>
-        )}
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <Textarea
+            value={token}
+            onChange={handleTokenChange}
+            placeholder={t('app.encryption.jwt.placeholder')}
+            rows={4}
+            className="font-mono"
+          />
+          {error && (
+            <p className="text-sm" style={{ color: 'var(--error)' }}>
+              {t('app.format.json.error')}: {error}
+            </p>
+          )}
+          {isExpired !== null && (
+            <div className="flex items-center gap-2 text-sm">
+              <ShieldCheck
+                className="w-4 h-4"
+                style={{ color: isExpired ? 'var(--error)' : 'var(--success)' }}
+              />
+              <span style={{ color: isExpired ? 'var(--error)' : 'var(--success)' }}>
+                {isExpired ? t('app.encryption.jwt.expired') : t('app.encryption.jwt.valid')}
+              </span>
+            </div>
+          )}
+        </CardContent>
       </Card>
 
-      <Row gutter={16} style={{ flex: 1 }}>
-        <Col xs={24} md={12}>
-          <Card
-            title="Header"
-            style={{ height: '100%', display: 'flex', flexDirection: 'column' }}
-            styles={{ body: { flex: 1, overflow: 'auto' } }}
-          >
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1">
+        <Card className="flex flex-col">
+          <CardHeader>
+            <CardTitle>Header</CardTitle>
+          </CardHeader>
+          <CardContent className="flex-1 overflow-auto">
             <pre
-              style={{
-                fontFamily: 'monospace',
-                fontSize: 13,
-                margin: 0,
-                whiteSpace: 'pre-wrap',
-                wordBreak: 'break-all',
-                background: theme.colorBgLayout,
-                padding: 12,
-                borderRadius: 8
-              }}
+              className="glass-input rounded-lg p-3 font-mono text-[13px] m-0 whitespace-pre-wrap break-all"
+              style={{ color: 'var(--text-primary)' }}
             >
               {decoded ? formatJson(decoded.header) : '{}'}
             </pre>
-          </Card>
-        </Col>
-        <Col xs={24} md={12}>
-          <Card
-            title="Payload"
-            style={{ height: '100%', display: 'flex', flexDirection: 'column' }}
-            styles={{ body: { flex: 1, overflow: 'auto' } }}
-          >
+          </CardContent>
+        </Card>
+        <Card className="flex flex-col">
+          <CardHeader>
+            <CardTitle>Payload</CardTitle>
+          </CardHeader>
+          <CardContent className="flex-1 overflow-auto">
             <pre
-              style={{
-                fontFamily: 'monospace',
-                fontSize: 13,
-                margin: 0,
-                whiteSpace: 'pre-wrap',
-                wordBreak: 'break-all',
-                background: theme.colorBgLayout,
-                padding: 12,
-                borderRadius: 8
-              }}
+              className="glass-input rounded-lg p-3 font-mono text-[13px] m-0 whitespace-pre-wrap break-all"
+              style={{ color: 'var(--text-primary)' }}
             >
               {decoded ? formatJson(decoded.payload) : '{}'}
             </pre>
-          </Card>
-        </Col>
-      </Row>
-    </Flex>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
   )
 }
 

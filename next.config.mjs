@@ -13,7 +13,7 @@ const nextConfig = {
   },
   experimental: {
     // Vercel best practice: bundle-barrel-imports optimization
-    optimizePackageImports: ['antd', '@ant-design/icons', 'dayjs', 'lodash-es', 'crypto-js'],
+    optimizePackageImports: ['dayjs', 'lodash-es', 'crypto-js', 'lucide-react'],
   },
   transpilePackages: ['three'],
   poweredByHeader: false,

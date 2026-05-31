@@ -1,16 +1,18 @@
 'use client'
 
-import { Copy } from 'lucide-react'
 import dayjs from 'dayjs'
 import { AnimatePresence, motion } from 'framer-motion'
+import { Copy } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { DatePicker } from '@/components/ui/date-picker'
 import { Label } from '@/components/ui/label'
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Progress } from '@/components/ui/progress'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+
 import { calcRetires, type calcRetiresParams, type calcRetiresReturnType } from '../utils'
 
 const RetiresClient = () => {
@@ -28,7 +30,7 @@ const RetiresClient = () => {
     if (gender === 'female' && !occupation) return
 
     const params: calcRetiresParams = {
-      birth: dayjs(birth).format('YYYY-MM-DD'),
+      birth,
       gender,
       ...(gender === 'female' && occupation ? { occupation } : {})
     }
@@ -71,63 +73,71 @@ const RetiresClient = () => {
   return (
     <>
       <div className="flex justify-center">
-        <div className="w-full max-w-[700px]">
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="grid grid-cols-1 sm:grid-cols-[200px_1fr] gap-4 items-start">
-              <Label className="sm:pt-3">{t('app.social.retires.birthday')}</Label>
-              <DatePicker
-                value={birth}
-                onChange={setBirth}
-                placeholder={t('app.social.retires.birthday')}
-              />
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-[200px_1fr] gap-4 items-start">
-              <Label className="sm:pt-3">{t('app.social.retires.gender')}</Label>
-              <RadioGroup value={gender} onValueChange={(v) => setGender(v as 'male' | 'female')}>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="male" id="male" />
-                  <Label htmlFor="male" className="cursor-pointer">
-                    {t('app.social.retires.male')}
-                  </Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="female" id="female" />
-                  <Label htmlFor="female" className="cursor-pointer">
-                    {t('app.social.retires.female')}
-                  </Label>
-                </div>
-              </RadioGroup>
-            </div>
-
-            {gender === 'female' && (
+        <Card className="w-full max-w-[700px]">
+          <CardHeader>
+            <CardTitle>{t('app.social.retires')}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleSubmit} className="space-y-6">
               <div className="grid grid-cols-1 sm:grid-cols-[200px_1fr] gap-4 items-start">
-                <Label className="sm:pt-3">{t('app.social.retires.occupation')}</Label>
-                <RadioGroup value={occupation} onValueChange={(v) => setOccupation(v as 'worker' | 'staff')}>
+                <Label className="sm:pt-3">{t('app.social.retires.birthday')}</Label>
+                <DatePicker
+                  value={birth}
+                  onChange={setBirth}
+                  placeholder={t('app.social.retires.birthday')}
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-[200px_1fr] gap-4 items-start">
+                <Label className="sm:pt-3">{t('app.social.retires.gender')}</Label>
+                <RadioGroup value={gender} onValueChange={v => setGender(v as 'male' | 'female')}>
                   <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="worker" id="worker" />
-                    <Label htmlFor="worker" className="cursor-pointer">
-                      {t('app.social.retires.occupation.worker')}
+                    <RadioGroupItem value="male" id="male" />
+                    <Label htmlFor="male" className="cursor-pointer">
+                      {t('app.social.retires.male')}
                     </Label>
                   </div>
                   <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="staff" id="staff" />
-                    <Label htmlFor="staff" className="cursor-pointer">
-                      {t('app.social.retires.occupation.staff')}
+                    <RadioGroupItem value="female" id="female" />
+                    <Label htmlFor="female" className="cursor-pointer">
+                      {t('app.social.retires.female')}
                     </Label>
                   </div>
                 </RadioGroup>
               </div>
-            )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-[200px_1fr] gap-4">
-              <div />
-              <Button type="submit" variant="primary" className="w-full sm:w-auto">
-                {t('public.submit')}
-              </Button>
-            </div>
-          </form>
-        </div>
+              {gender === 'female' && (
+                <div className="grid grid-cols-1 sm:grid-cols-[200px_1fr] gap-4 items-start">
+                  <Label className="sm:pt-3">{t('app.social.retires.occupation')}</Label>
+                  <RadioGroup
+                    value={occupation}
+                    onValueChange={v => setOccupation(v as 'worker' | 'staff')}
+                  >
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="worker" id="worker" />
+                      <Label htmlFor="worker" className="cursor-pointer">
+                        {t('app.social.retires.occupation.worker')}
+                      </Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="staff" id="staff" />
+                      <Label htmlFor="staff" className="cursor-pointer">
+                        {t('app.social.retires.occupation.staff')}
+                      </Label>
+                    </div>
+                  </RadioGroup>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-[200px_1fr] gap-4">
+                <div />
+                <Button type="submit" variant="primary" className="w-full sm:w-auto">
+                  {t('public.submit')}
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
       </div>
 
       <AnimatePresence>
@@ -139,14 +149,14 @@ const RetiresClient = () => {
             transition={{ type: 'spring', stiffness: 260, damping: 20 }}
             className="mt-10 flex justify-center"
           >
-            <div className="w-full max-w-[700px] glass-panel rounded-3xl p-8 relative overflow-hidden">
+            <div className="w-full max-w-[700px] glass-panel rounded-3xl p-8 relative overflow-hidden glass-glow-primary glass-caustic">
               <div className="glass-specular" />
 
               <div className="text-center">
                 <h4 className="text-lg font-medium text-[var(--text-secondary)] mb-2">
                   {t('app.social.retires.target')}
                 </h4>
-                <div className="text-4xl font-extrabold text-[var(--primary)] my-4">
+                <div className="text-5xl font-extrabold text-[var(--primary)] my-4">
                   {stats.retireDateStr}
                 </div>
                 <p className="text-sm text-[var(--text-tertiary)]">

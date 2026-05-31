@@ -7,7 +7,6 @@ import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Slider } from '@/components/ui/slider'
 import { Textarea } from '@/components/ui/textarea'
@@ -59,19 +58,21 @@ const QrcodeClient = () => {
                 id="content"
                 rows={3}
                 value={formData.content}
-                onChange={(e) => setFormData(prev => ({ ...prev, content: e.target.value }))}
+                onChange={e => setFormData(prev => ({ ...prev, content: e.target.value }))}
                 placeholder={t('app.generation.qrcode.content_placeholder')}
               />
             </div>
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label>{t('app.generation.qrcode.size')}: {formData.size}px</Label>
+                <Label>
+                  {t('app.generation.qrcode.size')}: {formData.size}px
+                </Label>
                 <Slider
                   value={formData.size}
                   min={128}
                   max={512}
                   step={8}
-                  onChange={(value) => setFormData(prev => ({ ...prev, size: value }))}
+                  onChange={value => setFormData(prev => ({ ...prev, size: value }))}
                 />
               </div>
               <div className="grid grid-cols-2 gap-4">
@@ -81,7 +82,7 @@ const QrcodeClient = () => {
                     id="fgColor"
                     type="color"
                     value={formData.fgColor}
-                    onChange={(e) => setFormData(prev => ({ ...prev, fgColor: e.target.value }))}
+                    onChange={e => setFormData(prev => ({ ...prev, fgColor: e.target.value }))}
                     className="w-full h-10 rounded-lg cursor-pointer glass-input"
                   />
                 </div>
@@ -91,7 +92,7 @@ const QrcodeClient = () => {
                     id="bgColor"
                     type="color"
                     value={formData.bgColor}
-                    onChange={(e) => setFormData(prev => ({ ...prev, bgColor: e.target.value }))}
+                    onChange={e => setFormData(prev => ({ ...prev, bgColor: e.target.value }))}
                     className="w-full h-10 rounded-lg cursor-pointer glass-input"
                   />
                 </div>
@@ -104,7 +105,11 @@ const QrcodeClient = () => {
       <Card className="flex-1">
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>{t('app.generation.qrcode.preview')}</CardTitle>
-          <Button variant="primary" icon={<Download className="w-4 h-4" />} onClick={handleDownload}>
+          <Button
+            variant="primary"
+            icon={<Download className="w-4 h-4" />}
+            onClick={handleDownload}
+          >
             {t('app.generation.qrcode.download')}
           </Button>
         </CardHeader>

@@ -8,9 +8,8 @@ A modern, comprehensive web application designed to enhance daily development wo
 
 - **Framework**: [Next.js 16](https://nextjs.org/) (App Router)
 - **Core**: React 19, TypeScript
-- **UI Components**: [Ant Design 6](https://ant.design/)
+- **UI Components**: Headless React components
 - **Styling**: [Tailwind CSS 4](https://tailwindcss.com/)
-- **Database**: [Prisma 7](https://www.prisma.io/)
 - **Visualization**: ECharts, React Three Fiber (Three.js)
 - **Package Manager**: pnpm
 

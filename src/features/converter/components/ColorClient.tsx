@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { useToast } from '@/components/ui/toast'
 
 interface ColorValues {
@@ -59,18 +60,21 @@ const rgbToHsl = (r: number, g: number, b: number): { h: number; s: number; l: n
   }
 }
 
-const rgbToHex = (r: number, g: number, b: number): string => {
-  return '#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('')
-}
+const rgbToHex = (r: number, g: number, b: number): string =>
+  `#${[r, g, b].map(x => x.toString(16).padStart(2, '0')).join('')}`
 
 const hslToRgb = (h: number, s: number, l: number): { r: number; g: number; b: number } => {
   h /= 360
   s /= 100
   l /= 100
-  let r, g, b
+  let r: number
+  let g: number
+  let b: number
 
   if (s === 0) {
-    r = g = b = l
+    r = l
+    g = l
+    b = l
   } else {
     const hue2rgb = (p: number, q: number, t: number) => {
       if (t < 0) t += 1
@@ -94,6 +98,12 @@ const hslToRgb = (h: number, s: number, l: number): { r: number; g: number; b: n
   }
 }
 
+const clamp = (value: string, max: number) => {
+  const parsed = Number.parseInt(value, 10)
+  if (Number.isNaN(parsed)) return 0
+  return Math.max(0, Math.min(max, parsed))
+}
+
 const ColorClient = () => {
   const { t } = useTranslation()
   const toast = useToast()
@@ -107,47 +117,35 @@ const ColorClient = () => {
   const handleHexChange = useCallback((value: string) => {
     const hex = value.startsWith('#') ? value : `#${value}`
     const rgb = hexToRgb(hex)
-    if (rgb) {
-      const hsl = rgbToHsl(rgb.r, rgb.g, rgb.b)
-      setColors({ hex, rgb, hsl })
-    }
+    if (!rgb) return
+
+    setColors({ hex, rgb, hsl: rgbToHsl(rgb.r, rgb.g, rgb.b) })
   }, [])
 
   const handleRgbChange = useCallback(
     (key: 'r' | 'g' | 'b', value: string) => {
-      const num = parseInt(value) || 0
-      const clamped = Math.max(0, Math.min(255, num))
-      const newRgb = { ...colors.rgb, [key]: clamped }
-      const hex = rgbToHex(newRgb.r, newRgb.g, newRgb.b)
-      const hsl = rgbToHsl(newRgb.r, newRgb.g, newRgb.b)
-      setColors({ hex, rgb: newRgb, hsl })
+      const newRgb = { ...colors.rgb, [key]: clamp(value, 255) }
+      setColors({
+        hex: rgbToHex(newRgb.r, newRgb.g, newRgb.b),
+        rgb: newRgb,
+        hsl: rgbToHsl(newRgb.r, newRgb.g, newRgb.b)
+      })
     },
     [colors.rgb]
   )
 
   const handleHslChange = useCallback(
     (key: 'h' | 's' | 'l', value: string) => {
-      const num = parseInt(value) || 0
-      const max = key === 'h' ? 360 : 100
-      const clamped = Math.max(0, Math.min(max, num))
-      const newHsl = { ...colors.hsl, [key]: clamped }
+      const newHsl = { ...colors.hsl, [key]: clamp(value, key === 'h' ? 360 : 100) }
       const rgb = hslToRgb(newHsl.h, newHsl.s, newHsl.l)
-      const hex = rgbToHex(rgb.r, rgb.g, rgb.b)
-      setColors({ hex, rgb, hsl: newHsl })
+      setColors({ hex: rgbToHex(rgb.r, rgb.g, rgb.b), rgb, hsl: newHsl })
     },
     [colors.hsl]
   )
 
-  const handleColorPickerChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      handleHexChange(e.target.value)
-    },
-    [handleHexChange]
-  )
-
   const copyToClipboard = useCallback(
-    (text: string) => {
-      navigator.clipboard.writeText(text)
+    async (text: string) => {
+      await navigator.clipboard.writeText(text)
       toast.success(t('app.social.retires.copy_success'))
     },
     [toast, t]
@@ -158,126 +156,136 @@ const ColorClient = () => {
   const hslStr = `hsl(${colors.hsl.h}, ${colors.hsl.s}%, ${colors.hsl.l}%)`
 
   return (
-    <Flex className="size-full" gap={20} vertical>
-      <Card title={t('app.converter.color')}>
-        <Row gutter={[16, 16]} align="middle">
-          <Col xs={24} sm={8} md={6}>
-            <Flex align="center" gap={12}>
-              <ColorPicker
+    <div className="flex size-full flex-col gap-5">
+      <Card>
+        <CardHeader>
+          <CardTitle>{t('app.converter.color')}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+            <label className="relative flex h-16 w-16 shrink-0 cursor-pointer overflow-hidden rounded-xl border border-[var(--border-base)]">
+              <input
+                type="color"
                 value={colors.hex}
-                onChange={handleColorPickerChange}
-                showText
-                size="large"
+                onChange={event => handleHexChange(event.target.value)}
+                className="absolute inset-0 h-full w-full cursor-pointer border-0 p-0 opacity-0"
+                aria-label={t('app.converter.color')}
               />
-              <div
-                style={{
-                  width: 60,
-                  height: 60,
-                  borderRadius: 8,
-                  backgroundColor: colors.hex,
-                  border: `1px solid ${theme.colorBorderSecondary}`
-                }}
+              <span className="h-full w-full" style={{ backgroundColor: colors.hex }} />
+            </label>
+
+            <div className="grid flex-1 gap-2">
+              <Label htmlFor="color-hex-input" className="flex items-center gap-2">
+                <ArrowLeftRight className="h-4 w-4" />
+                HEX
+              </Label>
+              <Input
+                id="color-hex-input"
+                value={colors.hex}
+                onChange={event => handleHexChange(event.target.value)}
+                className="font-mono uppercase"
               />
-            </Flex>
-          </Col>
-        </Row>
+            </div>
+          </div>
+        </CardContent>
       </Card>
 
-      <Row gutter={16} style={{ flex: 1 }}>
-        <Col xs={24} md={8}>
-          <Card title="HEX" style={{ height: '100%' }}>
-            <Flex vertical gap={12}>
-              <Input
-                value={colors.hex}
-                onChange={e => handleHexChange(e.target.value)}
-                prefix={<SwapOutlined />}
-                style={{ fontFamily: 'monospace' }}
-              />
-              <Flex align="center" justify="space-between">
-                <Typography.Text code>{hexStr}</Typography.Text>
-                <Button
-                  type="text"
-                  icon={<CopyOutlined />}
-                  onClick={() => copyToClipboard(hexStr)}
-                />
-              </Flex>
-            </Flex>
-          </Card>
-        </Col>
+      <div className="grid flex-1 gap-5 lg:grid-cols-3">
+        <Card>
+          <CardHeader>
+            <CardTitle>HEX</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <Input
+              value={colors.hex}
+              onChange={event => handleHexChange(event.target.value)}
+              className="font-mono"
+            />
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-muted)] px-3 py-2">
+              <code className="text-sm text-[var(--text-primary)]">{hexStr}</code>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={() => copyToClipboard(hexStr)}
+              >
+                <Copy className="h-4 w-4" />
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
 
-        <Col xs={24} md={8}>
-          <Card title="RGB" style={{ height: '100%' }}>
-            <Flex vertical gap={12}>
-              <Space.Compact style={{ width: '100%' }}>
-                <Input
-                  prefix="R"
-                  value={colors.rgb.r}
-                  onChange={e => handleRgbChange('r', e.target.value)}
-                  style={{ fontFamily: 'monospace', flex: 1 }}
-                />
-                <Input
-                  prefix="G"
-                  value={colors.rgb.g}
-                  onChange={e => handleRgbChange('g', e.target.value)}
-                  style={{ fontFamily: 'monospace', flex: 1 }}
-                />
-                <Input
-                  prefix="B"
-                  value={colors.rgb.b}
-                  onChange={e => handleRgbChange('b', e.target.value)}
-                  style={{ fontFamily: 'monospace', flex: 1 }}
-                />
-              </Space.Compact>
-              <Flex align="center" justify="space-between">
-                <Typography.Text code>{rgbStr}</Typography.Text>
-                <Button
-                  type="text"
-                  icon={<CopyOutlined />}
-                  onClick={() => copyToClipboard(rgbStr)}
-                />
-              </Flex>
-            </Flex>
-          </Card>
-        </Col>
+        <Card>
+          <CardHeader>
+            <CardTitle>RGB</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-3 gap-2">
+              {(['r', 'g', 'b'] as const).map(key => (
+                <div key={key} className="space-y-2">
+                  <Label htmlFor={`color-rgb-${key}`}>{key.toUpperCase()}</Label>
+                  <Input
+                    id={`color-rgb-${key}`}
+                    type="number"
+                    min={0}
+                    max={255}
+                    value={colors.rgb[key]}
+                    onChange={event => handleRgbChange(key, event.target.value)}
+                    className="font-mono"
+                  />
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-muted)] px-3 py-2">
+              <code className="text-sm text-[var(--text-primary)]">{rgbStr}</code>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={() => copyToClipboard(rgbStr)}
+              >
+                <Copy className="h-4 w-4" />
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
 
-        <Col xs={24} md={8}>
-          <Card title="HSL" style={{ height: '100%' }}>
-            <Flex vertical gap={12}>
-              <Space.Compact style={{ width: '100%' }}>
-                <Input
-                  prefix="H"
-                  value={colors.hsl.h}
-                  onChange={e => handleHslChange('h', e.target.value)}
-                  style={{ fontFamily: 'monospace', flex: 1 }}
-                />
-                <Input
-                  prefix="S"
-                  value={colors.hsl.s}
-                  onChange={e => handleHslChange('s', e.target.value)}
-                  suffix="%"
-                  style={{ fontFamily: 'monospace', flex: 1 }}
-                />
-                <Input
-                  prefix="L"
-                  value={colors.hsl.l}
-                  onChange={e => handleHslChange('l', e.target.value)}
-                  suffix="%"
-                  style={{ fontFamily: 'monospace', flex: 1 }}
-                />
-              </Space.Compact>
-              <Flex align="center" justify="space-between">
-                <Typography.Text code>{hslStr}</Typography.Text>
-                <Button
-                  type="text"
-                  icon={<CopyOutlined />}
-                  onClick={() => copyToClipboard(hslStr)}
-                />
-              </Flex>
-            </Flex>
-          </Card>
-        </Col>
-      </Row>
-    </Flex>
+        <Card>
+          <CardHeader>
+            <CardTitle>HSL</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-3 gap-2">
+              {(['h', 's', 'l'] as const).map(key => (
+                <div key={key} className="space-y-2">
+                  <Label htmlFor={`color-hsl-${key}`}>{key.toUpperCase()}</Label>
+                  <Input
+                    id={`color-hsl-${key}`}
+                    type="number"
+                    min={0}
+                    max={key === 'h' ? 360 : 100}
+                    value={colors.hsl[key]}
+                    onChange={event => handleHslChange(key, event.target.value)}
+                    className="font-mono"
+                  />
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-muted)] px-3 py-2">
+              <code className="text-sm text-[var(--text-primary)]">{hslStr}</code>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={() => copyToClipboard(hslStr)}
+              >
+                <Copy className="h-4 w-4" />
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
   )
 }
 

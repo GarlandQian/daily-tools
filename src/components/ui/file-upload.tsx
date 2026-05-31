@@ -1,5 +1,5 @@
-import * as React from 'react'
 import { Upload as UploadIcon } from 'lucide-react'
+import * as React from 'react'
 
 import { cn } from '@/lib/utils'
 
@@ -28,9 +28,7 @@ function FileUploadZone({
   const handleFiles = (files: FileList | null) => {
     if (!files) return
     const fileArray = Array.from(files)
-    const filtered = maxSize
-      ? fileArray.filter(f => f.size <= maxSize)
-      : fileArray
+    const filtered = maxSize ? fileArray.filter(f => f.size <= maxSize) : fileArray
     onChange?.(filtered)
   }
 
@@ -45,9 +43,12 @@ function FileUploadZone({
         className
       )}
       onClick={() => !disabled && inputRef.current?.click()}
-      onDragOver={(e) => { e.preventDefault(); if (!disabled) setIsDragging(true) }}
+      onDragOver={e => {
+        e.preventDefault()
+        if (!disabled) setIsDragging(true)
+      }}
       onDragLeave={() => setIsDragging(false)}
-      onDrop={(e) => {
+      onDrop={e => {
         e.preventDefault()
         setIsDragging(false)
         if (!disabled) handleFiles(e.dataTransfer.files)
@@ -59,15 +60,13 @@ function FileUploadZone({
         accept={accept}
         multiple={multiple}
         className="hidden"
-        onChange={(e) => handleFiles(e.target.files)}
+        onChange={e => handleFiles(e.target.files)}
         disabled={disabled}
       />
       {children || (
         <>
           <UploadIcon className="w-8 h-8 text-[var(--text-tertiary)]" />
-          <p className="text-sm text-[var(--text-secondary)]">
-            Click or drag files here to upload
-          </p>
+          <p className="text-sm text-[var(--text-secondary)]">Click or drag files here to upload</p>
         </>
       )}
     </div>

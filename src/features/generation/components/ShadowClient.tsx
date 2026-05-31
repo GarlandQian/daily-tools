@@ -1,22 +1,13 @@
 'use client'
 
-import { CopyOutlined, ReloadOutlined } from '@ant-design/icons'
-import {
-  Button,
-  Card,
-  Checkbox,
-  Col,
-  ColorPicker,
-  Flex,
-  Input,
-  Row,
-  Slider,
-  theme as antTheme,
-  Typography
-} from 'antd'
-import { useCallback, useMemo, useState } from 'react'
-import { useTranslation } from 'react-i18next'
+import { Copy, RotateCcw } from 'lucide-react'
+import { useMemo, useState } from 'react'
 
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Label } from '@/components/ui/label'
+import { Slider } from '@/components/ui/slider'
 import { useCopy } from '@/hooks/useCopy'
 
 interface ShadowConfig {
@@ -29,7 +20,6 @@ interface ShadowConfig {
   inset: boolean
 }
 
-// Move sliderConfigs outside component to prevent recreation on each render
 const sliderConfigs = [
   { key: 'offsetX' as const, label: 'X Offset', min: -100, max: 100, suffix: 'px' },
   { key: 'offsetY' as const, label: 'Y Offset', min: -100, max: 100, suffix: 'px' },
@@ -38,151 +28,196 @@ const sliderConfigs = [
   { key: 'opacity' as const, label: 'Opacity', min: 0, max: 100, suffix: '%' }
 ]
 
+const presetShadows: { name: string; config: ShadowConfig }[] = [
+  {
+    name: 'Subtle',
+    config: {
+      offsetX: 0,
+      offsetY: 2,
+      blur: 8,
+      spread: 0,
+      color: '#000000',
+      opacity: 10,
+      inset: false
+    }
+  },
+  {
+    name: 'Medium',
+    config: {
+      offsetX: 0,
+      offsetY: 4,
+      blur: 16,
+      spread: 0,
+      color: '#000000',
+      opacity: 20,
+      inset: false
+    }
+  },
+  {
+    name: 'Floating',
+    config: {
+      offsetX: 0,
+      offsetY: 12,
+      blur: 32,
+      spread: -4,
+      color: '#000000',
+      opacity: 25,
+      inset: false
+    }
+  },
+  {
+    name: 'Dramatic',
+    config: {
+      offsetX: 8,
+      offsetY: 16,
+      blur: 40,
+      spread: 4,
+      color: '#000000',
+      opacity: 35,
+      inset: false
+    }
+  }
+]
+
+const defaultConfig: ShadowConfig = {
+  offsetX: 5,
+  offsetY: 5,
+  blur: 15,
+  spread: 0,
+  color: '#000000',
+  opacity: 30,
+  inset: false
+}
+
+const hexToRgba = (hex: string, opacity: number): string => {
+  const r = parseInt(hex.slice(1, 3), 16)
+  const g = parseInt(hex.slice(3, 5), 16)
+  const b = parseInt(hex.slice(5, 7), 16)
+  return `rgba(${r}, ${g}, ${b}, ${opacity / 100})`
+}
+
 const ShadowClient = () => {
-  const { t } = useTranslation()
-  const { token: theme } = antTheme.useToken()
   const { copy } = useCopy()
 
-  // Detect dark mode from theme
-  const isDarkMode = theme.colorBgContainer !== '#ffffff'
+  const [config, setConfig] = useState<ShadowConfig>(defaultConfig)
 
-  // Default config adapts to current theme
-  const getDefaultConfig = useCallback(
-    (): ShadowConfig => ({
-      offsetX: 5,
-      offsetY: 5,
-      blur: 15,
-      spread: 0,
-      color: isDarkMode ? '#ffffff' : '#000000',
-      opacity: isDarkMode ? 20 : 30,
-      inset: false
-    }),
-    [isDarkMode]
-  )
-
-  const [config, setConfig] = useState<ShadowConfig>(getDefaultConfig)
-
-  const cssCode = useMemo(() => {
+  const boxShadow = useMemo(() => {
     const { offsetX, offsetY, blur, spread, color, opacity, inset } = config
-    // Convert hex to rgba
-    const r = parseInt(color.slice(1, 3), 16)
-    const g = parseInt(color.slice(3, 5), 16)
-    const b = parseInt(color.slice(5, 7), 16)
-    const a = opacity / 100
-
-    const shadow = `${inset ? 'inset ' : ''}${offsetX}px ${offsetY}px ${blur}px ${spread}px rgba(${r}, ${g}, ${b}, ${a})`
-    return `box-shadow: ${shadow};`
+    const rgba = hexToRgba(color, opacity)
+    const insetPrefix = inset ? 'inset ' : ''
+    return `${insetPrefix}${offsetX}px ${offsetY}px ${blur}px ${spread}px ${rgba}`
   }, [config])
 
-  const handleReset = useCallback(() => {
-    setConfig(getDefaultConfig())
-  }, [getDefaultConfig])
+  const cssOutput = `box-shadow: ${boxShadow};`
 
-  const handleSliderChange = useCallback((key: keyof ShadowConfig, value: number) => {
+  const updateConfig = (key: keyof ShadowConfig, value: number | string | boolean) => {
     setConfig(prev => ({ ...prev, [key]: value }))
-  }, [])
-
-  const handleColorChange = useCallback((hexString: string) => {
-    setConfig(prev => ({ ...prev, color: hexString }))
-  }, [])
-
-  const handleInsetChange = useCallback((checked: boolean) => {
-    setConfig(prev => ({ ...prev, inset: checked }))
-  }, [])
+  }
 
   return (
-    <Flex className="size-full" gap={20} vertical>
-      <Row gutter={16} style={{ flex: 1 }}>
-        {/* Controls */}
-        <Col xs={24} md={12}>
-          <Card
-            title={t('app.generation.shadow')}
-            style={{ height: '100%' }}
-            extra={
-              <Button icon={<ReloadOutlined />} onClick={handleReset}>
-                {t('app.generation.cron.reset')}
-              </Button>
-            }
-          >
-            <Flex vertical gap={16}>
-              {sliderConfigs.map(item => (
-                <div key={item.key}>
-                  <Flex justify="space-between" style={{ marginBottom: 4 }}>
-                    <Typography.Text>{item.label}</Typography.Text>
-                    <Typography.Text code>
-                      {config[item.key]}
-                      {item.suffix}
-                    </Typography.Text>
-                  </Flex>
-                  <Slider
-                    min={item.min}
-                    max={item.max}
-                    value={config[item.key] as number}
-                    onChange={v => handleSliderChange(item.key, v)}
-                  />
-                </div>
-              ))}
-
-              <Flex align="center" gap={16}>
-                <Typography.Text>{t('app.generation.shadow.color')}</Typography.Text>
-                <ColorPicker
-                  value={config.color}
-                  onChange={c => handleColorChange(c.toHexString())}
-                />
-                <Checkbox
-                  checked={config.inset}
-                  onChange={e => handleInsetChange(e.target.checked)}
-                >
-                  Inset
-                </Checkbox>
-              </Flex>
-            </Flex>
-          </Card>
-        </Col>
-
-        {/* Preview */}
-        <Col xs={24} md={12}>
-          <Card title={t('app.generation.shadow.preview')} style={{ height: '100%' }}>
-            <Flex
-              justify="center"
-              align="center"
-              style={{
-                height: 300,
-                background: theme.colorBgLayout,
-                borderRadius: 8
-              }}
-            >
-              <div
-                style={{
-                  width: 150,
-                  height: 150,
-                  background: theme.colorBgContainer,
-                  borderRadius: 12,
-                  boxShadow: cssCode.replace('box-shadow: ', '').replace(';', '')
-                }}
-              />
-            </Flex>
-          </Card>
-        </Col>
-      </Row>
-
-      {/* CSS Code */}
-      <Card
-        title={t('app.generation.shadow.code')}
-        extra={
-          <Button icon={<CopyOutlined />} onClick={() => copy(cssCode)}>
-            {t('app.generation.uuid.copy')}
-          </Button>
-        }
-      >
-        <Input
-          value={cssCode}
-          readOnly
-          style={{ fontFamily: 'monospace', fontSize: 16 }}
-          size="large"
-        />
+    <div className="flex flex-col gap-5 size-full">
+      {/* Preview */}
+      <Card>
+        <CardContent className="p-0">
+          <div className="flex items-center justify-center bg-[var(--bg-muted)] rounded-xl p-12 min-h-[300px]">
+            <div
+              className="w-32 h-32 rounded-2xl bg-white transition-shadow duration-200"
+              style={{ boxShadow }}
+            />
+          </div>
+        </CardContent>
       </Card>
-    </Flex>
+
+      {/* Presets */}
+      <div className="flex flex-wrap gap-2">
+        {presetShadows.map(preset => (
+          <Button
+            key={preset.name}
+            size="sm"
+            variant="default"
+            onClick={() => setConfig(preset.config)}
+          >
+            {preset.name}
+          </Button>
+        ))}
+      </div>
+
+      {/* Controls */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Controls</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-5">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            {sliderConfigs.map(({ key, label, min, max, suffix }) => (
+              <div key={key} className="flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <Label>{label}</Label>
+                  <span className="text-sm font-mono text-[var(--text-secondary)]">
+                    {config[key]}
+                    {suffix}
+                  </span>
+                </div>
+                <Slider
+                  value={config[key] as number}
+                  min={min}
+                  max={max}
+                  step={1}
+                  onChange={v => updateConfig(key, v)}
+                />
+              </div>
+            ))}
+
+            {/* Color picker */}
+            <div className="flex flex-col gap-2">
+              <Label>Color</Label>
+              <input
+                type="color"
+                value={config.color}
+                onChange={e => updateConfig('color', e.target.value)}
+                className="w-12 h-10 rounded-lg border border-[var(--border-base)] cursor-pointer bg-transparent p-0.5"
+              />
+            </div>
+          </div>
+
+          {/* Inset checkbox */}
+          <Checkbox
+            checked={config.inset}
+            onChange={e => updateConfig('inset', (e.target as HTMLInputElement).checked)}
+            label="Inset shadow"
+          />
+        </CardContent>
+      </Card>
+
+      {/* Output */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle>CSS</CardTitle>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="ghost"
+              icon={<RotateCcw className="w-3.5 h-3.5" />}
+              onClick={() => setConfig(defaultConfig)}
+            >
+              Reset
+            </Button>
+            <Button
+              size="sm"
+              icon={<Copy className="w-3.5 h-3.5" />}
+              onClick={() => copy(cssOutput)}
+            >
+              Copy
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="glass-input rounded-lg p-4 font-mono text-sm text-[var(--text-primary)] break-all whitespace-pre-wrap">
+            {cssOutput}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
   )
 }
 

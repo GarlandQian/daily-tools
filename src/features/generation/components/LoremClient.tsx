@@ -1,7 +1,7 @@
 'use client'
 
-import { Copy, RotateCcw } from 'lucide-react'
 import { LoremIpsum } from 'lorem-ipsum'
+import { Copy, RotateCcw } from 'lucide-react'
 import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -69,7 +69,7 @@ const LoremClient = () => {
                 min={1}
                 max={100}
                 value={formData.count}
-                onChange={(e) => setFormData(prev => ({ ...prev, count: Number(e.target.value) }))}
+                onChange={e => setFormData(prev => ({ ...prev, count: Number(e.target.value) }))}
                 className="w-20"
               />
             </div>
@@ -77,7 +77,9 @@ const LoremClient = () => {
               <Label>{t('app.generation.lorem.unit')}</Label>
               <RadioGroup
                 value={formData.unit}
-                onValueChange={(value) => setFormData(prev => ({ ...prev, unit: value as LoremUnit }))}
+                onValueChange={value =>
+                  setFormData(prev => ({ ...prev, unit: value as LoremUnit }))
+                }
                 className="flex gap-2"
               >
                 <label className="flex items-center gap-2 glass-panel px-3 py-2 rounded-lg cursor-pointer hover:glass-panel-strong transition-all">
@@ -95,10 +97,18 @@ const LoremClient = () => {
               </RadioGroup>
             </div>
             <div className="flex gap-2">
-              <Button variant="primary" icon={<RotateCcw className="w-4 h-4" />} onClick={handleGenerate}>
+              <Button
+                variant="primary"
+                icon={<RotateCcw className="w-4 h-4" />}
+                onClick={handleGenerate}
+              >
                 {t('public.generate')}
               </Button>
-              <Button icon={<Copy className="w-4 h-4" />} onClick={() => copy(output)} disabled={!output}>
+              <Button
+                icon={<Copy className="w-4 h-4" />}
+                onClick={() => copy(output)}
+                disabled={!output}
+              >
                 {t('app.generation.uuid.copy')}
               </Button>
             </div>

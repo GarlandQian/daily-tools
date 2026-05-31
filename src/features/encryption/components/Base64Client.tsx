@@ -1,7 +1,7 @@
 'use client'
-import { Copy } from 'lucide-react'
 import CryptoJS from 'crypto-js'
 import { AnimatePresence, motion } from 'framer-motion'
+import { Copy } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -10,11 +10,6 @@ import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Textarea } from '@/components/ui/textarea'
 import { useToast } from '@/components/ui/toast'
-
-interface Base64Params {
-  text: string
-  mode: 'encode' | 'decode'
-}
 
 export default function Base64Client() {
   const { t } = useTranslation()
@@ -56,7 +51,7 @@ export default function Base64Client() {
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="grid grid-cols-1 sm:grid-cols-[200px_1fr] gap-4 items-start">
             <Label className="sm:pt-3">{t('app.encryption.aes.action')}</Label>
-            <RadioGroup value={mode} onValueChange={(v) => setMode(v as 'encode' | 'decode')}>
+            <RadioGroup value={mode} onValueChange={v => setMode(v as 'encode' | 'decode')}>
               <div className="flex items-center space-x-2">
                 <RadioGroupItem value="encode" id="encode" />
                 <Label htmlFor="encode" className="cursor-pointer">
@@ -77,7 +72,7 @@ export default function Base64Client() {
             <Textarea
               rows={4}
               value={text}
-              onChange={(e) => setText(e.target.value)}
+              onChange={e => setText(e.target.value)}
               placeholder={t('app.encryption.aes.str')}
             />
           </div>
@@ -85,7 +80,9 @@ export default function Base64Client() {
           <div className="grid grid-cols-1 sm:grid-cols-[200px_1fr] gap-4">
             <div />
             <Button type="submit" variant="primary" className="w-full sm:w-auto">
-              {mode === 'encode' ? t('app.encryption.aes.encrypt') : t('app.encryption.aes.decrypt')}
+              {mode === 'encode'
+                ? t('app.encryption.aes.encrypt')
+                : t('app.encryption.aes.decrypt')}
             </Button>
           </div>
         </form>
@@ -105,12 +102,7 @@ export default function Base64Client() {
                 <div className="grid grid-cols-1 sm:grid-cols-[200px_1fr] gap-4 items-start">
                   <Label className="sm:pt-3">{t('app.hash.result')}</Label>
                   <div className="flex items-start gap-2">
-                    <Textarea
-                      rows={4}
-                      value={result.text}
-                      readOnly
-                      className="flex-1"
-                    />
+                    <Textarea rows={4} value={result.text} readOnly className="flex-1" />
                     <Button
                       variant="default"
                       size="icon"

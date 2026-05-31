@@ -1,25 +1,25 @@
 'use client'
 
-import { CopyOutlined, InboxOutlined } from '@ant-design/icons'
-import {
-  App,
-  Button,
-  Card,
-  Col,
-  Flex,
-  Row,
-  Switch,
-  theme as antTheme,
-  Typography,
-  Upload
-} from 'antd'
+import { Copy, ImageIcon, Upload } from 'lucide-react'
 import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Checkbox } from '@/components/ui/checkbox'
+import { FileUploadZone } from '@/components/ui/file-upload'
+import { Textarea } from '@/components/ui/textarea'
+import { useToast } from '@/components/ui/toast'
+
+const formatSize = (bytes: number) => {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
+}
+
 const ImageBase64Client = () => {
   const { t } = useTranslation()
-  const { message } = App.useApp()
-  const { token: theme } = antTheme.useToken()
+  const toast = useToast()
 
   const [base64, setBase64] = useState('')
   const [previewUrl, setPreviewUrl] = useState('')
@@ -29,7 +29,15 @@ const ImageBase64Client = () => {
   )
 
   const handleFileChange = useCallback(
-    (file: File) => {
+    (files: File[]) => {
+      const file = files[0]
+      if (!file) return
+
+      if (!file.type.startsWith('image/')) {
+        toast.error('Please select an image file')
+        return
+      }
+
       const reader = new FileReader()
       reader.onload = e => {
         const result = e.target?.result as string
@@ -42,129 +50,120 @@ const ImageBase64Client = () => {
         })
       }
       reader.onerror = () => {
-        message.error(t('public.generate_failed'))
+        toast.error(t('public.generate_failed'))
       }
       reader.readAsDataURL(file)
-      return false // Prevent default upload behavior
     },
-    [message, t]
+    [toast, t]
   )
 
   const handleCopy = useCallback(() => {
     if (!base64) return
     const textToCopy = includeDataUri ? base64 : base64.split(',')[1] || base64
     navigator.clipboard.writeText(textToCopy)
-    message.success(t('app.social.retires.copy_success'))
-  }, [base64, includeDataUri, message, t])
+    toast.success(t('app.social.retires.copy_success'))
+  }, [base64, includeDataUri, toast, t])
 
-  const formatSize = (bytes: number) => {
-    if (bytes < 1024) return `${bytes} B`
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`
-    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
-  }
+  const displayedBase64 = includeDataUri ? base64 : base64.split(',')[1] || ''
 
   return (
-    <Flex className="size-full" gap={20} vertical>
-      <Card title={t('app.converter.image')}>
-        <Upload.Dragger
-          accept="image/*"
-          showUploadList={false}
-          beforeUpload={handleFileChange}
-          style={{ marginBottom: 16 }}
-        >
-          <p className="ant-upload-drag-icon">
-            <InboxOutlined />
-          </p>
-          <p className="ant-upload-text">{t('app.converter.image.upload')}</p>
-          <p className="ant-upload-hint">{t('app.converter.image.hint')}</p>
-        </Upload.Dragger>
+    <div className="flex flex-col gap-5 size-full">
+      {/* Upload zone */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">{t('app.converter.image')}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <FileUploadZone accept="image/*" onChange={handleFileChange}>
+            <Upload className="w-10 h-10 text-[var(--text-tertiary)]" />
+            <p className="text-sm text-[var(--text-primary)] font-medium">
+              {t('app.converter.image.upload')}
+            </p>
+            <p className="text-xs text-[var(--text-secondary)]">{t('app.converter.image.hint')}</p>
+          </FileUploadZone>
 
-        {fileInfo && (
-          <Flex gap={16} wrap style={{ marginTop: 16 }}>
-            <Typography.Text>
-              <strong>{t('app.converter.image.filename')}:</strong> {fileInfo.name}
-            </Typography.Text>
-            <Typography.Text>
-              <strong>{t('app.converter.image.size')}:</strong> {formatSize(fileInfo.size)}
-            </Typography.Text>
-            <Typography.Text>
-              <strong>{t('app.converter.image.type')}:</strong> {fileInfo.type}
-            </Typography.Text>
-          </Flex>
-        )}
+          {/* File info chips */}
+          {fileInfo && (
+            <div className="flex flex-wrap gap-2 mt-4">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs glass-panel border border-[var(--border-base)]">
+                <span className="text-[var(--text-tertiary)]">
+                  {t('app.converter.image.filename')}:
+                </span>
+                <span className="text-[var(--text-primary)] font-medium">{fileInfo.name}</span>
+              </span>
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs glass-panel border border-[var(--border-base)]">
+                <span className="text-[var(--text-tertiary)]">
+                  {t('app.converter.image.size')}:
+                </span>
+                <span className="text-[var(--text-primary)] font-medium font-mono">
+                  {formatSize(fileInfo.size)}
+                </span>
+              </span>
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs glass-panel border border-[var(--border-base)]">
+                <span className="text-[var(--text-tertiary)]">
+                  {t('app.converter.image.type')}:
+                </span>
+                <span className="text-[var(--primary)] font-mono">{fileInfo.type}</span>
+              </span>
+            </div>
+          )}
+        </CardContent>
       </Card>
 
-      <Row gutter={16} style={{ flex: 1 }}>
-        <Col xs={24} md={8}>
-          <Card title={t('app.converter.image.preview')} style={{ height: '100%' }}>
+      {/* Preview + Base64 */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 flex-1 min-h-0">
+        {/* Preview */}
+        <Card className="md:col-span-1 flex flex-col h-full min-h-[280px]">
+          <CardHeader>
+            <CardTitle className="text-base">{t('app.converter.image.preview')}</CardTitle>
+          </CardHeader>
+          <CardContent className="flex-1 flex items-center justify-center">
             {previewUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={previewUrl}
-                alt="Preview"
-                style={{
-                  maxWidth: '100%',
-                  maxHeight: 300,
-                  display: 'block',
-                  margin: '0 auto',
-                  borderRadius: 8
-                }}
-              />
+              <div className="rounded-xl border border-[var(--border-base)] glass-panel p-2 overflow-hidden">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={previewUrl}
+                  alt="Preview"
+                  className="block max-w-full max-h-[300px] rounded-lg object-contain"
+                />
+              </div>
             ) : (
-              <Flex
-                justify="center"
-                align="center"
-                style={{
-                  height: 200,
-                  background: theme.colorBgLayout,
-                  borderRadius: 8,
-                  color: theme.colorTextSecondary
-                }}
-              >
-                {t('app.converter.image.no_image')}
-              </Flex>
+              <div className="flex flex-col items-center justify-center gap-2 text-[var(--text-tertiary)] py-12">
+                <ImageIcon className="w-10 h-10" />
+                <span className="text-sm">{t('app.converter.image.no_image')}</span>
+              </div>
             )}
-          </Card>
-        </Col>
-        <Col xs={24} md={16}>
-          <Card
-            title="Base64"
-            style={{ height: '100%', display: 'flex', flexDirection: 'column' }}
-            styles={{
-              body: { flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }
-            }}
-            extra={
-              <Flex gap={16} align="center">
-                <Flex gap={8} align="center">
-                  <Typography.Text type="secondary">Data URI</Typography.Text>
-                  <Switch checked={includeDataUri} onChange={setIncludeDataUri} size="small" />
-                </Flex>
-                <Button icon={<CopyOutlined />} onClick={handleCopy} disabled={!base64}>
+          </CardContent>
+        </Card>
+
+        {/* Base64 textarea */}
+        <Card className="md:col-span-2 flex flex-col h-full min-h-[280px]">
+          <CardHeader>
+            <div className="flex items-center justify-between gap-4 flex-wrap">
+              <CardTitle className="text-base">Base64</CardTitle>
+              <div className="flex items-center gap-4">
+                <Checkbox
+                  checked={includeDataUri}
+                  onChange={e => setIncludeDataUri(e.target.checked)}
+                  label="Include Data URI"
+                />
+                <Button icon={<Copy className="w-4 h-4" />} onClick={handleCopy} disabled={!base64}>
                   {t('app.generation.uuid.copy')}
                 </Button>
-              </Flex>
-            }
-          >
-            <textarea
-              value={includeDataUri ? base64 : base64.split(',')[1] || ''}
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="flex-1 overflow-hidden">
+            <Textarea
+              value={displayedBase64}
               readOnly
-              style={{
-                flex: 1,
-                width: '100%',
-                fontFamily: 'monospace',
-                fontSize: 12,
-                padding: 12,
-                border: `1px solid ${theme.colorBorderSecondary}`,
-                borderRadius: 8,
-                background: theme.colorBgLayout,
-                resize: 'none',
-                color: theme.colorText
-              }}
+              placeholder="Base64 output will appear here..."
+              className="h-full min-h-[200px] resize-none font-mono text-xs"
             />
-          </Card>
-        </Col>
-      </Row>
-    </Flex>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
   )
 }
 

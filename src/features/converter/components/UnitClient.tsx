@@ -1,16 +1,20 @@
 'use client'
 
-import { Card, Col, Flex, InputNumber, Row, Select, Typography } from 'antd'
-import React, { useCallback, useMemo, useState } from 'react'
+import { ArrowRightLeft } from 'lucide-react'
+import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import ToolLayout from '@/components/ToolLayout'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+import { Select } from '@/components/ui/select'
 
 type UnitCategory = 'length' | 'weight' | 'temperature' | 'data'
 
 interface UnitDef {
   label: string
-  ratio: number // ratio to base unit
+  ratio: number
 }
 
 const unitData: Record<UnitCategory, { base: string; units: Record<string, UnitDef> }> = {
@@ -57,20 +61,20 @@ const unitData: Record<UnitCategory, { base: string; units: Record<string, UnitD
   }
 }
 
+const categoryLabels: Record<UnitCategory, string> = {
+  length: 'Length',
+  weight: 'Weight',
+  temperature: 'Temperature',
+  data: 'Data Storage'
+}
+
 const UnitClient = () => {
   useTranslation()
 
   const [category, setCategory] = useState<UnitCategory>('length')
   const [fromUnit, setFromUnit] = useState('m')
   const [toUnit, setToUnit] = useState('km')
-  const [fromValue, setFromValue] = useState<number | null>(1)
-
-  const categoryOptions = [
-    { value: 'length', label: 'Length' },
-    { value: 'weight', label: 'Weight' },
-    { value: 'temperature', label: 'Temperature' },
-    { value: 'data', label: 'Data Storage' }
-  ]
+  const [fromValue, setFromValue] = useState<string>('1')
 
   const unitOptions = useMemo(() => {
     return Object.entries(unitData[category].units).map(([key, def]) => ({
@@ -93,15 +97,17 @@ const UnitClient = () => {
   }, [])
 
   const result = useMemo(() => {
-    if (fromValue === null) return null
+    const numVal = parseFloat(fromValue)
+    if (isNaN(numVal)) return null
 
     if (category === 'temperature') {
-      return convertTemperature(fromValue, fromUnit, toUnit)
+      return convertTemperature(numVal, fromUnit, toUnit)
     }
 
-    const fromRatio = unitData[category].units[fromUnit].ratio
-    const toRatio = unitData[category].units[toUnit].ratio
-    const baseValue = fromValue * fromRatio
+    const fromRatio = unitData[category].units[fromUnit]?.ratio
+    const toRatio = unitData[category].units[toUnit]?.ratio
+    if (!fromRatio || !toRatio) return null
+    const baseValue = numVal * fromRatio
     return baseValue / toRatio
   }, [category, fromUnit, toUnit, fromValue, convertTemperature])
 
@@ -112,62 +118,101 @@ const UnitClient = () => {
     setToUnit(units[1] || units[0])
   }
 
+  const handleSwap = () => {
+    setFromUnit(toUnit)
+    setToUnit(fromUnit)
+    // If we have a result, put it as the new fromValue
+    if (result !== null) {
+      setFromValue(String(result))
+    }
+  }
+
   return (
-    <ToolLayout title="app.converter.unit" showClear onClear={() => setFromValue(1)}>
-      <Flex gap={20} vertical>
-        <Card>
-          <Flex gap={16} wrap>
-            <div>
-              <Typography.Text type="secondary">Category</Typography.Text>
-              <Select
-                value={category}
-                onChange={handleCategoryChange}
-                options={categoryOptions}
-                style={{ width: 200, display: 'block' }}
-              />
-            </div>
-          </Flex>
+    <div className="flex flex-col gap-5 size-full">
+      {/* Category pills */}
+      <Card>
+        <CardContent className="p-4">
+          <RadioGroup
+            value={category}
+            onValueChange={v => handleCategoryChange(v as UnitCategory)}
+            className="flex flex-wrap gap-2"
+          >
+            {(Object.keys(unitData) as UnitCategory[]).map(cat => (
+              <label
+                key={cat}
+                className={`flex items-center gap-2 cursor-pointer select-none px-4 py-2 rounded-full border text-sm font-medium transition-all ${
+                  category === cat
+                    ? 'bg-[var(--primary)] text-white border-[var(--primary)]'
+                    : 'border-[var(--border-base)] text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
+                }`}
+              >
+                <RadioGroupItem value={cat} className="sr-only" />
+                {categoryLabels[cat]}
+              </label>
+            ))}
+          </RadioGroup>
+        </CardContent>
+      </Card>
+
+      {/* From / To columns */}
+      <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] gap-4 flex-1">
+        {/* From */}
+        <Card className="flex flex-col">
+          <CardHeader>
+            <CardTitle className="text-base">From</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            <Select value={fromUnit} onChange={e => setFromUnit(e.target.value)}>
+              {unitOptions.map(opt => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </Select>
+            <Input
+              type="number"
+              value={fromValue}
+              onChange={e => setFromValue(e.target.value)}
+              className="font-mono h-14 text-3xl font-semibold"
+            />
+          </CardContent>
         </Card>
 
-        <Row gutter={16}>
-          <Col xs={24} md={12}>
-            <Card title="From">
-              <Flex vertical gap={12}>
-                <Select
-                  value={fromUnit}
-                  onChange={setFromUnit}
-                  options={unitOptions}
-                  style={{ width: '100%' }}
-                />
-                <InputNumber
-                  value={fromValue}
-                  onChange={setFromValue}
-                  style={{ width: '100%', fontSize: 24 }}
-                  size="large"
-                />
-              </Flex>
-            </Card>
-          </Col>
-          <Col xs={24} md={12}>
-            <Card title="To">
-              <Flex vertical gap={12}>
-                <Select
-                  value={toUnit}
-                  onChange={setToUnit}
-                  options={unitOptions}
-                  style={{ width: '100%' }}
-                />
-                <Typography.Title level={3} style={{ margin: 0, fontFamily: 'monospace' }}>
-                  {result !== null
-                    ? result.toLocaleString(undefined, { maximumFractionDigits: 10 })
-                    : '-'}
-                </Typography.Title>
-              </Flex>
-            </Card>
-          </Col>
-        </Row>
-      </Flex>
-    </ToolLayout>
+        {/* Swap button */}
+        <div className="flex items-center justify-center">
+          <Button
+            variant="outline"
+            size="icon"
+            icon={<ArrowRightLeft className="w-5 h-5" />}
+            onClick={handleSwap}
+            className="rounded-full"
+          />
+        </div>
+
+        {/* To */}
+        <Card className="flex flex-col">
+          <CardHeader>
+            <CardTitle className="text-base">To</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            <Select value={toUnit} onChange={e => setToUnit(e.target.value)}>
+              {unitOptions.map(opt => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </Select>
+            <div className="flex items-center h-14 px-3 rounded-lg glass-panel border border-[var(--border-base)]">
+              <span className="text-3xl md:text-4xl font-mono font-semibold text-[var(--text-primary)]">
+                {result !== null
+                  ? result.toLocaleString(undefined, { maximumFractionDigits: 10 })
+                  : '-'}
+              </span>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
   )
 }
 

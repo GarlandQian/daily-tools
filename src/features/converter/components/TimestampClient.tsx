@@ -1,41 +1,29 @@
 'use client'
 
-import { CopyOutlined, PauseCircleOutlined, PlayCircleOutlined } from '@ant-design/icons'
-import {
-  Button,
-  Card,
-  Col,
-  DatePicker,
-  Flex,
-  Input,
-  Radio,
-  Row,
-  Space,
-  Statistic,
-  theme as antTheme,
-  Typography
-} from 'antd'
 import dayjs from 'dayjs'
+import { Clock, Copy, Pause, Play } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { useCopy } from '@/hooks/useCopy'
 
 type TimestampUnit = 'seconds' | 'milliseconds'
 
 const TimestampClient = () => {
   const { t } = useTranslation()
-  const { token: theme } = antTheme.useToken()
   const { copy } = useCopy()
 
-  // Use lazy initializer to set initial timestamp - avoids setState in useEffect
   const [currentTimestamp, setCurrentTimestamp] = useState(() => Date.now())
   const [isPaused, setIsPaused] = useState(false)
   const [unit, setUnit] = useState<TimestampUnit>('seconds')
 
   // Input fields
   const [inputTimestamp, setInputTimestamp] = useState('')
-  const [inputDate, setInputDate] = useState<dayjs.Dayjs | null>(null)
+  const [inputDatetime, setInputDatetime] = useState('')
 
   // Update current timestamp every second when not paused
   useEffect(() => {
@@ -60,155 +48,172 @@ const TimestampClient = () => {
     if (!inputTimestamp) return null
     const ts = parseInt(inputTimestamp)
     if (isNaN(ts)) return null
-    // Auto-detect unit: if length > 10, assume milliseconds
     const ms = inputTimestamp.length > 10 ? ts : ts * 1000
     return dayjs(ms)
   }, [inputTimestamp])
 
   // Convert date to timestamp
   const convertedTimestamp = useMemo(() => {
-    if (!inputDate) return null
+    if (!inputDatetime) return null
+    const d = dayjs(inputDatetime)
+    if (!d.isValid()) return null
     return {
-      seconds: Math.floor(inputDate.valueOf() / 1000),
-      milliseconds: inputDate.valueOf()
+      seconds: Math.floor(d.valueOf() / 1000),
+      milliseconds: d.valueOf()
     }
-  }, [inputDate])
+  }, [inputDatetime])
 
   return (
-    <Flex className="size-full" gap={20} vertical>
-      {/* Current Timestamp */}
-      <Card title={t('app.converter.timestamp.current')}>
-        <Flex align="center" gap={24} wrap>
-          <Statistic
-            title={t('app.converter.timestamp.now')}
-            value={displayTimestamp}
-            valueStyle={{ fontFamily: 'monospace', fontSize: 28 }}
-          />
-          <Typography.Text type="secondary" style={{ fontSize: 16 }}>
-            {currentDateStr}
-          </Typography.Text>
-          <Space>
-            <Radio.Group value={unit} onChange={e => setUnit(e.target.value)}>
-              <Radio.Button value="seconds">{t('app.converter.timestamp.seconds')}</Radio.Button>
-              <Radio.Button value="milliseconds">
-                {t('app.converter.timestamp.milliseconds')}
-              </Radio.Button>
-            </Radio.Group>
-            <Button
-              icon={isPaused ? <PlayCircleOutlined /> : <PauseCircleOutlined />}
-              onClick={() => setIsPaused(!isPaused)}
-            >
-              {isPaused ? t('app.converter.timestamp.resume') : t('app.converter.timestamp.pause')}
-            </Button>
-            <Button icon={<CopyOutlined />} onClick={() => copy(displayTimestamp)}>
-              {t('app.generation.uuid.copy')}
-            </Button>
-          </Space>
-        </Flex>
+    <div className="flex flex-col gap-5 size-full">
+      {/* Current Timestamp - hero display */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Clock className="w-5 h-5 text-[var(--primary)]" />
+            <CardTitle>{t('app.converter.timestamp.current')}</CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col gap-4">
+            {/* Big timestamp display */}
+            <div className="flex items-baseline gap-4 flex-wrap">
+              <span
+                className={`text-4xl md:text-5xl font-mono tabular-nums font-semibold text-[var(--text-primary)] ${
+                  !isPaused
+                    ? 'animate-pulse ring-2 ring-[var(--primary)]/20 rounded-lg px-3 py-1'
+                    : 'px-3 py-1'
+                }`}
+              >
+                {displayTimestamp}
+              </span>
+              <span className="text-base text-[var(--text-secondary)]">{currentDateStr}</span>
+            </div>
+
+            {/* Controls */}
+            <div className="flex flex-wrap items-center gap-3">
+              <RadioGroup
+                value={unit}
+                onValueChange={v => setUnit(v as TimestampUnit)}
+                className="flex gap-3"
+              >
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <RadioGroupItem value="seconds" />
+                  <span className="text-sm">{t('app.converter.timestamp.seconds')}</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <RadioGroupItem value="milliseconds" />
+                  <span className="text-sm">{t('app.converter.timestamp.milliseconds')}</span>
+                </label>
+              </RadioGroup>
+
+              <div className="flex gap-2 ml-auto">
+                <Button
+                  icon={isPaused ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}
+                  onClick={() => setIsPaused(!isPaused)}
+                >
+                  {isPaused
+                    ? t('app.converter.timestamp.resume')
+                    : t('app.converter.timestamp.pause')}
+                </Button>
+                <Button icon={<Copy className="w-4 h-4" />} onClick={() => copy(displayTimestamp)}>
+                  {t('app.generation.uuid.copy')}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </CardContent>
       </Card>
 
-      <Row gutter={16} style={{ flex: 1 }}>
+      {/* Two-column conversion */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1">
         {/* Timestamp to Date */}
-        <Col xs={24} md={12}>
-          <Card title={t('app.converter.timestamp.to_date')} style={{ height: '100%' }}>
-            <Flex vertical gap={16}>
-              <Input
-                value={inputTimestamp}
-                onChange={e => setInputTimestamp(e.target.value)}
-                placeholder={t('app.converter.timestamp.input_ts')}
-                style={{ fontFamily: 'monospace' }}
-                size="large"
-              />
-              {convertedDate && convertedDate.isValid() && (
-                <div
-                  style={{
-                    padding: 16,
-                    background: theme.colorBgLayout,
-                    borderRadius: 8
-                  }}
-                >
-                  <Flex vertical gap={8}>
-                    <Flex justify="space-between" align="center">
-                      <Typography.Text strong>
-                        {convertedDate.format('YYYY-MM-DD HH:mm:ss')}
-                      </Typography.Text>
-                      <Button
-                        type="text"
-                        icon={<CopyOutlined />}
-                        onClick={() => copy(convertedDate.format('YYYY-MM-DD HH:mm:ss'))}
-                      />
-                    </Flex>
-                    <Typography.Text type="secondary">
-                      {convertedDate.format('dddd, MMMM D, YYYY')}
-                    </Typography.Text>
-                    <Typography.Text type="secondary">
-                      ISO: {convertedDate.toISOString()}
-                    </Typography.Text>
-                  </Flex>
+        <Card className="flex flex-col">
+          <CardHeader>
+            <CardTitle className="text-base">{t('app.converter.timestamp.to_date')}</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            <Input
+              value={inputTimestamp}
+              onChange={e => setInputTimestamp(e.target.value)}
+              placeholder={t('app.converter.timestamp.input_ts')}
+              className="font-mono h-12 text-base"
+            />
+            {convertedDate && convertedDate.isValid() && (
+              <div className="rounded-lg glass-panel border border-[var(--border-base)] p-4 flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-lg font-semibold font-mono text-[var(--text-primary)]">
+                    {convertedDate.format('YYYY-MM-DD HH:mm:ss')}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    icon={<Copy className="w-4 h-4" />}
+                    onClick={() => copy(convertedDate.format('YYYY-MM-DD HH:mm:ss'))}
+                  />
                 </div>
-              )}
-            </Flex>
-          </Card>
-        </Col>
+                <span className="text-sm text-[var(--text-secondary)]">
+                  {convertedDate.format('dddd, MMMM D, YYYY')}
+                </span>
+                <span className="text-sm text-[var(--text-tertiary)] font-mono">
+                  ISO: {convertedDate.toISOString()}
+                </span>
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         {/* Date to Timestamp */}
-        <Col xs={24} md={12}>
-          <Card title={t('app.converter.timestamp.to_ts')} style={{ height: '100%' }}>
-            <Flex vertical gap={16}>
-              <DatePicker
-                showTime
-                value={inputDate}
-                onChange={setInputDate}
-                style={{ width: '100%' }}
-                size="large"
-              />
-              {convertedTimestamp && (
-                <div
-                  style={{
-                    padding: 16,
-                    background: theme.colorBgLayout,
-                    borderRadius: 8
-                  }}
-                >
-                  <Flex vertical gap={12}>
-                    <Flex justify="space-between" align="center">
-                      <div>
-                        <Typography.Text type="secondary">
-                          {t('app.converter.timestamp.seconds')}:
-                        </Typography.Text>
-                        <Typography.Text code style={{ marginLeft: 8, fontSize: 16 }}>
-                          {convertedTimestamp.seconds}
-                        </Typography.Text>
-                      </div>
-                      <Button
-                        type="text"
-                        icon={<CopyOutlined />}
-                        onClick={() => copy(convertedTimestamp.seconds)}
-                      />
-                    </Flex>
-                    <Flex justify="space-between" align="center">
-                      <div>
-                        <Typography.Text type="secondary">
-                          {t('app.converter.timestamp.milliseconds')}:
-                        </Typography.Text>
-                        <Typography.Text code style={{ marginLeft: 8, fontSize: 16 }}>
-                          {convertedTimestamp.milliseconds}
-                        </Typography.Text>
-                      </div>
-                      <Button
-                        type="text"
-                        icon={<CopyOutlined />}
-                        onClick={() => copy(convertedTimestamp.milliseconds)}
-                      />
-                    </Flex>
-                  </Flex>
+        <Card className="flex flex-col">
+          <CardHeader>
+            <CardTitle className="text-base">{t('app.converter.timestamp.to_ts')}</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            <Input
+              type="datetime-local"
+              value={inputDatetime}
+              onChange={e => setInputDatetime(e.target.value)}
+              className="h-12 text-base"
+            />
+            {convertedTimestamp && (
+              <div className="rounded-lg glass-panel border border-[var(--border-base)] p-4 flex flex-col gap-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex flex-col">
+                    <span className="text-xs text-[var(--text-tertiary)]">
+                      {t('app.converter.timestamp.seconds')}
+                    </span>
+                    <span className="text-lg font-mono font-semibold text-[var(--text-primary)]">
+                      {convertedTimestamp.seconds}
+                    </span>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    icon={<Copy className="w-4 h-4" />}
+                    onClick={() => copy(convertedTimestamp.seconds)}
+                  />
                 </div>
-              )}
-            </Flex>
-          </Card>
-        </Col>
-      </Row>
-    </Flex>
+                <div className="flex items-center justify-between">
+                  <div className="flex flex-col">
+                    <span className="text-xs text-[var(--text-tertiary)]">
+                      {t('app.converter.timestamp.milliseconds')}
+                    </span>
+                    <span className="text-lg font-mono font-semibold text-[var(--text-primary)]">
+                      {convertedTimestamp.milliseconds}
+                    </span>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    icon={<Copy className="w-4 h-4" />}
+                    onClick={() => copy(convertedTimestamp.milliseconds)}
+                  />
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
   )
 }
 

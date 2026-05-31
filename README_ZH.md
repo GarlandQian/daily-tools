@@ -8,9 +8,8 @@
 
 - **框架**: [Next.js 16](https://nextjs.org/) (App Router)
 - **核心**: React 19, TypeScript
-- **UI 组件**: [Ant Design 6](https://ant.design/)
+- **UI 组件**: Headless React components
 - **样式**: [Tailwind CSS 4](https://tailwindcss.com/)
-- **数据库**: [Prisma 7](https://www.prisma.io/)
 - **可视化**: ECharts, React Three Fiber (Three.js)
 - **包管理**: pnpm
 

@@ -1,5 +1,5 @@
+import { ChevronDown, ChevronUp, Copy } from 'lucide-react'
 import React, { useState } from 'react'
-import { Copy, ChevronDown, ChevronUp } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 
