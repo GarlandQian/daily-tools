@@ -1,10 +1,10 @@
 'use client'
-import { UploadOutlined } from '@ant-design/icons'
-import { Button,Flex, Spin, Upload } from 'antd'
-import { RcFile } from 'antd/es/upload'
+import { Upload } from 'lucide-react'
 import type jsPreviewPPtx from 'pptx-preview'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+
+import { Button } from '@/components/ui/button'
 
 import FileUploader from './FileUploader'
 
@@ -21,7 +21,6 @@ const PptxPreviewer = () => {
     const init = async () => {
       if (pptxRef.current && !isInitialized.current) {
         const { init } = await import('pptx-preview')
-        //初始化时指明要挂载的父元素Dom节点
         myPPtxPreviewer.current = init(pptxRef.current, {
           width: '100%' as unknown as number,
           height: 700
@@ -48,7 +47,7 @@ const PptxPreviewer = () => {
     }
   }, [])
 
-  const onUpload = (file: RcFile) => {
+  const onUpload = (file: File) => {
     setLoading(true)
     setHasFile(true)
     const reader = new FileReader()
@@ -59,38 +58,46 @@ const PptxPreviewer = () => {
     reader.readAsArrayBuffer(file)
   }
 
+  const handleReupload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      onUpload(file)
+    }
+  }
+
   return (
-    <Flex gap="middle" vertical style={{ height: '100%', overflow: 'hidden' }}>
+    <div className="flex flex-col gap-4 h-full overflow-hidden">
       {!hasFile ? (
         <FileUploader accept=".pptx" onUpload={onUpload} disabled={loading} />
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-          <div style={{ padding: '0 0 10px 0' }}>
-            <Upload
-              accept=".pptx"
-              showUploadList={false}
-              customRequest={({ file, onSuccess }) => {
-                setTimeout(() => {
-                  onSuccess?.('ok')
-                  onUpload(file as RcFile)
-                }, 0)
-              }}
+        <div className="flex flex-col h-full overflow-hidden">
+          <div className="pb-3">
+            <Button
+              icon={<Upload className="w-4 h-4" />}
+              loading={loading}
+              onClick={() => document.getElementById('pptx-reupload')?.click()}
             >
-              <Button icon={<UploadOutlined />} loading={loading}>
-                {t('app.encryption.aes.action')}
-              </Button>
-            </Upload>
-          </div>
-          <div style={{ overflow: 'hidden', flex: 1, position: 'relative', border: '1px solid #f0f0f0', borderRadius: 8 }}>
-            <Spin
-              spinning={loading}
-              style={{ position: 'absolute', top: '20px', left: '50%', transform: 'translateX(-50%)', zIndex: 10 }}
+              {t('app.encryption.aes.action')}
+            </Button>
+            <input
+              id="pptx-reupload"
+              type="file"
+              accept=".pptx"
+              className="hidden"
+              onChange={handleReupload}
             />
-            <div style={{ height: '100%' }} ref={pptxRef}></div>
+          </div>
+          <div className="flex-1 overflow-hidden relative glass-panel rounded-lg">
+            {loading && (
+              <div className="absolute top-5 left-1/2 -translate-x-1/2 z-10">
+                <div className="animate-spin h-6 w-6 border-2 border-[var(--primary)] border-t-transparent rounded-full" />
+              </div>
+            )}
+            <div className="h-full" ref={pptxRef}></div>
           </div>
         </div>
       )}
-    </Flex>
+    </div>
   )
 }
 

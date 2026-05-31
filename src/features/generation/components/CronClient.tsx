@@ -1,8 +1,8 @@
 'use client'
 
-import { Copy, RotateCcw } from 'lucide-react'
 import CronParser from 'cron-parser'
 import dayjs from 'dayjs'
+import { Copy, RotateCcw } from 'lucide-react'
 import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -108,10 +108,12 @@ const CronClient = () => {
               <Select
                 id="second"
                 value={formData.second}
-                onChange={(e) => setFormData(prev => ({ ...prev, second: e.target.value }))}
+                onChange={e => setFormData(prev => ({ ...prev, second: e.target.value }))}
               >
                 {commonOptions.map(opt => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
                 ))}
               </Select>
             </div>
@@ -120,10 +122,12 @@ const CronClient = () => {
               <Select
                 id="minute"
                 value={formData.minute}
-                onChange={(e) => setFormData(prev => ({ ...prev, minute: e.target.value }))}
+                onChange={e => setFormData(prev => ({ ...prev, minute: e.target.value }))}
               >
                 {commonOptions.map(opt => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
                 ))}
               </Select>
             </div>
@@ -132,10 +136,12 @@ const CronClient = () => {
               <Select
                 id="hour"
                 value={formData.hour}
-                onChange={(e) => setFormData(prev => ({ ...prev, hour: e.target.value }))}
+                onChange={e => setFormData(prev => ({ ...prev, hour: e.target.value }))}
               >
                 {commonOptions.map(opt => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
                 ))}
               </Select>
             </div>
@@ -144,10 +150,12 @@ const CronClient = () => {
               <Select
                 id="dayOfMonth"
                 value={formData.dayOfMonth}
-                onChange={(e) => setFormData(prev => ({ ...prev, dayOfMonth: e.target.value }))}
+                onChange={e => setFormData(prev => ({ ...prev, dayOfMonth: e.target.value }))}
               >
                 {commonOptions.map(opt => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
                 ))}
               </Select>
             </div>
@@ -156,10 +164,12 @@ const CronClient = () => {
               <Select
                 id="month"
                 value={formData.month}
-                onChange={(e) => setFormData(prev => ({ ...prev, month: e.target.value }))}
+                onChange={e => setFormData(prev => ({ ...prev, month: e.target.value }))}
               >
                 {commonOptions.map(opt => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
                 ))}
               </Select>
             </div>
@@ -168,10 +178,12 @@ const CronClient = () => {
               <Select
                 id="dayOfWeek"
                 value={formData.dayOfWeek}
-                onChange={(e) => setFormData(prev => ({ ...prev, dayOfWeek: e.target.value }))}
+                onChange={e => setFormData(prev => ({ ...prev, dayOfWeek: e.target.value }))}
               >
                 {weekdayOptions.map(opt => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
                 ))}
               </Select>
             </div>
@@ -192,11 +204,7 @@ const CronClient = () => {
           <CardTitle>{t('app.generation.cron.expression')}</CardTitle>
         </CardHeader>
         <CardContent>
-          <Input
-            value={cronExpression}
-            readOnly
-            className="font-mono text-lg text-center"
-          />
+          <Input value={cronExpression} readOnly className="font-mono text-lg text-center" />
         </CardContent>
       </Card>
 
@@ -213,7 +221,9 @@ const CronClient = () => {
                 </code>
               ))
             ) : (
-              <span className="text-sm text-[var(--text-secondary)]">{t('app.generation.cron.invalid')}</span>
+              <span className="text-sm text-[var(--text-secondary)]">
+                {t('app.generation.cron.invalid')}
+              </span>
             )}
           </div>
         </CardContent>

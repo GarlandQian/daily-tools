@@ -1,12 +1,13 @@
 'use client'
 
-import { Github, Laptop, Menu, Moon, Sun, ChevronRight } from 'lucide-react'
+import { AnimatePresence, motion } from 'framer-motion'
+import { ChevronRight, Github, Laptop, Menu, Moon, Sun } from 'lucide-react'
 import { usePathname } from 'next/navigation'
 import { useRouter } from 'nextjs-toploader/app'
 import React, { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { motion, AnimatePresence } from 'framer-motion'
 
+import { MeshGradient } from '@/components/effects/MeshGradient'
 import { useTheme } from '@/components/ThemeProvider'
 import TransitionLayout from '@/components/TransitionLayout'
 import { menus } from '@/config/menus'
@@ -53,16 +54,17 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
   }
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-[var(--bg-base)]">
+    <div className="flex h-screen w-full overflow-hidden">
+      {/* Animated mesh gradient background */}
+      <MeshGradient />
+
       {/* Sidebar - Desktop */}
       <aside className="hidden lg:flex w-64 flex-col glass-panel-strong border-r border-[var(--glass-border-strong)] relative">
         <div className="glass-specular" />
 
         {/* Logo */}
         <div className="p-6 border-b border-[var(--glass-border)]">
-          <h1 className="text-xl font-semibold text-[var(--text-primary)]">
-            Daily Tools
-          </h1>
+          <h1 className="text-xl font-semibold text-[var(--text-primary)]">Daily Tools</h1>
           <p className="text-xs text-[var(--text-tertiary)] mt-1">by GarlandQian</p>
         </div>
 
@@ -83,12 +85,11 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
                   )}
                 >
                   {category.icon}
-                  <span className="flex-1 text-left">{t(`app${category.path.replaceAll('/', '.')}`)}</span>
+                  <span className="flex-1 text-left">
+                    {t(`app${category.path.replaceAll('/', '.')}`)}
+                  </span>
                   <ChevronRight
-                    className={cn(
-                      'w-4 h-4 transition-transform',
-                      isExpanded && 'rotate-90'
-                    )}
+                    className={cn('w-4 h-4 transition-transform', isExpanded && 'rotate-90')}
                   />
                 </button>
 
@@ -151,9 +152,7 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
               <div className="glass-specular" />
 
               <div className="p-6 border-b border-[var(--glass-border)]">
-                <h1 className="text-xl font-semibold text-[var(--text-primary)]">
-                  Daily Tools
-                </h1>
+                <h1 className="text-xl font-semibold text-[var(--text-primary)]">Daily Tools</h1>
                 <p className="text-xs text-[var(--text-tertiary)] mt-1">by GarlandQian</p>
               </div>
 
@@ -173,12 +172,11 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
                         )}
                       >
                         {category.icon}
-                        <span className="flex-1 text-left">{t(`app${category.path.replaceAll('/', '.')}`)}</span>
+                        <span className="flex-1 text-left">
+                          {t(`app${category.path.replaceAll('/', '.')}`)}
+                        </span>
                         <ChevronRight
-                          className={cn(
-                            'w-4 h-4 transition-transform',
-                            isExpanded && 'rotate-90'
-                          )}
+                          className={cn('w-4 h-4 transition-transform', isExpanded && 'rotate-90')}
                         />
                       </button>
 
@@ -242,9 +240,7 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
               <div className="hidden sm:flex items-center gap-2 text-sm">
                 {breadcrumbs.map((crumb, index) => (
                   <React.Fragment key={crumb.path}>
-                    {index > 0 && (
-                      <ChevronRight className="w-4 h-4 text-[var(--text-tertiary)]" />
-                    )}
+                    {index > 0 && <ChevronRight className="w-4 h-4 text-[var(--text-tertiary)]" />}
                     <button
                       onClick={() => handleNavigate(crumb.path)}
                       className={cn(
@@ -316,7 +312,7 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
         </header>
 
         {/* Content Area */}
-        <main className="flex-1 overflow-auto p-4 lg:p-6">
+        <main className="flex-1 overflow-auto p-4 lg:p-6 bg-transparent">
           <TransitionLayout
             style={{
               maxWidth: 'var(--content-max)',

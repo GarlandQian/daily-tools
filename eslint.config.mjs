@@ -37,6 +37,7 @@ const eslintConfig = [
       ...eslintPluginReact.configs.recommended.rules,
       ...eslintPluginReactHooks.configs.recommended.rules,
       "react/react-in-jsx-scope": "off", // Not needed in Next.js
+      "react/prop-types": "off",
       "simple-import-sort/imports": "error",
       "simple-import-sort/exports": "error",
     },

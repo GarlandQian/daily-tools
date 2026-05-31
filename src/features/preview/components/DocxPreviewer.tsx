@@ -21,7 +21,6 @@ const DocxPreviewer = () => {
     const init = async () => {
       if (docxRef.current && !isInitialized.current) {
         const { default: jsPreviewDocx } = await import('@js-preview/docx')
-        // @ts-expect-error CSS import not resolved by TS
         await import('@js-preview/docx/lib/index.css')
         myDocxPreviewer.current = jsPreviewDocx.init(docxRef.current)
         isInitialized.current = true

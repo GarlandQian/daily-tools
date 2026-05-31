@@ -1,6 +1,5 @@
 'use client'
 
-import { Card, Col, Flex, Input, Row, Typography } from 'antd'
 import {
   camelCase,
   kebabCase,
@@ -10,10 +9,13 @@ import {
   toUpper,
   upperFirst
 } from 'lodash-es'
-import React, { useMemo, useState } from 'react'
+import { Copy, Trash2 } from 'lucide-react'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import ToolLayout from '@/components/ToolLayout'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
 
 const CaseClient = () => {
@@ -43,39 +45,53 @@ const CaseClient = () => {
   }, [input])
 
   return (
-    <ToolLayout title="app.format.case" showClear onClear={() => setInput('')}>
-      <Flex gap={20} vertical>
-        <Card title="Input">
-          <Input.TextArea
+    <div className="flex flex-col gap-5 size-full">
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle>{t('app.format.case')}</CardTitle>
+            <Button icon={<Trash2 className="w-4 h-4" />} onClick={() => setInput('')}>
+              {t('app.format.json.clear')}
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <Textarea
             value={input}
             onChange={e => setInput(e.target.value)}
             placeholder="Enter text to convert..."
-            autoSize={{ minRows: 3, maxRows: 6 }}
-            style={{ fontFamily: 'monospace' }}
+            rows={3}
+            className="font-mono"
           />
-        </Card>
+        </CardContent>
+      </Card>
 
-        <Row gutter={[16, 16]}>
+      {conversions.length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {conversions.map(item => (
-            <Col xs={24} sm={12} lg={8} key={item.label}>
-              <Card
-                size="small"
-                title={item.label}
-                extra={
-                  <Typography.Link onClick={() => copy(item.value)}>
-                    {t('app.generation.uuid.copy')}
-                  </Typography.Link>
-                }
+            <button
+              key={item.label}
+              type="button"
+              onClick={() => copy(item.value)}
+              className="glass-panel rounded-xl p-4 text-left transition-all duration-200 hover:scale-[1.02] hover:shadow-lg hover:glass-panel-strong group cursor-pointer"
+            >
+              <div className="flex items-center justify-between mb-2">
+                <span className="inline-block px-2 py-0.5 rounded-md text-xs font-medium bg-[var(--primary-subtle)] text-[var(--primary)]">
+                  {item.label}
+                </span>
+                <Copy className="w-3.5 h-3.5 text-[var(--text-tertiary)] opacity-0 group-hover:opacity-100 transition-opacity" />
+              </div>
+              <p
+                className="font-mono text-sm text-[var(--text-primary)] truncate"
+                title={item.value}
               >
-                <Typography.Text copyable={false} ellipsis={{ tooltip: true }}>
-                  {item.value}
-                </Typography.Text>
-              </Card>
-            </Col>
+                {item.value}
+              </p>
+            </button>
           ))}
-        </Row>
-      </Flex>
-    </ToolLayout>
+        </div>
+      )}
+    </div>
   )
 }
 

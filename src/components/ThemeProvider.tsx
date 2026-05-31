@@ -62,13 +62,11 @@ export default function ThemeProvider({ children }: { children: React.ReactNode 
     }
   }, [isDarkMode, mounted])
 
-  if (!mounted) {
-    return <div style={{ visibility: 'hidden' }}>{children}</div>
-  }
-
   return (
     <ThemeContext.Provider value={{ themeMode, setThemeMode, isDarkMode }}>
-      <ToastProvider>{children}</ToastProvider>
+      <ToastProvider>
+        {mounted ? children : <div style={{ visibility: 'hidden' }}>{children}</div>}
+      </ToastProvider>
     </ThemeContext.Provider>
   )
 }

@@ -1,8 +1,8 @@
 'use client'
 
-import * as React from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
 import { X } from 'lucide-react'
-import { motion, AnimatePresence } from 'framer-motion'
+import * as React from 'react'
 
 import { cn } from '@/lib/utils'
 
@@ -28,15 +28,15 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 
   const addToast = React.useCallback((type: ToastType, message: string) => {
     const id = Math.random().toString(36).substring(2, 9)
-    setToasts((prev) => [...prev, { id, type, message }])
+    setToasts(prev => [...prev, { id, type, message }])
 
     setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id))
+      setToasts(prev => prev.filter(t => t.id !== id))
     }, 3000)
   }, [])
 
   const removeToast = React.useCallback((id: string) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id))
+    setToasts(prev => prev.filter(t => t.id !== id))
   }, [])
 
   const contextValue = React.useMemo(
@@ -54,7 +54,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       {children}
       <div className="fixed top-4 right-4 z-[100] flex flex-col gap-2 pointer-events-none">
         <AnimatePresence>
-          {toasts.map((toast) => (
+          {toasts.map(toast => (
             <motion.div
               key={toast.id}
               initial={{ opacity: 0, y: -20, scale: 0.95 }}

@@ -8,8 +8,8 @@
     "pnpm": ">=11.4.0"
   },
   "scripts": {
-    "postinstall": "prisma generate",
-    "dev": "next dev --turbo",
+    "dev": "next dev --webpack",
+    "dev:turbo": "next dev --turbo",
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
@@ -23,8 +23,6 @@
     "@js-preview/docx": "^1.6.4",
     "@js-preview/excel": "^1.7.14",
     "@js-preview/pdf": "^2.0.10",
-    "@prisma/client": "^7.2.0",
-    "@prisma/extension-accelerate": "^3.0.1",
     "@radix-ui/react-radio-group": "^1.2.2",
     "@radix-ui/react-slot": "^1.1.1",
     "@react-spring/three": "^10.0.3",
@@ -80,7 +78,6 @@
     "@eslint/js": "^9.39.1",
     "@next/bundle-analyzer": "^16.2.6",
     "@next/eslint-plugin-next": "^16.2.6",
-    "@prisma/config": "^7.1.0",
     "@tailwindcss/postcss": "^4.1.17",
     "@types/crypto-js": "^4.2.2",
     "@types/node": "^24.10.1",
@@ -101,7 +98,6 @@
     "lint-staged": "^16.2.7",
     "postcss": "^8.5.6",
     "prettier": "^3.7.4",
-    "prisma": "^7.2.0",
     "tailwindcss": "^4.1.17",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.48.1"

@@ -1,18 +1,28 @@
 'use client'
 
-import { SwapOutlined } from '@ant-design/icons'
-import { Button, Card, Col, Flex, Input, Radio, Row } from 'antd'
 import he from 'he'
+import { ArrowRightLeft, Code, Copy, Trash2 } from 'lucide-react'
 import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import ToolLayout from '@/components/ToolLayout'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
 
 type Mode = 'encode' | 'decode'
 
+const entityLegend = [
+  { char: '<', entity: '&lt;' },
+  { char: '>', entity: '&gt;' },
+  { char: '&', entity: '&amp;' },
+  { char: '"', entity: '&quot;' },
+  { char: "'", entity: '&#x27;' }
+]
+
 const HtmlClient = () => {
-  useTranslation()
+  const { t } = useTranslation()
   const { copy } = useCopy()
 
   const [input, setInput] = useState('')
@@ -40,68 +50,102 @@ const HtmlClient = () => {
     setMode(prev => (prev === 'encode' ? 'decode' : 'encode'))
   }
 
-  return (
-    <ToolLayout
-      title="app.converter.html"
-      showCopy
-      copyDisabled={!output}
-      onCopy={() => copy(output)}
-      showClear
-      onClear={() => {
-        setInput('')
-        setOutput('')
-      }}
-    >
-      <Flex gap={20} vertical className="h-full">
-        <Flex justify="center" align="center" gap={16}>
-          <Radio.Group value={mode} onChange={e => setMode(e.target.value)} buttonStyle="solid">
-            <Radio.Button value="encode">Encode</Radio.Button>
-            <Radio.Button value="decode">Decode</Radio.Button>
-          </Radio.Group>
-          <Button icon={<SwapOutlined />} onClick={handleSwap}>
-            Swap
-          </Button>
-          <Button type="primary" onClick={handleConvert}>
-            Convert
-          </Button>
-        </Flex>
+  const handleClear = () => {
+    setInput('')
+    setOutput('')
+  }
 
-        <Row gutter={16} style={{ flex: 1 }}>
-          <Col xs={24} md={12} style={{ display: 'flex', flexDirection: 'column' }}>
-            <Card
-              title="Input"
-              style={{ flex: 1, display: 'flex', flexDirection: 'column' }}
-              styles={{ body: { flex: 1, display: 'flex', flexDirection: 'column' } }}
+  return (
+    <div className="flex flex-col gap-5 size-full">
+      {/* Toolbar */}
+      <Card>
+        <CardContent className="p-4">
+          <div className="flex flex-wrap items-center gap-4">
+            <RadioGroup value={mode} onValueChange={v => setMode(v as Mode)} className="flex gap-0">
+              <label className="flex items-center gap-2 cursor-pointer select-none px-3 py-1.5 rounded-l-lg border border-[var(--border-base)] data-[state=checked]:bg-[var(--primary)] data-[state=checked]:text-white transition-colors">
+                <RadioGroupItem value="encode" className="sr-only" />
+                <span
+                  className={`text-sm font-medium ${mode === 'encode' ? 'text-[var(--primary)]' : ''}`}
+                >
+                  Encode
+                </span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer select-none px-3 py-1.5 rounded-r-lg border border-l-0 border-[var(--border-base)] transition-colors">
+                <RadioGroupItem value="decode" className="sr-only" />
+                <span
+                  className={`text-sm font-medium ${mode === 'decode' ? 'text-[var(--primary)]' : ''}`}
+                >
+                  Decode
+                </span>
+              </label>
+            </RadioGroup>
+
+            <Button icon={<ArrowRightLeft className="w-4 h-4" />} onClick={handleSwap}>
+              Swap
+            </Button>
+            <Button variant="primary" icon={<Code className="w-4 h-4" />} onClick={handleConvert}>
+              Convert
+            </Button>
+            <Button
+              icon={<Copy className="w-4 h-4" />}
+              onClick={() => copy(output)}
+              disabled={!output}
             >
-              <Input.TextArea
-                value={input}
-                onChange={e => setInput(e.target.value)}
-                placeholder={
-                  mode === 'encode'
-                    ? '<p>Hello & World</p>'
-                    : '&lt;p&gt;Hello &amp; World&lt;/p&gt;'
-                }
-                style={{ flex: 1, resize: 'none', fontFamily: 'monospace' }}
-              />
-            </Card>
-          </Col>
-          <Col xs={24} md={12} style={{ display: 'flex', flexDirection: 'column' }}>
-            <Card
-              title="Output"
-              style={{ flex: 1, display: 'flex', flexDirection: 'column' }}
-              styles={{ body: { flex: 1, display: 'flex', flexDirection: 'column' } }}
-            >
-              <Input.TextArea
-                value={output}
-                readOnly
-                placeholder="Result will appear here..."
-                style={{ flex: 1, resize: 'none', fontFamily: 'monospace' }}
-              />
-            </Card>
-          </Col>
-        </Row>
-      </Flex>
-    </ToolLayout>
+              {t('app.generation.uuid.copy')}
+            </Button>
+            <Button variant="ghost" icon={<Trash2 className="w-4 h-4" />} onClick={handleClear}>
+              {t('app.format.json.clear')}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Entity legend hints */}
+      <div className="flex flex-wrap gap-2 px-1">
+        {entityLegend.map(({ char, entity }) => (
+          <span
+            key={char}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono glass-panel border border-[var(--border-base)]"
+          >
+            <span className="text-[var(--text-primary)] font-semibold">{char}</span>
+            <span className="text-[var(--text-tertiary)]">&rarr;</span>
+            <span className="text-[var(--primary)]">{entity}</span>
+          </span>
+        ))}
+      </div>
+
+      {/* Input / Output columns */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1 min-h-0">
+        <Card className="flex flex-col h-full min-h-[300px]">
+          <CardHeader>
+            <CardTitle className="text-base">Input</CardTitle>
+          </CardHeader>
+          <CardContent className="flex-1 overflow-hidden">
+            <Textarea
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              placeholder={
+                mode === 'encode' ? '<p>Hello & World</p>' : '&lt;p&gt;Hello &amp; World&lt;/p&gt;'
+              }
+              className="h-full resize-none font-mono"
+            />
+          </CardContent>
+        </Card>
+        <Card className="flex flex-col h-full min-h-[300px]">
+          <CardHeader>
+            <CardTitle className="text-base">Output</CardTitle>
+          </CardHeader>
+          <CardContent className="flex-1 overflow-hidden">
+            <Textarea
+              value={output}
+              readOnly
+              placeholder="Result will appear here..."
+              className="h-full resize-none font-mono"
+            />
+          </CardContent>
+        </Card>
+      </div>
+    </div>
   )
 }
 

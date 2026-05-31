@@ -1,7 +1,7 @@
 'use client'
 
-import { ArrowLeftRight, Trash2 } from 'lucide-react'
 import * as Diff from 'diff'
+import { ArrowLeftRight, Trash2 } from 'lucide-react'
 import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 

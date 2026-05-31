@@ -1,97 +1,115 @@
 'use client'
-import { CopyOutlined } from '@ant-design/icons'
-import { Button, Form, Input, Radio } from 'antd'
 import { AnimatePresence, motion } from 'framer-motion'
+import { ArrowRightLeft, Copy } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-interface URLEncodeParams {
-  text: string
-  mode: 'encode' | 'decode'
-}
+import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+import { Textarea } from '@/components/ui/textarea'
+import { useToast } from '@/components/ui/toast'
+import { useCopy } from '@/hooks/useCopy'
 
 export default function URLEncodeClient() {
   const { t } = useTranslation()
+  const toast = useToast()
+  const { copy } = useCopy()
 
-  const [form] = Form.useForm<URLEncodeParams>()
-  const [result, setResult] = useState<{ text: string; success?: boolean } | null>(null)
   const [mode, setMode] = useState<'encode' | 'decode'>('encode')
+  const [text, setText] = useState('')
+  const [result, setResult] = useState<string>()
 
-  const onFinish = (values: URLEncodeParams) => {
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+
+    if (!text.trim()) {
+      toast.warning(t('rules.msg.required', { msg: t('app.encryption.aes.str') }))
+      return
+    }
+
     try {
-      if (values.mode === 'encode') {
-        const encoded = encodeURIComponent(values.text)
-        setResult({ text: encoded, success: true })
+      if (mode === 'encode') {
+        setResult(encodeURIComponent(text))
       } else {
-        const decoded = decodeURIComponent(values.text)
-        setResult({ text: decoded, success: true })
+        setResult(decodeURIComponent(text))
       }
     } catch {
-      setResult({ text: t('app.encryption.aes.decrypt_failed'), success: false })
+      toast.error(t('app.encryption.aes.decrypt_failed'))
+      setResult(undefined)
     }
   }
 
   return (
-    <Form
-      labelAlign="left"
-      layout="horizontal"
-      form={form}
-      initialValues={{ mode: 'encode' }}
-      labelCol={{ xs: { span: 24 }, sm: { span: 6 }, md: { span: 4 } }}
-      wrapperCol={{ xs: { span: 24 }, sm: { span: 18 }, md: { span: 16 } }}
-      onFinish={onFinish}
-      onValuesChange={(changedValues) => {
-        if (changedValues.mode) setMode(changedValues.mode)
-      }}
-    >
-      <Form.Item label={t('app.encryption.aes.action')} name="mode">
-        <Radio.Group>
-          <Radio value="encode">{t('app.encryption.aes.encrypt')}</Radio>
-          <Radio value="decode">{t('app.encryption.aes.decrypt')}</Radio>
-        </Radio.Group>
-      </Form.Item>
+    <div className="flex flex-col gap-5 size-full">
+      <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+        {/* Encode/Decode toggle */}
+        <div className="space-y-2">
+          <Label>{t('app.encryption.aes.action')}</Label>
+          <RadioGroup
+            value={mode}
+            onValueChange={val => {
+              setMode(val as 'encode' | 'decode')
+              setResult(undefined)
+            }}
+            className="flex gap-4"
+          >
+            <div className="flex items-center gap-2">
+              <RadioGroupItem value="encode" id="url-encode" />
+              <Label htmlFor="url-encode" className="flex items-center gap-1 cursor-pointer">
+                <ArrowRightLeft className="w-3.5 h-3.5" />
+                {t('app.encryption.aes.encrypt')}
+              </Label>
+            </div>
+            <div className="flex items-center gap-2">
+              <RadioGroupItem value="decode" id="url-decode" />
+              <Label htmlFor="url-decode" className="flex items-center gap-1 cursor-pointer">
+                <ArrowRightLeft className="w-3.5 h-3.5" />
+                {t('app.encryption.aes.decrypt')}
+              </Label>
+            </div>
+          </RadioGroup>
+        </div>
 
-      <Form.Item
-        name="text"
-        label={t('app.encryption.aes.str')}
-        rules={[
-          {
-            required: true,
-            message: t('rules.msg.required', { msg: t('app.encryption.aes.str') })
-          }
-        ]}
-      >
-        <Input.TextArea rows={4} />
-      </Form.Item>
+        {/* Input */}
+        <div className="space-y-2">
+          <Label>{t('app.encryption.aes.str')}</Label>
+          <Textarea
+            rows={4}
+            value={text}
+            onChange={e => setText(e.target.value)}
+            placeholder={t('rules.msg.required', { msg: t('app.encryption.aes.str') })}
+          />
+        </div>
 
-      <Form.Item>
-        <Button type="primary" htmlType="submit">
-            {mode === 'encode' ? t('app.encryption.aes.encrypt') : t('app.encryption.aes.decrypt')}
+        {/* Submit */}
+        <Button type="submit" variant="primary" className="w-fit">
+          {mode === 'encode' ? t('app.encryption.aes.encrypt') : t('app.encryption.aes.decrypt')}
         </Button>
-      </Form.Item>
+      </form>
 
+      {/* Result */}
       <AnimatePresence>
         {result && (
           <motion.div
-            initial={{ opacity: 0, y: -20 }}
+            initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 20 }}
-            transition={{ duration: 1 }}
+            exit={{ opacity: 0, y: 10 }}
+            transition={{ duration: 0.3 }}
+            className="space-y-2"
           >
-            <Form.Item label={t('app.hash.result')}>
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
-                  <Input.TextArea autoSize={{ minRows: 2, maxRows: 10 }} value={result.text} readOnly />
-                  <Button
-                    icon={<CopyOutlined />}
-                    onClick={() => {
-                       navigator.clipboard.writeText(result.text)
-                    }}
-                  />
-                </div>
-            </Form.Item>
+            <Label>{t('app.hash.result')}</Label>
+            <div className="flex items-start gap-2">
+              <div className="glass-input flex-1 rounded-lg p-3 font-mono text-sm break-all min-h-[60px]">
+                {result}
+              </div>
+              <Button type="button" variant="ghost" size="icon" onClick={() => copy(result)}>
+                <Copy className="w-4 h-4" />
+              </Button>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
-    </Form>
+    </div>
   )
 }

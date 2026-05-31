@@ -22,7 +22,6 @@ const ExcelPreviewer = () => {
       if (excelRef.current && !isInitialized.current) {
         try {
           const { default: jsPreviewExcel } = await import('@js-preview/excel')
-          // @ts-expect-error CSS import not resolved by TS
           await import('@js-preview/excel/lib/index.css')
           myExcelPreviewer.current = jsPreviewExcel.init(excelRef.current)
           isInitialized.current = true

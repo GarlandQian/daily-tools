@@ -19,10 +19,6 @@ export function generateStaticParams() {
   return i18nConfig.locales.map(locale => ({ locale }))
 }
 
-import { Inter } from 'next/font/google'
-
-const inter = Inter({ subsets: ['latin'] })
-
 const RootLayout = async ({
   children,
   params
@@ -34,7 +30,7 @@ const RootLayout = async ({
   const { resources } = await initTranslations(locale)
   return (
     <html lang={locale}>
-      <body className={`${inter.className} flex min-h-screen w-full flex-col`}>
+      <body className="flex min-h-screen w-full flex-col">
         <NextTopLoader showSpinner={false} />
         <ThemeProvider>
           <TranslationsProvider locale={locale} resources={resources}>
