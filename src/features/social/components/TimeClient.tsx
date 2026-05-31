@@ -5,7 +5,7 @@ import dayjs from 'dayjs'
 import timezone from 'dayjs/plugin/timezone'
 import utc from 'dayjs/plugin/utc'
 import { Clock, Globe } from 'lucide-react'
-import React, { useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -21,33 +21,47 @@ const TimeClient = () => {
   const [timeZonelist, setTimeZonelist] = useState<string[]>([])
   const clockRef = useRef<HTMLSpanElement>(null)
   const dateRef = useRef<HTMLSpanElement>(null)
-  const chipRefs = useRef<Map<string, HTMLSpanElement>>(new Map())
+  const chipRefs = useRef<Map<string, { el: HTMLSpanElement; tz: tzMap }>>(new Map())
+  const chipDateRefs = useRef<Map<string, { el: HTMLSpanElement; tz: tzMap }>>(new Map())
   const [colonVisible, setColonVisible] = useState(true)
 
-  // Update clock every second
-  useRafInterval(() => {
+  const updateClock = useCallback((showColon: boolean) => {
     const now = dayjs()
 
     if (clockRef.current) {
       const h = now.format('HH')
       const m = now.format('mm')
       const s = now.format('ss')
-      clockRef.current.innerHTML = `${h}<span class="colon-pulse">${colonVisible ? ':' : ' '}</span>${m}<span class="colon-pulse">${colonVisible ? ':' : ' '}</span>${s}`
+      clockRef.current.innerHTML = `${h}<span class="colon-pulse">${showColon ? ':' : ' '}</span>${m}<span class="colon-pulse">${showColon ? ':' : ' '}</span>${s}`
     }
 
     if (dateRef.current) {
       dateRef.current.textContent = now.format('dddd, MMMM D, YYYY')
     }
 
-    setColonVisible(prev => !prev)
-
-    // Update timezone chips
-    chipRefs.current.forEach((el, tz) => {
-      const tzData = tzListMap[tz as tzMap]
+    chipRefs.current.forEach(({ el, tz }) => {
+      const tzData = tzListMap[tz]
       if (tzData && el) {
         el.textContent = dayjs().tz(tzData.value).format('HH:mm:ss')
       }
     })
+
+    chipDateRefs.current.forEach(({ el, tz }) => {
+      const tzData = tzListMap[tz]
+      if (tzData && el) {
+        el.textContent = dayjs().tz(tzData.value).format('YYYY-MM-DD')
+      }
+    })
+  }, [])
+
+  useEffect(() => {
+    updateClock(true)
+  }, [updateClock])
+
+  // Update clock every second
+  useRafInterval(() => {
+    updateClock(colonVisible)
+    setColonVisible(prev => !prev)
   }, 1000)
 
   const tzKeys = useMemo(() => {
@@ -86,10 +100,10 @@ const TimeClient = () => {
             ref={clockRef}
             className="text-5xl md:text-6xl font-mono font-semibold tabular-nums text-[var(--text-primary)] tracking-tight"
           >
-            {dayjs().format('HH:mm:ss')}
+            --:--:--
           </span>
           <span ref={dateRef} className="text-base text-[var(--text-secondary)] mt-1">
-            {dayjs().format('dddd, MMMM D, YYYY')}
+            Loading...
           </span>
         </CardContent>
       </Card>
@@ -107,11 +121,16 @@ const TimeClient = () => {
             </span>
             <span
               ref={el => {
-                if (el) chipRefs.current.set(zone.key, el)
+                const refKey = `featured-${zone.key}`
+                if (el) {
+                  chipRefs.current.set(refKey, { el, tz: zone.key })
+                } else {
+                  chipRefs.current.delete(refKey)
+                }
               }}
               className="text-lg font-mono font-semibold tabular-nums text-[var(--text-primary)] z-10"
             >
-              {dayjs().tz(tzListMap[zone.key].value).format('HH:mm:ss')}
+              --:--:--
             </span>
           </div>
         ))}
@@ -162,14 +181,29 @@ const TimeClient = () => {
                 </span>
                 <span
                   ref={el => {
-                    if (el) chipRefs.current.set(tz, el)
+                    const refKey = `grid-${tz}`
+                    if (el) {
+                      chipRefs.current.set(refKey, { el, tz: tz as tzMap })
+                    } else {
+                      chipRefs.current.delete(refKey)
+                    }
                   }}
                   className="text-xl font-mono font-semibold tabular-nums text-[var(--text-primary)] z-10"
                 >
-                  {dayjs().tz(tzData.value).format('HH:mm:ss')}
+                  --:--:--
                 </span>
-                <span className="text-xs text-[var(--text-secondary)] z-10">
-                  {dayjs().tz(tzData.value).format('YYYY-MM-DD')}
+                <span
+                  ref={el => {
+                    const refKey = `grid-${tz}`
+                    if (el) {
+                      chipDateRefs.current.set(refKey, { el, tz: tz as tzMap })
+                    } else {
+                      chipDateRefs.current.delete(refKey)
+                    }
+                  }}
+                  className="text-xs text-[var(--text-secondary)] z-10"
+                >
+                  ---- -- --
                 </span>
               </div>
             )

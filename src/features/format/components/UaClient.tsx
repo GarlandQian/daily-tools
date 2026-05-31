@@ -1,14 +1,12 @@
 'use client'
 
 import { Cpu, Globe, Monitor, Smartphone, Trash2 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useSyncExternalStore } from 'react'
 import { UAParser } from 'ua-parser-js'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/textarea'
-
-const defaultUA = typeof navigator !== 'undefined' ? navigator.userAgent : ''
 
 interface Section {
   icon: React.ReactNode
@@ -16,8 +14,18 @@ interface Section {
   items: { label: string; value: string }[]
 }
 
+const subscribeToUserAgent = () => () => {}
+const getClientUserAgent = () => navigator.userAgent
+const getServerUserAgent = () => ''
+
 const UaClient = () => {
-  const [input, setInput] = useState(defaultUA)
+  const userAgent = useSyncExternalStore(
+    subscribeToUserAgent,
+    getClientUserAgent,
+    getServerUserAgent
+  )
+  const [inputOverride, setInputOverride] = useState<string | null>(null)
+  const input = inputOverride ?? userAgent
 
   const parsed = useMemo(() => {
     if (!input.trim()) return null
@@ -71,7 +79,7 @@ const UaClient = () => {
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle>User Agent String</CardTitle>
-            <Button icon={<Trash2 className="w-4 h-4" />} onClick={() => setInput('')}>
+            <Button icon={<Trash2 className="w-4 h-4" />} onClick={() => setInputOverride('')}>
               Clear
             </Button>
           </div>
@@ -79,7 +87,7 @@ const UaClient = () => {
         <CardContent>
           <Textarea
             value={input}
-            onChange={e => setInput(e.target.value)}
+            onChange={e => setInputOverride(e.target.value)}
             placeholder="Paste a User Agent string here..."
             rows={3}
             className="font-mono"
