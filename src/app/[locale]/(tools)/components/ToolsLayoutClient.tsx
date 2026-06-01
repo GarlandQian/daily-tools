@@ -230,12 +230,12 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
   ]
 
   return (
-    <div className="flex h-screen w-full overflow-hidden">
+    <div className="relative isolate flex h-screen w-full overflow-hidden">
       {/* Animated mesh gradient background */}
       <MeshGradient />
 
       {/* Sidebar - Desktop */}
-      <aside className="hidden lg:flex w-64 flex-col glass-panel-strong border-r border-[var(--glass-border-strong)] relative">
+      <aside className="relative z-10 hidden w-64 flex-col border-r border-[var(--glass-border-strong)] glass-panel-strong lg:flex">
         <div className="glass-specular" />
 
         {/* Logo */}
@@ -398,7 +398,7 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
       </AnimatePresence>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="relative z-10 flex flex-1 flex-col overflow-hidden">
         {/* Top Bar */}
         <header className="glass-panel border-b border-[var(--glass-border)] relative">
           <div className="glass-specular" />
