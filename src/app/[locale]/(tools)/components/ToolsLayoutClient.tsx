@@ -1,17 +1,103 @@
 'use client'
 
 import { AnimatePresence, motion } from 'framer-motion'
-import { ChevronRight, Github, Laptop, Menu, Moon, Sun } from 'lucide-react'
+import { ArrowLeftRight, ChevronRight, Github, Laptop, Menu, Moon, Sun } from 'lucide-react'
 import { usePathname } from 'next/navigation'
 import { useRouter } from 'nextjs-toploader/app'
 import React, { useMemo, useState } from 'react'
+import { flushSync } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 
 import { MeshGradient } from '@/components/effects/MeshGradient'
-import { useTheme } from '@/components/ThemeProvider'
+import { type ThemeMode, useTheme } from '@/components/ThemeProvider'
 import TransitionLayout from '@/components/TransitionLayout'
 import { menus } from '@/config/menus'
 import { cn } from '@/lib/utils'
+
+type ViewTransitionDocument = Document & {
+  startViewTransition?: (callback: () => void) => { finished: Promise<void> }
+}
+
+type DirectionMode = 'ltr' | 'rtl'
+
+const UI_LANGUAGE_STORAGE_KEY = 'ui-language'
+const UI_DIRECTION_STORAGE_KEY = 'ui-direction'
+const RANDOM_EFFECT_SELECTOR =
+  '.glass-panel, .glass-panel-strong, .glass-float, .glass-specular, .glass-caustic, .glass-prism, .glass-shimmer'
+
+const randomBetween = (min: number, max: number) => min + Math.random() * (max - min)
+
+const setRandomEffectVars = (element: HTMLElement) => {
+  element.style.setProperty('--fx-border-delay', `-${randomBetween(0, 6).toFixed(2)}s`)
+  element.style.setProperty('--fx-border-duration', `${randomBetween(5.2, 8.6).toFixed(2)}s`)
+  element.style.setProperty('--fx-border-direction', Math.random() > 0.5 ? 'normal' : 'reverse')
+  element.style.setProperty('--fx-specular-delay', `-${randomBetween(0, 4).toFixed(2)}s`)
+  element.style.setProperty('--fx-specular-duration', `${randomBetween(3.4, 5.8).toFixed(2)}s`)
+  element.style.setProperty(
+    '--fx-specular-direction',
+    Math.random() > 0.5 ? 'normal' : 'alternate-reverse'
+  )
+  element.style.setProperty('--fx-caustic-delay', `-${randomBetween(0, 8).toFixed(2)}s`)
+  element.style.setProperty('--fx-caustic-duration', `${randomBetween(7, 11).toFixed(2)}s`)
+  element.style.setProperty('--fx-caustic-direction', Math.random() > 0.5 ? 'normal' : 'reverse')
+  element.style.setProperty('--fx-prism-delay', `-${randomBetween(0, 14).toFixed(2)}s`)
+  element.style.setProperty('--fx-prism-duration', `${randomBetween(11, 18).toFixed(2)}s`)
+  element.style.setProperty('--fx-prism-x0', `${randomBetween(-12, -4).toFixed(2)}%`)
+  element.style.setProperty('--fx-prism-y0', `${randomBetween(-10, -2).toFixed(2)}%`)
+  element.style.setProperty('--fx-prism-x1', `${randomBetween(4, 12).toFixed(2)}%`)
+  element.style.setProperty('--fx-prism-y1', `${randomBetween(1, 8).toFixed(2)}%`)
+  element.style.setProperty('--fx-prism-x2', `${randomBetween(-6, 4).toFixed(2)}%`)
+  element.style.setProperty('--fx-prism-y2', `${randomBetween(6, 14).toFixed(2)}%`)
+  const prismRotation = randomBetween(3, 8)
+  element.style.setProperty('--fx-prism-rotation', `${prismRotation.toFixed(2)}deg`)
+  element.style.setProperty(
+    '--fx-prism-rotation-reverse',
+    `${(-prismRotation * 0.8).toFixed(2)}deg`
+  )
+  element.style.setProperty('--fx-shimmer-delay', `-${randomBetween(0, 10).toFixed(2)}s`)
+  element.style.setProperty('--fx-shimmer-duration', `${randomBetween(8, 14).toFixed(2)}s`)
+  element.style.setProperty('--fx-shimmer-angle', `${randomBetween(88, 122).toFixed(2)}deg`)
+  element.style.setProperty('--fx-shimmer-direction', Math.random() > 0.5 ? 'normal' : 'reverse')
+}
+
+const isDirectionMode = (value: string | null): value is DirectionMode =>
+  value === 'ltr' || value === 'rtl'
+
+const isSupportedLanguage = (value: string | null): value is 'cn' | 'en' =>
+  value === 'cn' || value === 'en'
+
+const useRandomizedGlassEffects = () => {
+  React.useLayoutEffect(() => {
+    const initialized = new WeakSet<HTMLElement>()
+
+    const applyElement = (element: HTMLElement) => {
+      if (initialized.has(element)) return
+      initialized.add(element)
+      setRandomEffectVars(element)
+    }
+
+    const applyTree = (root: ParentNode) => {
+      root.querySelectorAll<HTMLElement>(RANDOM_EFFECT_SELECTOR).forEach(applyElement)
+    }
+
+    applyTree(document)
+
+    const observer = new MutationObserver(mutations => {
+      mutations.forEach(mutation => {
+        mutation.addedNodes.forEach(node => {
+          if (!(node instanceof HTMLElement)) return
+          if (node.matches(RANDOM_EFFECT_SELECTOR)) {
+            applyElement(node)
+          }
+          applyTree(node)
+        })
+      })
+    })
+
+    observer.observe(document.body, { childList: true, subtree: true })
+    return () => observer.disconnect()
+  }, [])
+}
 
 const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
   const { themeMode, setThemeMode } = useTheme()
@@ -24,6 +110,37 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
 
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null)
+  const [direction, setDirection] = useState<DirectionMode>('ltr')
+
+  useRandomizedGlassEffects()
+
+  React.useLayoutEffect(() => {
+    const savedDirection = window.localStorage.getItem(UI_DIRECTION_STORAGE_KEY)
+    const nextDirection = isDirectionMode(savedDirection) ? savedDirection : 'ltr'
+    document.documentElement.setAttribute('dir', nextDirection)
+
+    if (nextDirection !== direction) {
+      setDirection(nextDirection)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  React.useEffect(() => {
+    document.documentElement.setAttribute('dir', direction)
+    window.localStorage.setItem(UI_DIRECTION_STORAGE_KEY, direction)
+  }, [direction])
+
+  React.useEffect(() => {
+    const savedLanguage = window.localStorage.getItem(UI_LANGUAGE_STORAGE_KEY)
+
+    if (isSupportedLanguage(savedLanguage) && savedLanguage !== language) {
+      void changeLanguage(savedLanguage)
+    }
+  }, [changeLanguage, language])
+
+  React.useEffect(() => {
+    document.documentElement.setAttribute('lang', language === 'cn' ? 'zh-CN' : 'en')
+  }, [language])
 
   // Get current category and breadcrumbs
   const { currentCategory, breadcrumbs } = useMemo(() => {
@@ -52,6 +169,65 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
   const toggleCategory = (path: string) => {
     setExpandedCategory(expandedCategory === path ? null : path)
   }
+
+  const handleLanguageChange = () => {
+    const nextLanguage = language === 'cn' ? 'en' : 'cn'
+    window.localStorage.setItem(UI_LANGUAGE_STORAGE_KEY, nextLanguage)
+    void changeLanguage(nextLanguage)
+  }
+
+  const handleDirectionChange = () => {
+    setDirection(current => (current === 'ltr' ? 'rtl' : 'ltr'))
+  }
+
+  const handleThemeChange = (mode: ThemeMode, event: React.MouseEvent<HTMLButtonElement>) => {
+    if (mode === themeMode) return
+
+    const root = document.documentElement
+    root.style.setProperty('--theme-transition-x', `${event.clientX}px`)
+    root.style.setProperty('--theme-transition-y', `${event.clientY}px`)
+
+    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    const startViewTransition = (document as ViewTransitionDocument).startViewTransition?.bind(
+      document
+    )
+
+    const runFallbackTransition = () => {
+      root.classList.add('theme-transitioning')
+      setThemeMode(mode)
+      window.setTimeout(() => root.classList.remove('theme-transitioning'), 620)
+    }
+
+    if (startViewTransition && !prefersReducedMotion) {
+      root.classList.add('theme-view-transition')
+
+      try {
+        const transition = startViewTransition(() => {
+          flushSync(() => setThemeMode(mode))
+        })
+        const cleanup = () => root.classList.remove('theme-view-transition')
+
+        transition.finished.finally(cleanup)
+        window.setTimeout(cleanup, 900)
+      } catch {
+        root.classList.remove('theme-view-transition')
+        runFallbackTransition()
+      }
+      return
+    }
+
+    runFallbackTransition()
+  }
+
+  const themeOptions: Array<{
+    icon: React.ReactNode
+    label: string
+    mode: ThemeMode
+  }> = [
+    { mode: 'light', label: t('app.theme.light'), icon: <Sun className="h-4 w-4" /> },
+    { mode: 'dark', label: t('app.theme.dark'), icon: <Moon className="h-4 w-4" /> },
+    { mode: 'system', label: t('app.theme.system'), icon: <Laptop className="h-4 w-4" /> }
+  ]
 
   return (
     <div className="flex h-screen w-full overflow-hidden">
@@ -273,45 +449,53 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
 
               {/* Theme Toggle */}
               <div className="flex items-center glass-input rounded-lg p-1">
-                <button
-                  onClick={() => setThemeMode('light')}
-                  aria-label={t('app.theme.light')}
-                  className={cn(
-                    'p-1.5 rounded-md transition-colors',
-                    themeMode === 'light' && 'bg-[var(--primary)] text-white'
-                  )}
-                >
-                  <Sun className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => setThemeMode('dark')}
-                  aria-label={t('app.theme.dark')}
-                  className={cn(
-                    'p-1.5 rounded-md transition-colors',
-                    themeMode === 'dark' && 'bg-[var(--primary)] text-white'
-                  )}
-                >
-                  <Moon className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => setThemeMode('system')}
-                  aria-label={t('app.theme.system')}
-                  className={cn(
-                    'p-1.5 rounded-md transition-colors',
-                    themeMode === 'system' && 'bg-[var(--primary)] text-white'
-                  )}
-                >
-                  <Laptop className="w-4 h-4" />
-                </button>
+                {themeOptions.map(option => {
+                  const isActive = themeMode === option.mode
+
+                  return (
+                    <button
+                      key={option.mode}
+                      onClick={event => handleThemeChange(option.mode, event)}
+                      aria-label={option.label}
+                      aria-pressed={isActive}
+                      className={cn(
+                        'relative grid h-8 w-8 place-items-center overflow-hidden rounded-md text-[var(--text-secondary)] transition-colors duration-300',
+                        isActive
+                          ? 'text-white'
+                          : 'hover:bg-[var(--glass-bg-hover)] hover:text-[var(--text-primary)]'
+                      )}
+                    >
+                      {isActive && (
+                        <motion.span
+                          layoutId="theme-toggle-indicator"
+                          className="absolute inset-0 rounded-md bg-[var(--primary)] shadow-[0_8px_20px_rgba(0,113,227,0.26)]"
+                          transition={{ type: 'spring', stiffness: 420, damping: 32 }}
+                        />
+                      )}
+                      <span className="relative z-10">{option.icon}</span>
+                    </button>
+                  )
+                })}
               </div>
 
               {/* Language Toggle */}
               <button
-                onClick={() => changeLanguage(language === 'cn' ? 'en' : 'cn')}
+                onClick={handleLanguageChange}
                 className="px-3 py-1.5 glass-input rounded-lg text-sm font-medium hover:bg-[var(--glass-bg-hover)] transition-colors"
                 aria-label={t('public.switch_language')}
               >
                 {language === 'cn' ? '中' : 'EN'}
+              </button>
+
+              {/* Direction Toggle */}
+              <button
+                onClick={handleDirectionChange}
+                className="flex items-center gap-1.5 px-3 py-1.5 glass-input rounded-lg text-sm font-medium hover:bg-[var(--glass-bg-hover)] transition-colors"
+                aria-label={t('public.switch_direction')}
+                aria-pressed={direction === 'rtl'}
+              >
+                <ArrowLeftRight className="h-4 w-4" />
+                {direction.toUpperCase()}
               </button>
             </div>
           </div>

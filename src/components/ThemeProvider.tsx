@@ -1,6 +1,6 @@
 'use client'
 
-import React, { createContext, useContext, useEffect, useState } from 'react'
+import React, { createContext, useContext, useEffect, useLayoutEffect, useState } from 'react'
 
 import { ToastProvider } from '@/components/ui/toast'
 
@@ -56,7 +56,7 @@ export default function ThemeProvider({ children }: { children: React.ReactNode 
   const resolvedTheme = themeMode === 'system' ? systemTheme : themeMode
   const isDarkMode = resolvedTheme === 'dark'
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (mounted) {
       document.documentElement.setAttribute('data-theme', isDarkMode ? 'dark' : 'light')
     }

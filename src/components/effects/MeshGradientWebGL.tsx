@@ -113,6 +113,11 @@ function MeshGradientScene({ isDarkMode }: { isDarkMode: boolean }) {
   const matRef = useRef<THREE.ShaderMaterial>(null)
   const { size } = useThree()
   const reducedMotionRef = useRef(prefersReducedMotion())
+  const targetBgRef = useRef(new THREE.Vector3(...(isDarkMode ? DARK_BG : LIGHT_BG)))
+  const targetColorsRef = useRef(
+    (isDarkMode ? DARK_PALETTE : LIGHT_PALETTE).map(c => new THREE.Vector3(c[0], c[1], c[2]))
+  )
+  const targetDarkMixRef = useRef(isDarkMode ? 1 : 0)
 
   const palette = isDarkMode ? DARK_PALETTE : LIGHT_PALETTE
   const bg = isDarkMode ? DARK_BG : LIGHT_BG
@@ -136,18 +141,15 @@ function MeshGradientScene({ isDarkMode }: { isDarkMode: boolean }) {
     []
   )
 
-  // Smooth theme transition: update color uniforms when theme changes
+  // Smooth theme transition: set targets here; interpolate them inside the render loop.
   useEffect(() => {
-    const mat = matRef.current
-    if (!mat) return
     const next = isDarkMode ? DARK_PALETTE : LIGHT_PALETTE
     const nextBg = isDarkMode ? DARK_BG : LIGHT_BG
-    const u = mat.uniforms
     next.forEach((c, i) => {
-      ;(u.uColors.value as THREE.Vector3[])[i].set(c[0], c[1], c[2])
+      targetColorsRef.current[i].set(c[0], c[1], c[2])
     })
-    ;(u.uBgColor.value as THREE.Vector3).set(nextBg[0], nextBg[1], nextBg[2])
-    ;(u.uDarkMix as { value: number }).value = isDarkMode ? 1.0 : 0.0
+    targetBgRef.current.set(nextBg[0], nextBg[1], nextBg[2])
+    targetDarkMixRef.current = isDarkMode ? 1 : 0
   }, [isDarkMode])
 
   // Watch reduced-motion preference changes
@@ -165,6 +167,18 @@ function MeshGradientScene({ isDarkMode }: { isDarkMode: boolean }) {
     const mat = matRef.current
     if (!mat) return
     const u = mat.uniforms
+    const alpha = reducedMotionRef.current ? 1 : 1 - Math.pow(0.002, delta)
+
+    ;(u.uBgColor.value as THREE.Vector3).lerp(targetBgRef.current, alpha)
+    ;(u.uColors.value as THREE.Vector3[]).forEach((color, index) => {
+      color.lerp(targetColorsRef.current[index], alpha)
+    })
+    ;(u.uDarkMix as { value: number }).value = THREE.MathUtils.lerp(
+      (u.uDarkMix as { value: number }).value,
+      targetDarkMixRef.current,
+      alpha
+    )
+
     if (!reducedMotionRef.current) {
       ;(u.uTime as { value: number }).value += delta
     }
@@ -194,7 +208,10 @@ export function MeshGradientWebGL() {
   return (
     <div
       className="fixed inset-0 -z-10 overflow-hidden"
-      style={{ background: bgCss }}
+      style={{
+        backgroundColor: bgCss,
+        transition: 'background-color 900ms cubic-bezier(0.22, 1, 0.36, 1)'
+      }}
       aria-hidden="true"
     >
       <Canvas
