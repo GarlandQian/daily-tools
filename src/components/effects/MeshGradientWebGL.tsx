@@ -207,7 +207,7 @@ export function MeshGradientWebGL() {
 
   return (
     <div
-      className="fixed inset-0 -z-10 overflow-hidden"
+      className="pointer-events-none fixed inset-0 z-0 overflow-hidden"
       style={{
         backgroundColor: bgCss,
         transition: 'background-color 900ms cubic-bezier(0.22, 1, 0.36, 1)'
