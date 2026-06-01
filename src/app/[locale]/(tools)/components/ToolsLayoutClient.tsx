@@ -588,7 +588,7 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
           </div>
         </header>
 
-        <main className="flex-1 overflow-auto bg-transparent px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
+        <main className="flex-1 overflow-x-hidden overflow-y-auto bg-transparent px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
           <TransitionLayout
             style={{
               maxWidth: 'var(--content-max)',
