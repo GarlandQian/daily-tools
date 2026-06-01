@@ -79,8 +79,8 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
                 <button
                   onClick={() => toggleCategory(category.path)}
                   className={cn(
-                    'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all',
-                    'hover:bg-[var(--glass-bg-hover)] hover:scale-[1.02]',
+                    'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+                    'hover:bg-[var(--glass-bg-hover)]',
                     isActive && 'bg-[var(--glass-bg-active)] text-[var(--primary)]'
                   )}
                 >
@@ -110,8 +110,8 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
                               key={child.path}
                               onClick={() => handleNavigate(child.path)}
                               className={cn(
-                                'w-full text-left px-3 py-1.5 rounded-md text-sm transition-all',
-                                'hover:bg-[var(--glass-bg-hover)] hover:translate-x-0.5',
+                                'w-full text-left px-3 py-1.5 rounded-md text-sm transition-colors',
+                                'hover:bg-[var(--glass-bg-hover)]',
                                 isChildActive
                                   ? 'text-[var(--primary)] font-medium bg-[var(--primary-subtle)]'
                                   : 'text-[var(--text-secondary)]'
@@ -166,7 +166,7 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
                       <button
                         onClick={() => toggleCategory(category.path)}
                         className={cn(
-                          'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all',
+                          'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
                           'hover:bg-[var(--glass-bg-hover)]',
                           isActive && 'bg-[var(--glass-bg-active)] text-[var(--primary)]'
                         )}
@@ -197,7 +197,7 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
                                     key={child.path}
                                     onClick={() => handleNavigate(child.path)}
                                     className={cn(
-                                      'w-full text-left px-3 py-1.5 rounded-md text-sm transition-all',
+                                      'w-full text-left px-3 py-1.5 rounded-md text-sm transition-colors',
                                       'hover:bg-[var(--glass-bg-hover)]',
                                       isChildActive
                                         ? 'text-[var(--primary)] font-medium bg-[var(--primary-subtle)]'
@@ -231,7 +231,8 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
             <div className="flex items-center gap-4">
               <button
                 onClick={() => setSidebarOpen(true)}
-                className="lg:hidden p-2 hover:bg-[var(--glass-bg-hover)] rounded-lg transition-all"
+                className="lg:hidden p-2 hover:bg-[var(--glass-bg-hover)] rounded-lg transition-colors"
+                aria-label="Open navigation"
               >
                 <Menu className="w-5 h-5" />
               </button>
@@ -244,7 +245,7 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
                     <button
                       onClick={() => handleNavigate(crumb.path)}
                       className={cn(
-                        'px-2 py-1 rounded-md transition-all hover:bg-[var(--glass-bg-hover)]',
+                        'px-2 py-1 rounded-md transition-colors hover:bg-[var(--glass-bg-hover)]',
                         index === breadcrumbs.length - 1
                           ? 'text-[var(--text-primary)] font-medium'
                           : 'text-[var(--text-secondary)]'
@@ -264,7 +265,8 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
                 href={process.env.NEXT_PUBLIC_GITHUB_URL}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="p-2 hover:bg-[var(--glass-bg-hover)] rounded-lg transition-all hover:scale-110"
+                className="p-2 hover:bg-[var(--glass-bg-hover)] rounded-lg transition-colors"
+                aria-label="Open GitHub repository"
               >
                 <Github className="w-5 h-5" />
               </a>
@@ -273,8 +275,9 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
               <div className="flex items-center glass-input rounded-lg p-1">
                 <button
                   onClick={() => setThemeMode('light')}
+                  aria-label={t('app.theme.light')}
                   className={cn(
-                    'p-1.5 rounded-md transition-all',
+                    'p-1.5 rounded-md transition-colors',
                     themeMode === 'light' && 'bg-[var(--primary)] text-white'
                   )}
                 >
@@ -282,8 +285,9 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
                 </button>
                 <button
                   onClick={() => setThemeMode('dark')}
+                  aria-label={t('app.theme.dark')}
                   className={cn(
-                    'p-1.5 rounded-md transition-all',
+                    'p-1.5 rounded-md transition-colors',
                     themeMode === 'dark' && 'bg-[var(--primary)] text-white'
                   )}
                 >
@@ -291,8 +295,9 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
                 </button>
                 <button
                   onClick={() => setThemeMode('system')}
+                  aria-label={t('app.theme.system')}
                   className={cn(
-                    'p-1.5 rounded-md transition-all',
+                    'p-1.5 rounded-md transition-colors',
                     themeMode === 'system' && 'bg-[var(--primary)] text-white'
                   )}
                 >
@@ -303,7 +308,8 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
               {/* Language Toggle */}
               <button
                 onClick={() => changeLanguage(language === 'cn' ? 'en' : 'cn')}
-                className="px-3 py-1.5 glass-input rounded-lg text-sm font-medium hover:bg-[var(--glass-bg-hover)] transition-all"
+                className="px-3 py-1.5 glass-input rounded-lg text-sm font-medium hover:bg-[var(--glass-bg-hover)] transition-colors"
+                aria-label="Switch language"
               >
                 {language === 'cn' ? '中' : 'EN'}
               </button>
