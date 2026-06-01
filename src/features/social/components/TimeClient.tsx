@@ -220,9 +220,9 @@ const TimeClient = () => {
   const unixTime = isReady ? localNow.unix().toLocaleString() : '--'
 
   return (
-    <div className="flex size-full flex-col gap-5">
-      <section className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(340px,0.8fr)]">
-        <div className="glass-panel glass-accent-border glass-glow-primary glass-prism rounded-2xl p-5 sm:p-6">
+    <div className="flex w-full min-w-0 max-w-full flex-col gap-5 overflow-x-hidden pb-1">
+      <section className="grid min-w-0 grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
+        <div className="glass-panel glass-accent-border glass-glow-primary glass-prism min-w-0 rounded-2xl p-5 sm:p-6">
           <div className="relative z-10 flex min-h-[290px] flex-col justify-between gap-8">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="min-w-0">
@@ -240,7 +240,7 @@ const TimeClient = () => {
             </div>
 
             <div className="min-w-0">
-              <div className="font-mono text-[clamp(3.2rem,10vw,7.5rem)] font-semibold leading-none tracking-normal text-[var(--text-primary)] tabular-nums">
+              <div className="max-w-full overflow-hidden font-mono text-[clamp(2.65rem,8vw,6.75rem)] font-semibold leading-none tracking-normal text-[var(--text-primary)] tabular-nums">
                 {localTime}
               </div>
               <div className="mt-4 text-sm text-[var(--text-secondary)] sm:text-base">
@@ -259,8 +259,8 @@ const TimeClient = () => {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-5">
-          <div className="glass-panel glass-prism rounded-2xl p-5">
+        <div className="grid min-w-0 grid-cols-1 gap-5">
+          <div className="glass-panel glass-prism min-w-0 rounded-2xl p-5">
             <div className="mb-4 flex items-center justify-between gap-3">
               <div>
                 <h3 className="text-base font-semibold text-[var(--text-primary)]">
@@ -286,7 +286,7 @@ const TimeClient = () => {
             </div>
           </div>
 
-          <div className="glass-panel glass-prism rounded-2xl p-5">
+          <div className="glass-panel glass-prism min-w-0 rounded-2xl p-5">
             <h3 className="text-base font-semibold text-[var(--text-primary)]">
               {t('app.social.time.quick_groups')}
             </h3>
@@ -311,13 +311,13 @@ const TimeClient = () => {
         </div>
       </section>
 
-      <section className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <section className="grid min-w-0 grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
         {featuredZones.map(zone => {
           const zoneData = tzListMap[zone.key]
           const zoneNow = localNow.tz(zoneData.value)
 
           return (
-            <div key={zone.key} className="glass-panel glass-prism rounded-2xl p-4">
+            <div key={zone.key} className="glass-panel glass-prism min-w-0 rounded-2xl p-4">
               <div className="flex min-w-0 items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="truncate text-sm font-semibold text-[var(--text-primary)]">
@@ -342,7 +342,7 @@ const TimeClient = () => {
         })}
       </section>
 
-      <section className="glass-panel glass-prism flex min-h-0 flex-1 flex-col rounded-2xl">
+      <section className="glass-panel glass-prism flex min-w-0 flex-col overflow-hidden rounded-2xl">
         <div className="flex flex-col gap-4 border-b border-[var(--glass-border)] p-5 md:flex-row md:items-center md:justify-between">
           <div>
             <h3 className="text-base font-semibold text-[var(--text-primary)]">
@@ -352,7 +352,7 @@ const TimeClient = () => {
               {t('app.social.time.zones_shown', { count: visibleZones.length })}
             </p>
           </div>
-          <div className="flex w-full flex-col gap-2 sm:flex-row md:w-auto">
+          <div className="flex w-full min-w-0 flex-col gap-2 sm:flex-row md:w-auto">
             <div className="relative min-w-0 sm:w-72">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-tertiary)]" />
               <Input
@@ -375,15 +375,15 @@ const TimeClient = () => {
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-auto p-3 sm:p-4">
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="p-3 sm:p-4">
+          <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
             {visibleZones.map(zone => {
               const zoneNow = localNow.tz(zone.value)
 
               return (
                 <div
                   key={zone.key}
-                  className="rounded-xl border border-[var(--border-subtle)] bg-[var(--glass-input-bg)] p-4"
+                  className="min-w-0 rounded-xl border border-[var(--border-subtle)] bg-[var(--glass-input-bg)] p-4"
                 >
                   <div className="flex min-w-0 items-start justify-between gap-3">
                     <div className="min-w-0">
@@ -398,11 +398,11 @@ const TimeClient = () => {
                       {formatOffset(localNow, zone.value)}
                     </span>
                   </div>
-                  <div className="mt-4 flex items-end justify-between gap-3">
-                    <div className="font-mono text-2xl font-semibold tabular-nums text-[var(--text-primary)]">
+                  <div className="mt-4 flex min-w-0 items-end justify-between gap-3">
+                    <div className="min-w-0 overflow-hidden font-mono text-2xl font-semibold tabular-nums text-[var(--text-primary)]">
                       {isReady ? zoneNow.format('HH:mm:ss') : '--:--:--'}
                     </div>
-                    <div className="text-right text-xs text-[var(--text-secondary)]">
+                    <div className="min-w-0 shrink text-right text-xs text-[var(--text-secondary)]">
                       <div>{isReady ? zoneNow.format('YYYY-MM-DD') : '---- -- --'}</div>
                       <div className="mt-1">
                         {isReady ? formatDiff(localNow, zone.value, t) : '--'}
