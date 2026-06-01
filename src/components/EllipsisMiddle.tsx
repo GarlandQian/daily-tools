@@ -1,5 +1,8 @@
+'use client'
+
 import { ChevronDown, ChevronUp, Copy } from 'lucide-react'
 import React, { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import { cn } from '@/lib/utils'
 
@@ -8,6 +11,7 @@ const EllipsisMiddle: React.FC<{
   children: string
   rows?: number
 }> = ({ suffixCount, children, rows = 1 }) => {
+  const { t } = useTranslation()
   const start = children.slice(0, children.length - suffixCount)
   const suffix = children.slice(-suffixCount).trim()
   const [expanded, setExpanded] = useState(false)
@@ -32,14 +36,14 @@ const EllipsisMiddle: React.FC<{
           <button
             onClick={handleCopy}
             className="p-1 hover:bg-[var(--glass-bg-hover)] rounded transition-all"
-            title="Copy"
+            title={t('public.copy')}
           >
             <Copy className="w-4 h-4 text-[var(--text-secondary)]" />
           </button>
           <button
             onClick={() => setExpanded(!expanded)}
             className="p-1 hover:bg-[var(--glass-bg-hover)] rounded transition-all"
-            title={expanded ? 'Collapse' : 'Expand'}
+            title={expanded ? t('public.collapse') : t('public.expand')}
           >
             {expanded ? (
               <ChevronUp className="w-4 h-4 text-[var(--text-secondary)]" />

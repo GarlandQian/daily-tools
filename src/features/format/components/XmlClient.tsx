@@ -101,10 +101,10 @@ const XmlClient = () => {
                 onClick={() => copy(output)}
                 disabled={!output}
               >
-                {t('app.generation.uuid.copy')}
+                {t('public.copy')}
               </Button>
               <Button icon={<Trash2 className="w-4 h-4" />} onClick={handleClear}>
-                {t('app.format.json.clear')}
+                {t('public.clear')}
               </Button>
             </div>
           </div>
@@ -120,7 +120,7 @@ const XmlClient = () => {
             {!error && validity?.valid && (
               <span className="text-[var(--success)] text-sm flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4" />
-                Valid XML
+                {t('app.format.xml.valid')}
               </span>
             )}
             {!error && validity && !validity.valid && (

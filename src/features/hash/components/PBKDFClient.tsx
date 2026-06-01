@@ -94,7 +94,7 @@ export default function PBKDFClient() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="flex flex-col gap-5">
-            <div className="space-y-2">
+            <div className="space-y-3">
               <Label>{t('app.hash.mode')}</Label>
               <RadioGroup
                 value={mode}
@@ -117,7 +117,7 @@ export default function PBKDFClient() {
             </div>
 
             {mode === 'encrypt' && (
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <Label htmlFor="pbkdf-message">{t('app.hash.message')}</Label>
                 <Textarea
                   id="pbkdf-message"
@@ -130,7 +130,7 @@ export default function PBKDFClient() {
             )}
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <Label htmlFor="pbkdf-salt">{t('app.hash.pbkdf.salt')}</Label>
                 <Input
                   id="pbkdf-salt"
@@ -140,7 +140,7 @@ export default function PBKDFClient() {
                 />
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <Label htmlFor="pbkdf-keysize">{t('app.hash.pbkdf.keySize')}</Label>
                 <Select
                   id="pbkdf-keysize"
@@ -153,7 +153,7 @@ export default function PBKDFClient() {
                 </Select>
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <Label htmlFor="pbkdf-iterations">{t('app.hash.pbkdf.iterations')}</Label>
                 <Input
                   id="pbkdf-iterations"
@@ -167,7 +167,7 @@ export default function PBKDFClient() {
             </div>
 
             {mode === 'verify' && (
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <Label htmlFor="pbkdf-target">{t('app.hash.target')}</Label>
                 <Input
                   id="pbkdf-target"
@@ -218,7 +218,7 @@ export default function PBKDFClient() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="flex items-start gap-2">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
                   <Textarea
                     readOnly
                     value={result.text}

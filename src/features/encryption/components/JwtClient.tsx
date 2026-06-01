@@ -123,7 +123,7 @@ const JwtClient = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1">
         <Card className="flex flex-col">
           <CardHeader>
-            <CardTitle>Header</CardTitle>
+            <CardTitle>{t('app.encryption.jwt.header')}</CardTitle>
           </CardHeader>
           <CardContent className="flex-1 overflow-auto">
             <pre
@@ -136,7 +136,7 @@ const JwtClient = () => {
         </Card>
         <Card className="flex flex-col">
           <CardHeader>
-            <CardTitle>Payload</CardTitle>
+            <CardTitle>{t('app.encryption.jwt.payload')}</CardTitle>
           </CardHeader>
           <CardContent className="flex-1 overflow-auto">
             <pre

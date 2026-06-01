@@ -61,7 +61,7 @@ const LoremClient = () => {
         </CardHeader>
         <CardContent>
           <div className="flex flex-wrap items-end gap-4">
-            <div className="space-y-2">
+            <div className="space-y-3">
               <Label htmlFor="count">{t('app.generation.lorem.count')}</Label>
               <Input
                 id="count"
@@ -73,30 +73,30 @@ const LoremClient = () => {
                 className="w-20"
               />
             </div>
-            <div className="space-y-2">
+            <div className="space-y-3">
               <Label>{t('app.generation.lorem.unit')}</Label>
               <RadioGroup
                 value={formData.unit}
                 onValueChange={value =>
                   setFormData(prev => ({ ...prev, unit: value as LoremUnit }))
                 }
-                className="flex gap-2"
+                className="flex flex-wrap gap-3"
               >
-                <label className="flex items-center gap-2 glass-panel px-3 py-2 rounded-lg cursor-pointer hover:glass-panel-strong transition-all">
+                <label className="flex min-h-11 cursor-pointer items-center gap-2.5 rounded-lg px-3.5 py-2 glass-panel transition-all hover:glass-panel-strong">
                   <RadioGroupItem value="paragraphs" />
                   <span className="text-sm">{t('app.generation.lorem.paragraphs')}</span>
                 </label>
-                <label className="flex items-center gap-2 glass-panel px-3 py-2 rounded-lg cursor-pointer hover:glass-panel-strong transition-all">
+                <label className="flex min-h-11 cursor-pointer items-center gap-2.5 rounded-lg px-3.5 py-2 glass-panel transition-all hover:glass-panel-strong">
                   <RadioGroupItem value="sentences" />
                   <span className="text-sm">{t('app.generation.lorem.sentences')}</span>
                 </label>
-                <label className="flex items-center gap-2 glass-panel px-3 py-2 rounded-lg cursor-pointer hover:glass-panel-strong transition-all">
+                <label className="flex min-h-11 cursor-pointer items-center gap-2.5 rounded-lg px-3.5 py-2 glass-panel transition-all hover:glass-panel-strong">
                   <RadioGroupItem value="words" />
                   <span className="text-sm">{t('app.generation.lorem.words')}</span>
                 </label>
               </RadioGroup>
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-3">
               <Button
                 variant="primary"
                 icon={<RotateCcw className="w-4 h-4" />}
@@ -109,7 +109,7 @@ const LoremClient = () => {
                 onClick={() => copy(output)}
                 disabled={!output}
               >
-                {t('app.generation.uuid.copy')}
+                {t('public.copy')}
               </Button>
             </div>
           </div>

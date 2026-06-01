@@ -82,8 +82,12 @@ const JsonClient = () => {
           <CardTitle>{t('app.format.json')}</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex flex-wrap gap-2">
-            <Button variant="primary" icon={<Paintbrush className="w-4 h-4" />} onClick={handleFormat}>
+          <div className="flex flex-wrap gap-3">
+            <Button
+              variant="primary"
+              icon={<Paintbrush className="w-4 h-4" />}
+              onClick={handleFormat}
+            >
               {t('app.format.json.format')}
             </Button>
             <Button icon={<Minimize2 className="w-4 h-4" />} onClick={handleMinify}>
@@ -91,7 +95,7 @@ const JsonClient = () => {
             </Button>
             <Button onClick={handleValidate}>{t('app.format.json.validate')}</Button>
             <Button icon={<Copy className="w-4 h-4" />} onClick={handleCopy} disabled={!output}>
-              {t('app.generation.uuid.copy')}
+              {t('public.copy')}
             </Button>
             <Button icon={<Trash2 className="w-4 h-4" />} onClick={handleClear}>
               {t('app.format.json.clear')}
@@ -125,11 +129,7 @@ const JsonClient = () => {
             <CardTitle>{t('app.format.json.output')}</CardTitle>
           </CardHeader>
           <CardContent className="flex-1 overflow-hidden">
-            <Textarea
-              value={output}
-              readOnly
-              className="h-full resize-none font-mono"
-            />
+            <Textarea value={output} readOnly className="h-full resize-none font-mono" />
           </CardContent>
         </Card>
       </div>

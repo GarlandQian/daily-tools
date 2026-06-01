@@ -232,7 +232,7 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
               <button
                 onClick={() => setSidebarOpen(true)}
                 className="lg:hidden p-2 hover:bg-[var(--glass-bg-hover)] rounded-lg transition-colors"
-                aria-label="Open navigation"
+                aria-label={t('public.open_navigation')}
               >
                 <Menu className="w-5 h-5" />
               </button>
@@ -266,7 +266,7 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
                 target="_blank"
                 rel="noopener noreferrer"
                 className="p-2 hover:bg-[var(--glass-bg-hover)] rounded-lg transition-colors"
-                aria-label="Open GitHub repository"
+                aria-label={t('public.open_github')}
               >
                 <Github className="w-5 h-5" />
               </a>
@@ -309,7 +309,7 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
               <button
                 onClick={() => changeLanguage(language === 'cn' ? 'en' : 'cn')}
                 className="px-3 py-1.5 glass-input rounded-lg text-sm font-medium hover:bg-[var(--glass-bg-hover)] transition-colors"
-                aria-label="Switch language"
+                aria-label={t('public.switch_language')}
               >
                 {language === 'cn' ? '中' : 'EN'}
               </button>

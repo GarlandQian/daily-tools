@@ -52,7 +52,7 @@ const QrcodeClient = () => {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
+            <div className="space-y-3">
               <Label htmlFor="content">{t('app.generation.qrcode.content')}</Label>
               <Textarea
                 id="content"
@@ -63,7 +63,7 @@ const QrcodeClient = () => {
               />
             </div>
             <div className="space-y-4">
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <Label>
                   {t('app.generation.qrcode.size')}: {formData.size}px
                 </Label>
@@ -76,24 +76,24 @@ const QrcodeClient = () => {
                 />
               </div>
               <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
+                <div className="space-y-3">
                   <Label htmlFor="fgColor">{t('app.generation.qrcode.fgColor')}</Label>
                   <input
                     id="fgColor"
                     type="color"
                     value={formData.fgColor}
                     onChange={e => setFormData(prev => ({ ...prev, fgColor: e.target.value }))}
-                    className="w-full h-10 rounded-lg cursor-pointer glass-input"
+                    className="h-11 w-full cursor-pointer rounded-lg p-1.5 glass-input"
                   />
                 </div>
-                <div className="space-y-2">
+                <div className="space-y-3">
                   <Label htmlFor="bgColor">{t('app.generation.qrcode.bgColor')}</Label>
                   <input
                     id="bgColor"
                     type="color"
                     value={formData.bgColor}
                     onChange={e => setFormData(prev => ({ ...prev, bgColor: e.target.value }))}
-                    className="w-full h-10 rounded-lg cursor-pointer glass-input"
+                    className="h-11 w-full cursor-pointer rounded-lg p-1.5 glass-input"
                   />
                 </div>
               </div>

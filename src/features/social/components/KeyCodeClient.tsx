@@ -3,6 +3,7 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { Keyboard } from 'lucide-react'
 import React, { useCallback, useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useCopy } from '@/hooks/useCopy'
@@ -19,6 +20,7 @@ interface KeyInfo {
 }
 
 const KeyCodeClient = () => {
+  const { t } = useTranslation()
   const [keyInfo, setKeyInfo] = useState<KeyInfo | null>(null)
   const [history, setHistory] = useState<KeyInfo[]>([])
   const pressAreaRef = useRef<HTMLDivElement>(null)
@@ -103,7 +105,7 @@ const KeyCodeClient = () => {
             >
               <Keyboard className="w-10 h-10 text-[var(--text-tertiary)]" />
               <span className="text-lg font-medium text-[var(--text-secondary)]">
-                Press any key...
+                {t('app.social.keycode.press_any_key')}
               </span>
             </motion.div>
           )}
@@ -121,7 +123,7 @@ const KeyCodeClient = () => {
           >
             <Card>
               <CardHeader>
-                <CardTitle>Event Properties</CardTitle>
+                <CardTitle>{t('app.social.keycode.event_properties')}</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -153,7 +155,7 @@ const KeyCodeClient = () => {
         <Card className="flex-1 flex flex-col overflow-hidden">
           <CardHeader>
             <div className="flex items-center justify-between">
-              <CardTitle>Recent Keys</CardTitle>
+              <CardTitle>{t('app.social.keycode.recent_keys')}</CardTitle>
               <button
                 onClick={() => {
                   setHistory([])
@@ -161,12 +163,12 @@ const KeyCodeClient = () => {
                 }}
                 className="text-xs text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors"
               >
-                Clear
+                {t('public.clear')}
               </button>
             </div>
           </CardHeader>
           <CardContent className="flex-1 overflow-auto">
-            <div className="space-y-2">
+            <div className="space-y-3">
               {history.map((item, i) => (
                 <div
                   key={`${item.code}-${item.keyCode}-${i}`}
@@ -203,7 +205,7 @@ const KeyCodeClient = () => {
                     }
                     className="opacity-0 group-hover:opacity-100 text-xs text-[var(--text-tertiary)] hover:text-[var(--primary)] transition-all"
                   >
-                    copy
+                    {t('public.copy')}
                   </button>
                 </div>
               ))}

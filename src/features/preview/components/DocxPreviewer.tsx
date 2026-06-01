@@ -72,7 +72,7 @@ const DocxPreviewer = () => {
               loading={loading}
               onClick={() => document.getElementById('docx-reupload')?.click()}
             >
-              {t('app.encryption.aes.action')}
+              {t('public.upload_again')}
             </Button>
             <input
               id="docx-reupload"

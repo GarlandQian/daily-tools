@@ -1,5 +1,8 @@
+'use client'
+
 import { Upload as UploadIcon } from 'lucide-react'
 import * as React from 'react'
+import { useTranslation } from 'react-i18next'
 
 import { cn } from '@/lib/utils'
 
@@ -22,6 +25,7 @@ function FileUploadZone({
   className,
   disabled
 }: FileUploaderProps) {
+  const { t } = useTranslation()
   const [isDragging, setIsDragging] = React.useState(false)
   const inputRef = React.useRef<HTMLInputElement>(null)
 
@@ -66,7 +70,7 @@ function FileUploadZone({
       {children || (
         <>
           <UploadIcon className="w-8 h-8 text-[var(--text-tertiary)]" />
-          <p className="text-sm text-[var(--text-secondary)]">Click or drag files here to upload</p>
+          <p className="text-sm text-[var(--text-secondary)]">{t('public.upload_hint')}</p>
         </>
       )}
     </div>

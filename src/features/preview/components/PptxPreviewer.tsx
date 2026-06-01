@@ -77,7 +77,7 @@ const PptxPreviewer = () => {
               loading={loading}
               onClick={() => document.getElementById('pptx-reupload')?.click()}
             >
-              {t('app.encryption.aes.action')}
+              {t('public.upload_again')}
             </Button>
             <input
               id="pptx-reupload"

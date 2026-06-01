@@ -86,7 +86,7 @@ export default function HMACMD5Client() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="flex flex-col gap-5">
-            <div className="space-y-2">
+            <div className="space-y-3">
               <Label>{t('app.hash.mode')}</Label>
               <RadioGroup
                 value={mode}
@@ -109,7 +109,7 @@ export default function HMACMD5Client() {
             </div>
 
             {mode === 'encrypt' && (
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <Label htmlFor="hmacmd5-message">{t('app.hash.message')}</Label>
                 <Textarea
                   id="hmacmd5-message"
@@ -121,7 +121,7 @@ export default function HMACMD5Client() {
               </div>
             )}
 
-            <div className="space-y-2">
+            <div className="space-y-3">
               <Label htmlFor="hmacmd5-key">{t('app.hash.key')}</Label>
               <Input
                 id="hmacmd5-key"
@@ -132,7 +132,7 @@ export default function HMACMD5Client() {
             </div>
 
             {mode === 'verify' && (
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <Label htmlFor="hmacmd5-target">{t('app.hash.target')}</Label>
                 <Input
                   id="hmacmd5-target"
@@ -183,7 +183,7 @@ export default function HMACMD5Client() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="flex items-start gap-2">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
                   <Textarea
                     readOnly
                     value={result.text}

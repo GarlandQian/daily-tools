@@ -38,8 +38,13 @@ const ToolLayout: React.FC<ToolLayoutProps> = ({
     <div className="flex gap-2 flex-wrap">
       {extra}
       {showReset && (
-        <Button variant="ghost" size="sm" icon={<RotateCcw className="w-4 h-4" />} onClick={onReset}>
-          {t('app.generation.cron.reset')}
+        <Button
+          variant="ghost"
+          size="sm"
+          icon={<RotateCcw className="w-4 h-4" />}
+          onClick={onReset}
+        >
+          {t('public.reset')}
         </Button>
       )}
       {showCopy && (
@@ -50,12 +55,12 @@ const ToolLayout: React.FC<ToolLayoutProps> = ({
           onClick={onCopy}
           disabled={copyDisabled}
         >
-          {t('app.generation.uuid.copy')}
+          {t('public.copy')}
         </Button>
       )}
       {showClear && (
         <Button variant="ghost" size="sm" icon={<Trash2 className="w-4 h-4" />} onClick={onClear}>
-          {t('app.format.json.clear')}
+          {t('public.clear')}
         </Button>
       )}
     </div>

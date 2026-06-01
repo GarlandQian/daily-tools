@@ -89,7 +89,7 @@ export default function RIPEMDClient() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="flex flex-col gap-5">
-            <div className="space-y-2">
+            <div className="space-y-3">
               <Label>{t('app.hash.mode')}</Label>
               <RadioGroup
                 value={mode}
@@ -112,7 +112,7 @@ export default function RIPEMDClient() {
             </div>
 
             {mode === 'encrypt' && (
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <Label htmlFor="ripemd-message">{t('app.hash.message')}</Label>
                 <Textarea
                   id="ripemd-message"
@@ -125,7 +125,7 @@ export default function RIPEMDClient() {
             )}
 
             {mode === 'verify' && (
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <Label htmlFor="ripemd-target">{t('app.hash.target')}</Label>
                 <Input
                   id="ripemd-target"
@@ -176,7 +176,7 @@ export default function RIPEMDClient() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="flex items-start gap-2">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
                   <Textarea
                     readOnly
                     value={result.text}

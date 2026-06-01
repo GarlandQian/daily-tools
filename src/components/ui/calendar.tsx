@@ -3,16 +3,38 @@
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import * as React from 'react'
 import { DayPicker } from 'react-day-picker'
+import { useTranslation } from 'react-i18next'
 
 import { buttonVariants } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
 export type CalendarProps = React.ComponentProps<typeof DayPicker>
 
-function Calendar({ className, classNames, showOutsideDays = true, ...props }: CalendarProps) {
+function Calendar({
+  className,
+  classNames,
+  formatters,
+  showOutsideDays = true,
+  ...props
+}: CalendarProps) {
+  const { i18n } = useTranslation()
+  const isChinese = i18n.language === 'cn'
+  const weekdays = ['日', '一', '二', '三', '四', '五', '六']
+
   return (
     <DayPicker
       showOutsideDays={showOutsideDays}
+      formatters={{
+        formatCaption: month =>
+          isChinese
+            ? `${month.getFullYear()}年${month.getMonth() + 1}月`
+            : month.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+        formatWeekdayName: weekday =>
+          isChinese
+            ? `周${weekdays[weekday.getDay()]}`
+            : weekday.toLocaleDateString('en-US', { weekday: 'short' }),
+        ...formatters
+      }}
       className={cn(
         'glass-panel glass-panel-strong glass-popover w-[min(20rem,calc(100vw-2rem))] rounded-xl p-3 text-[var(--text-primary)]',
         className

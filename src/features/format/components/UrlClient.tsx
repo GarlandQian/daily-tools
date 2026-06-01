@@ -109,27 +109,27 @@ const UrlClient = () => {
     <div className="flex flex-col gap-5 size-full">
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <CardTitle className="flex items-center gap-2">
               <Link className="w-5 h-5 text-[var(--primary)]" />
-              URL Parser
+              {t('app.format.url')}
             </CardTitle>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-3">
               <Button
                 size="sm"
                 icon={<Globe className="w-4 h-4" />}
                 onClick={handleFromCurrentPage}
               >
-                Current Page
+                {t('app.format.url.current_page')}
               </Button>
               <Button size="sm" icon={<Trash2 className="w-4 h-4" />} onClick={handleClear}>
-                Clear
+                {t('public.clear')}
               </Button>
             </div>
           </div>
         </CardHeader>
         <CardContent>
-          <div className="flex gap-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
             <Textarea
               value={inputUrl}
               onChange={e => setInputUrl(e.target.value)}
@@ -141,8 +141,9 @@ const UrlClient = () => {
               variant="primary"
               icon={<RotateCcw className="w-4 h-4" />}
               onClick={handleParse}
+              className="w-full sm:w-auto"
             >
-              Parse
+              {t('app.format.url.parse')}
             </Button>
           </div>
           {error && <span className="text-[var(--error)] text-sm mt-2 block">{error}</span>}
@@ -152,12 +153,14 @@ const UrlClient = () => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-1 min-h-0">
         <Card>
           <CardHeader>
-            <CardTitle>URL Components</CardTitle>
+            <CardTitle>{t('app.format.url.components')}</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="flex flex-col gap-4">
-              <div className="space-y-1.5">
-                <Label className="text-xs text-[var(--text-secondary)]">Protocol</Label>
+            <div className="flex flex-col gap-5">
+              <div className="space-y-3">
+                <Label className="text-xs text-[var(--text-secondary)]">
+                  {t('app.format.url.protocol')}
+                </Label>
                 <Select value={protocol} onChange={e => setProtocol(e.target.value)}>
                   <option value="http:">http://</option>
                   <option value="https:">https://</option>
@@ -166,24 +169,30 @@ const UrlClient = () => {
                   <option value="wss:">wss://</option>
                 </Select>
               </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs text-[var(--text-secondary)]">Host</Label>
+              <div className="space-y-3">
+                <Label className="text-xs text-[var(--text-secondary)]">
+                  {t('app.format.url.host')}
+                </Label>
                 <Input
                   value={host}
                   onChange={e => setHost(e.target.value)}
                   placeholder="example.com"
                 />
               </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs text-[var(--text-secondary)]">Path</Label>
+              <div className="space-y-3">
+                <Label className="text-xs text-[var(--text-secondary)]">
+                  {t('app.format.url.path')}
+                </Label>
                 <Input
                   value={pathname}
                   onChange={e => setPathname(e.target.value)}
                   placeholder="/path"
                 />
               </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs text-[var(--text-secondary)]">Hash</Label>
+              <div className="space-y-3">
+                <Label className="text-xs text-[var(--text-secondary)]">
+                  {t('app.format.url.hash')}
+                </Label>
                 <Input
                   value={hash}
                   onChange={e => setHash(e.target.value)}
@@ -197,36 +206,36 @@ const UrlClient = () => {
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
-              <CardTitle>Query Parameters</CardTitle>
+              <CardTitle>{t('app.format.url.query_params')}</CardTitle>
               <Button
                 size="sm"
                 variant="outline"
                 icon={<Plus className="w-4 h-4" />}
                 onClick={handleAddParam}
               >
-                Add
+                {t('public.add')}
               </Button>
             </div>
           </CardHeader>
           <CardContent>
-            <div className="flex flex-col gap-2 max-h-[300px] overflow-y-auto">
+            <div className="flex max-h-[300px] flex-col gap-3 overflow-y-auto">
               {queryParams.length === 0 && (
                 <p className="text-sm text-[var(--text-tertiary)] text-center py-4">
-                  No query parameters
+                  {t('app.format.url.no_query_params')}
                 </p>
               )}
               {queryParams.map(param => (
-                <div key={param.id} className="flex items-center gap-2">
+                <div key={param.id} className="flex flex-col gap-3 sm:flex-row sm:items-center">
                   <Input
                     value={param.key}
                     onChange={e => handleParamChange(param.id, 'key', e.target.value)}
-                    placeholder="Key"
+                    placeholder={t('app.format.url.key')}
                     className="flex-1"
                   />
                   <Input
                     value={param.value}
                     onChange={e => handleParamChange(param.id, 'value', e.target.value)}
-                    placeholder="Value"
+                    placeholder={t('app.format.url.value')}
                     className="flex-1"
                   />
                   <Button
@@ -247,21 +256,21 @@ const UrlClient = () => {
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
-            <CardTitle>Constructed URL</CardTitle>
+            <CardTitle>{t('app.format.url.constructed')}</CardTitle>
             <Button
               size="sm"
               icon={<Copy className="w-4 h-4" />}
               onClick={() => copy(constructedUrl)}
               disabled={!constructedUrl}
             >
-              Copy
+              {t('public.copy')}
             </Button>
           </div>
         </CardHeader>
         <CardContent>
           <div className="glass-input rounded-lg p-3 font-mono text-sm break-all">
             {constructedUrl || (
-              <span className="text-[var(--text-tertiary)]">Waiting for input...</span>
+              <span className="text-[var(--text-tertiary)]">{t('app.format.url.waiting')}</span>
             )}
           </div>
         </CardContent>

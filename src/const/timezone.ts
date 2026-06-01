@@ -154,3 +154,14 @@ export const tzListMap = {
 export type tzMap = keyof typeof tzListMap
 
 export const tzDefault = 'chinaStandardTime'
+
+export const getTimezoneLabel = (timezone: tzMap, locale: string) => {
+  const label = tzListMap[timezone].label
+  const match = label.match(/^(.+?)（(.+?)）$/)
+
+  if (!match) {
+    return label
+  }
+
+  return locale === 'cn' ? match[1] : match[2]
+}

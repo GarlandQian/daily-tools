@@ -88,15 +88,15 @@ const SqlClient = () => {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <CardTitle>{t('app.format.sql')}</CardTitle>
             <div className="flex flex-wrap items-center gap-3">
-              <div className="flex items-center gap-2">
+              <div className="flex min-w-[220px] flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
                 <Label htmlFor="sql-dialect" className="text-xs text-[var(--text-secondary)]">
-                  Dialect
+                  {t('app.format.sql.dialect')}
                 </Label>
                 <Select
                   id="sql-dialect"
                   value={language}
                   onChange={e => setLanguage(e.target.value as SqlLanguage)}
-                  className="w-[150px]"
+                  className="w-full sm:w-[150px]"
                 >
                   {languageOptions.map(opt => (
                     <option key={opt.value} value={opt.value}>
@@ -109,7 +109,7 @@ const SqlClient = () => {
               <div
                 className="glass-input inline-flex items-center rounded-lg p-0.5"
                 role="radiogroup"
-                aria-label="Keyword case"
+                aria-label={t('app.format.sql.keyword_case')}
               >
                 {caseOptions.map(opt => (
                   <button
@@ -142,10 +142,10 @@ const SqlClient = () => {
                 onClick={() => copy(output)}
                 disabled={!output}
               >
-                {t('app.generation.uuid.copy')}
+                {t('public.copy')}
               </Button>
               <Button icon={<Trash2 className="w-4 h-4" />} onClick={handleClear}>
-                {t('app.format.json.clear')}
+                {t('public.clear')}
               </Button>
             </div>
           </div>

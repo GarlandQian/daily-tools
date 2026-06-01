@@ -16,7 +16,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { calcRetires, type calcRetiresParams, type calcRetiresReturnType } from '../utils'
 
 const RetiresClient = () => {
-  const { t } = useTranslation()
+  const { i18n, t } = useTranslation()
 
   const [birth, setBirth] = useState<Date>()
   const [gender, setGender] = useState<'male' | 'female'>()
@@ -61,14 +61,31 @@ const RetiresClient = () => {
 
   const resultText = useMemo(() => {
     if (!retirement) return ''
-    const dateStr = dayjs(retirement.retirementDate).format('YYYY年MM月DD日')
+    const dateStr =
+      i18n.language === 'cn'
+        ? dayjs(retirement.retirementDate).format('YYYY年MM月DD日')
+        : dayjs(retirement.retirementDate).format('MMMM D, YYYY')
+    const monthPart =
+      retirement.newRetirementPolicy && retirement.baseRetirementMonth
+        ? t('app.social.retires.summary.months', {
+            months: retirement.baseRetirementMonth
+          })
+        : ''
+
     if (retirement.newRetirementPolicy) {
-      const monthStr = retirement.baseRetirementMonth ? `${retirement.baseRetirementMonth}月` : ''
-      return `退休时间为${dateStr}。到时你已${retirement.baseRetirementAge}岁${monthStr}。`
-    } else {
-      return `退休时间为${dateStr}。到时你已${retirement.baseRetirementAge}岁。`
+      return t('app.social.retires.summary', {
+        age: retirement.baseRetirementAge,
+        date: dateStr,
+        monthPart
+      })
     }
-  }, [retirement])
+
+    return t('app.social.retires.summary', {
+      age: retirement.baseRetirementAge,
+      date: dateStr,
+      monthPart: ''
+    })
+  }, [i18n.language, retirement, t])
 
   return (
     <>
@@ -79,8 +96,8 @@ const RetiresClient = () => {
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-6">
-              <div className="grid grid-cols-1 sm:grid-cols-[200px_1fr] gap-4 items-start">
-                <Label className="sm:pt-3">{t('app.social.retires.birthday')}</Label>
+              <div className="grid grid-cols-1 items-start gap-x-6 gap-y-3 sm:grid-cols-[200px_1fr]">
+                <Label className="sm:pt-3.5">{t('app.social.retires.birthday')}</Label>
                 <DatePicker
                   value={birth}
                   onChange={setBirth}
@@ -88,9 +105,13 @@ const RetiresClient = () => {
                 />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-[200px_1fr] gap-4 items-start">
-                <Label className="sm:pt-3">{t('app.social.retires.gender')}</Label>
-                <RadioGroup value={gender} onValueChange={v => setGender(v as 'male' | 'female')}>
+              <div className="grid grid-cols-1 items-start gap-x-6 gap-y-3 sm:grid-cols-[200px_1fr]">
+                <Label className="sm:pt-3.5">{t('app.social.retires.gender')}</Label>
+                <RadioGroup
+                  value={gender}
+                  onValueChange={v => setGender(v as 'male' | 'female')}
+                  className="gap-3 sm:pt-2"
+                >
                   <div className="flex items-center space-x-2">
                     <RadioGroupItem value="male" id="male" />
                     <Label htmlFor="male" className="cursor-pointer">
@@ -107,11 +128,12 @@ const RetiresClient = () => {
               </div>
 
               {gender === 'female' && (
-                <div className="grid grid-cols-1 sm:grid-cols-[200px_1fr] gap-4 items-start">
-                  <Label className="sm:pt-3">{t('app.social.retires.occupation')}</Label>
+                <div className="grid grid-cols-1 items-start gap-x-6 gap-y-3 sm:grid-cols-[200px_1fr]">
+                  <Label className="sm:pt-3.5">{t('app.social.retires.occupation')}</Label>
                   <RadioGroup
                     value={occupation}
                     onValueChange={v => setOccupation(v as 'worker' | 'staff')}
+                    className="gap-3 sm:pt-2"
                   >
                     <div className="flex items-center space-x-2">
                       <RadioGroupItem value="worker" id="worker" />
@@ -129,7 +151,7 @@ const RetiresClient = () => {
                 </div>
               )}
 
-              <div className="grid grid-cols-1 sm:grid-cols-[200px_1fr] gap-4">
+              <div className="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-[200px_1fr]">
                 <div />
                 <Button type="submit" variant="primary" className="w-full sm:w-auto">
                   {t('public.submit')}
@@ -190,11 +212,17 @@ const RetiresClient = () => {
                   </div>
                   <div className="text-2xl font-semibold text-[var(--text-primary)]">
                     {retirement.baseRetirementAge}
-                    <span className="text-sm font-normal"> Y </span>
+                    <span className="text-sm font-normal">
+                      {' '}
+                      {t('app.social.retires.years_short')}{' '}
+                    </span>
                     {retirement.baseRetirementMonth > 0 && (
                       <>
                         {retirement.baseRetirementMonth}
-                        <span className="text-sm font-normal"> M</span>
+                        <span className="text-sm font-normal">
+                          {' '}
+                          {t('app.social.retires.months_short')}
+                        </span>
                       </>
                     )}
                   </div>

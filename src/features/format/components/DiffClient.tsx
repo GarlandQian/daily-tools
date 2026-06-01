@@ -50,9 +50,9 @@ const DiffClient = () => {
     <div className="flex flex-col gap-5 size-full">
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <CardTitle>{t('app.format.diff')}</CardTitle>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-3">
               <Button icon={<ArrowLeftRight className="w-4 h-4" />} onClick={handleSwap}>
                 {t('app.format.diff.swap')}
               </Button>
@@ -64,8 +64,8 @@ const DiffClient = () => {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <span className="font-semibold text-[var(--text-primary)] block mb-2">
+            <div className="space-y-3">
+              <span className="block text-sm font-semibold text-[var(--text-primary)]">
                 {t('app.format.diff.original')}
               </span>
               <Textarea
@@ -76,8 +76,8 @@ const DiffClient = () => {
                 className="font-mono"
               />
             </div>
-            <div>
-              <span className="font-semibold text-[var(--text-primary)] block mb-2">
+            <div className="space-y-3">
+              <span className="block text-sm font-semibold text-[var(--text-primary)]">
                 {t('app.format.diff.modified')}
               </span>
               <Textarea

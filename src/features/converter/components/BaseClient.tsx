@@ -136,29 +136,30 @@ const BaseClient = () => {
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle>{t('app.converter.base')}</CardTitle>
-            <Button variant="ghost" size="sm" icon={<Trash2 className="w-4 h-4" />} onClick={handleClear}>
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={<Trash2 className="w-4 h-4" />}
+              onClick={handleClear}
+            >
               {t('app.format.json.clear')}
             </Button>
           </div>
         </CardHeader>
         <CardContent>
           <p className="text-sm text-[var(--text-secondary)]">{t('app.converter.base.hint')}</p>
-          {error && (
-            <p className="text-sm text-red-500 mt-2">
-              {error}
-            </p>
-          )}
+          {error && <p className="text-sm text-red-500 mt-2">{error}</p>}
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
         {baseInputs.map(item => (
           <Card key={item.label}>
             <CardHeader>
               <CardTitle className="text-base">{item.label}</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="flex gap-2">
+              <div className="flex flex-col gap-3 sm:flex-row">
                 <div className="relative flex-1">
                   {item.prefix ? (
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)] text-sm font-mono">
@@ -175,7 +176,7 @@ const BaseClient = () => {
                   />
                 </div>
                 <Button onClick={() => copy(item.value)} disabled={!item.value}>
-                  {t('app.generation.uuid.copy')}
+                  {t('public.copy')}
                 </Button>
               </div>
             </CardContent>
