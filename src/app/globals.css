@@ -248,11 +248,11 @@ code, pre, kbd, samp {
     var(--glass-shadow),
     var(--glass-inner-shadow),
     inset 0 0 20px rgba(255, 255, 255, 0.05);
-  transition: transform var(--transition-spring), box-shadow var(--transition-base);
+  transition: box-shadow var(--transition-base), border-color var(--transition-base), background-color var(--transition-base);
 }
 
-/* Animated flowing gradient border light (skip on the strong/sidebar variant) */
-.glass-panel:not(.glass-panel-strong)::before {
+/* Animated flowing gradient border light for explicit accent panels only */
+.glass-accent-border::before {
   content: '';
   position: absolute;
   inset: 0;
@@ -275,7 +275,7 @@ code, pre, kbd, samp {
   z-index: 1;
 }
 
-[data-theme='dark'] .glass-panel:not(.glass-panel-strong)::before {
+[data-theme='dark'] .glass-accent-border::before {
   opacity: 0.8;
 }
 
@@ -285,8 +285,7 @@ code, pre, kbd, samp {
   }
 }
 
-.glass-panel:hover {
-  transform: translateY(-1px);
+.glass-panel-interactive:hover {
   box-shadow:
     0 12px 40px rgba(0, 0, 0, 0.1),
     0 4px 12px rgba(0, 0, 0, 0.06),
@@ -294,7 +293,7 @@ code, pre, kbd, samp {
     inset 0 0 20px rgba(255, 255, 255, 0.08);
 }
 
-[data-theme='dark'] .glass-panel:hover {
+[data-theme='dark'] .glass-panel-interactive:hover {
   box-shadow:
     0 12px 40px rgba(0, 0, 0, 0.4),
     0 4px 12px rgba(0, 0, 0, 0.3),
@@ -360,7 +359,7 @@ code, pre, kbd, samp {
   -webkit-backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-saturate));
   border: 1px solid var(--glass-border);
   box-shadow: var(--glass-shadow-lg), var(--glass-inner-shadow);
-  transition: transform var(--transition-spring), box-shadow var(--transition-base);
+  transition: box-shadow var(--transition-base), border-color var(--transition-base), background-color var(--transition-base);
 }
 
 .glass-float:hover {
