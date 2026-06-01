@@ -22,30 +22,31 @@ interface CronFormData {
   dayOfWeek: string
 }
 
-const commonOptions = [
-  { label: '* (每)', value: '*' },
-  { label: '0', value: '0' },
-  { label: '1', value: '1' },
-  { label: '5', value: '5' },
-  { label: '10', value: '10' },
-  { label: '15', value: '15' },
-  { label: '30', value: '30' }
-]
-
-const weekdayOptions = [
-  { label: '* (每天)', value: '*' },
-  { label: '0 (周日)', value: '0' },
-  { label: '1 (周一)', value: '1' },
-  { label: '2 (周二)', value: '2' },
-  { label: '3 (周三)', value: '3' },
-  { label: '4 (周四)', value: '4' },
-  { label: '5 (周五)', value: '5' },
-  { label: '6 (周六)', value: '6' }
-]
+const commonOptionValues = ['*', '0', '1', '5', '10', '15', '30']
+const weekdayOptionValues = ['*', '0', '1', '2', '3', '4', '5', '6']
 
 const CronClient = () => {
   const { t } = useTranslation()
   const toast = useToast()
+  const commonOptions = useMemo(
+    () =>
+      commonOptionValues.map(value => ({
+        label: value === '*' ? t('app.generation.cron.every') : value,
+        value
+      })),
+    [t]
+  )
+  const weekdayOptions = useMemo(
+    () =>
+      weekdayOptionValues.map(value => ({
+        label:
+          value === '*'
+            ? t('app.generation.cron.every_day')
+            : t(`app.generation.cron.weekday.${value}`),
+        value
+      })),
+    [t]
+  )
 
   const [formData, setFormData] = useState<CronFormData>({
     second: '0',
@@ -102,8 +103,8 @@ const CronClient = () => {
           <CardTitle>{t('app.generation.cron')}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
-            <div className="space-y-2">
+          <div className="grid grid-cols-1 gap-x-5 gap-y-5 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
+            <div className="space-y-3">
               <Label htmlFor="second">{t('app.generation.cron.second')}</Label>
               <Select
                 id="second"
@@ -117,7 +118,7 @@ const CronClient = () => {
                 ))}
               </Select>
             </div>
-            <div className="space-y-2">
+            <div className="space-y-3">
               <Label htmlFor="minute">{t('app.generation.cron.minute')}</Label>
               <Select
                 id="minute"
@@ -131,7 +132,7 @@ const CronClient = () => {
                 ))}
               </Select>
             </div>
-            <div className="space-y-2">
+            <div className="space-y-3">
               <Label htmlFor="hour">{t('app.generation.cron.hour')}</Label>
               <Select
                 id="hour"
@@ -145,7 +146,7 @@ const CronClient = () => {
                 ))}
               </Select>
             </div>
-            <div className="space-y-2">
+            <div className="space-y-3">
               <Label htmlFor="dayOfMonth">{t('app.generation.cron.day')}</Label>
               <Select
                 id="dayOfMonth"
@@ -159,7 +160,7 @@ const CronClient = () => {
                 ))}
               </Select>
             </div>
-            <div className="space-y-2">
+            <div className="space-y-3">
               <Label htmlFor="month">{t('app.generation.cron.month')}</Label>
               <Select
                 id="month"
@@ -173,7 +174,7 @@ const CronClient = () => {
                 ))}
               </Select>
             </div>
-            <div className="space-y-2">
+            <div className="space-y-3">
               <Label htmlFor="dayOfWeek">{t('app.generation.cron.weekday')}</Label>
               <Select
                 id="dayOfWeek"
@@ -188,9 +189,9 @@ const CronClient = () => {
               </Select>
             </div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-3">
             <Button icon={<Copy className="w-4 h-4" />} onClick={handleCopy}>
-              {t('app.generation.uuid.copy')}
+              {t('public.copy')}
             </Button>
             <Button icon={<RotateCcw className="w-4 h-4" />} onClick={handleReset}>
               {t('app.generation.cron.reset')}
@@ -213,7 +214,7 @@ const CronClient = () => {
           <CardTitle>{t('app.generation.cron.next')}</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-3">
             {nextExecutions.length > 0 ? (
               nextExecutions.map((time, index) => (
                 <code key={index} className="text-sm text-[var(--text-primary)]">

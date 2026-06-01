@@ -163,9 +163,9 @@ const RegexClient = () => {
         </CardHeader>
         <CardContent className="space-y-5">
           <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_220px]">
-            <div className="space-y-2">
+            <div className="space-y-3">
               <Label htmlFor="regex-pattern">{t('app.format.regex.pattern')}</Label>
-              <div className="glass-input flex h-10 items-center rounded-lg px-3 text-sm focus-within:ring-2 focus-within:ring-[var(--primary)]">
+              <div className="glass-input flex h-11 items-center rounded-lg px-3.5 text-sm focus-within:ring-2 focus-within:ring-[var(--primary)]">
                 <span className="font-mono text-[var(--text-tertiary)]">/</span>
                 <input
                   id="regex-pattern"
@@ -178,7 +178,7 @@ const RegexClient = () => {
               </div>
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-3">
               <Label>{t('app.format.regex.flags')}</Label>
               <div className="flex flex-wrap gap-3 pt-2 md:flex-col md:gap-2 md:pt-0">
                 {regexFlagOptions.map(option => (
@@ -193,7 +193,7 @@ const RegexClient = () => {
             </div>
           </div>
 
-          <div className="space-y-2">
+          <div className="space-y-3">
             <Label htmlFor="regex-test">{t('app.format.regex.test')}</Label>
             <Textarea
               id="regex-test"

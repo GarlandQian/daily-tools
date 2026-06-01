@@ -67,7 +67,7 @@ const HtmlClient = () => {
                 <span
                   className={`text-sm font-medium ${mode === 'encode' ? 'text-[var(--primary)]' : ''}`}
                 >
-                  Encode
+                  {t('app.converter.html.encode')}
                 </span>
               </label>
               <label className="flex items-center gap-2 cursor-pointer select-none px-3 py-1.5 rounded-r-lg border border-l-0 border-[var(--border-base)] transition-colors">
@@ -75,26 +75,26 @@ const HtmlClient = () => {
                 <span
                   className={`text-sm font-medium ${mode === 'decode' ? 'text-[var(--primary)]' : ''}`}
                 >
-                  Decode
+                  {t('app.converter.html.decode')}
                 </span>
               </label>
             </RadioGroup>
 
             <Button icon={<ArrowRightLeft className="w-4 h-4" />} onClick={handleSwap}>
-              Swap
+              {t('public.swap')}
             </Button>
             <Button variant="primary" icon={<Code className="w-4 h-4" />} onClick={handleConvert}>
-              Convert
+              {t('public.convert')}
             </Button>
             <Button
               icon={<Copy className="w-4 h-4" />}
               onClick={() => copy(output)}
               disabled={!output}
             >
-              {t('app.generation.uuid.copy')}
+              {t('public.copy')}
             </Button>
             <Button variant="ghost" icon={<Trash2 className="w-4 h-4" />} onClick={handleClear}>
-              {t('app.format.json.clear')}
+              {t('public.clear')}
             </Button>
           </div>
         </CardContent>
@@ -118,14 +118,16 @@ const HtmlClient = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1 min-h-0">
         <Card className="flex flex-col h-full min-h-[300px]">
           <CardHeader>
-            <CardTitle className="text-base">Input</CardTitle>
+            <CardTitle className="text-base">{t('app.converter.html.input')}</CardTitle>
           </CardHeader>
           <CardContent className="flex-1 overflow-hidden">
             <Textarea
               value={input}
               onChange={e => setInput(e.target.value)}
               placeholder={
-                mode === 'encode' ? '<p>Hello & World</p>' : '&lt;p&gt;Hello &amp; World&lt;/p&gt;'
+                mode === 'encode'
+                  ? t('app.converter.html.encode_placeholder')
+                  : t('app.converter.html.decode_placeholder')
               }
               className="h-full resize-none font-mono"
             />
@@ -133,13 +135,13 @@ const HtmlClient = () => {
         </Card>
         <Card className="flex flex-col h-full min-h-[300px]">
           <CardHeader>
-            <CardTitle className="text-base">Output</CardTitle>
+            <CardTitle className="text-base">{t('app.converter.html.output')}</CardTitle>
           </CardHeader>
           <CardContent className="flex-1 overflow-hidden">
             <Textarea
               value={output}
               readOnly
-              placeholder="Result will appear here..."
+              placeholder={t('app.converter.html.result_placeholder')}
               className="h-full resize-none font-mono"
             />
           </CardContent>

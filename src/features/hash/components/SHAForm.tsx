@@ -126,7 +126,7 @@ export default function SHAForm() {
         <CardContent>
           <form onSubmit={handleSubmit} className="flex flex-col gap-5">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <Label>{t('app.hash.mode')}</Label>
                 <RadioGroup
                   value={action}
@@ -148,7 +148,7 @@ export default function SHAForm() {
                 </RadioGroup>
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <Label htmlFor="sha-alg">{t('app.hash.alg')}</Label>
                 <Select
                   id="sha-alg"
@@ -165,7 +165,7 @@ export default function SHAForm() {
             </div>
 
             {action === 'encrypt' && (
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <Label htmlFor="sha-message">{t('app.hash.message')}</Label>
                 <Textarea
                   id="sha-message"
@@ -178,7 +178,7 @@ export default function SHAForm() {
             )}
 
             {action === 'verify' && (
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <Label htmlFor="sha-target">{t('app.hash.target')}</Label>
                 <Input
                   id="sha-target"
@@ -233,7 +233,7 @@ export default function SHAForm() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="flex items-start gap-2">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
                   <Textarea
                     readOnly
                     value={result.text}

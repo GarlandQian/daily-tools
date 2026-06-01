@@ -93,7 +93,7 @@ const PdfPreviewer = () => {
               loading={loading}
               onClick={() => fileInputRef.current?.click()}
             >
-              {t('app.encryption.aes.action')}
+              {t('public.upload_again')}
             </Button>
             <input
               ref={fileInputRef}

@@ -14,8 +14,9 @@ import * as echarts from 'echarts/core'
 import { SVGRenderer } from 'echarts/renderers'
 import ReactECharts from 'echarts-for-react'
 import React, { useMemo, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 
-import { tzListMap, tzMap } from '@/const/timezone'
+import { getTimezoneLabel, tzListMap, tzMap } from '@/const/timezone'
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
@@ -34,6 +35,7 @@ interface ClockProps {
 }
 
 const Clock: React.FC<ClockProps> = ({ tz }) => {
+  const { i18n, t } = useTranslation()
   const chartRef = useRef<ReactECharts>(null)
   const timeRef = useRef<HTMLDivElement>(null)
 
@@ -254,7 +256,11 @@ const Clock: React.FC<ClockProps> = ({ tz }) => {
           lazyUpdate={true}
           opts={{ renderer: 'svg' }}
         />
-        <div>{`${tzListMap[tz].label}时间`}</div>
+        <div>
+          {t('app.social.time.zone_time', {
+            zone: getTimezoneLabel(tz, i18n.language)
+          })}
+        </div>
         <div ref={timeRef}>{dayjs().tz(tzListMap[tz].value).format('YYYY-MM-DD HH:mm:ss')}</div>
       </div>
     </>

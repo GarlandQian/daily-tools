@@ -4,6 +4,7 @@ import dayjs from 'dayjs'
 import { Calendar as CalendarIcon } from 'lucide-react'
 import * as React from 'react'
 import { createPortal } from 'react-dom'
+import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import { Calendar } from '@/components/ui/calendar'
@@ -17,13 +18,8 @@ interface DatePickerProps {
   className?: string
 }
 
-export function DatePicker({
-  value,
-  onChange,
-  placeholder = 'Pick a date',
-  disabled,
-  className
-}: DatePickerProps) {
+export function DatePicker({ value, onChange, placeholder, disabled, className }: DatePickerProps) {
+  const { t } = useTranslation()
   const [open, setOpen] = React.useState(false)
   const triggerRef = React.useRef<HTMLDivElement>(null)
   const [popoverStyle, setPopoverStyle] = React.useState<React.CSSProperties>()
@@ -109,7 +105,11 @@ export function DatePicker({
         disabled={disabled}
       >
         <CalendarIcon className="mr-2 h-4 w-4" />
-        {value ? dayjs(value).format('YYYY-MM-DD') : <span>{placeholder}</span>}
+        {value ? (
+          dayjs(value).format('YYYY-MM-DD')
+        ) : (
+          <span>{placeholder ?? t('public.pick_date')}</span>
+        )}
       </Button>
       {calendarPopover}
     </div>

@@ -2,6 +2,7 @@
 
 import { Copy, RotateCcw } from 'lucide-react'
 import { useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -21,16 +22,40 @@ interface ShadowConfig {
 }
 
 const sliderConfigs = [
-  { key: 'offsetX' as const, label: 'X Offset', min: -100, max: 100, suffix: 'px' },
-  { key: 'offsetY' as const, label: 'Y Offset', min: -100, max: 100, suffix: 'px' },
-  { key: 'blur' as const, label: 'Blur', min: 0, max: 100, suffix: 'px' },
-  { key: 'spread' as const, label: 'Spread', min: -50, max: 50, suffix: 'px' },
-  { key: 'opacity' as const, label: 'Opacity', min: 0, max: 100, suffix: '%' }
+  {
+    key: 'offsetX' as const,
+    labelKey: 'app.generation.shadow.offset_x',
+    min: -100,
+    max: 100,
+    suffix: 'px'
+  },
+  {
+    key: 'offsetY' as const,
+    labelKey: 'app.generation.shadow.offset_y',
+    min: -100,
+    max: 100,
+    suffix: 'px'
+  },
+  { key: 'blur' as const, labelKey: 'app.generation.shadow.blur', min: 0, max: 100, suffix: 'px' },
+  {
+    key: 'spread' as const,
+    labelKey: 'app.generation.shadow.spread',
+    min: -50,
+    max: 50,
+    suffix: 'px'
+  },
+  {
+    key: 'opacity' as const,
+    labelKey: 'app.generation.shadow.opacity',
+    min: 0,
+    max: 100,
+    suffix: '%'
+  }
 ]
 
-const presetShadows: { name: string; config: ShadowConfig }[] = [
+const presetShadows: { nameKey: string; config: ShadowConfig }[] = [
   {
-    name: 'Subtle',
+    nameKey: 'app.generation.shadow.preset.subtle',
     config: {
       offsetX: 0,
       offsetY: 2,
@@ -42,7 +67,7 @@ const presetShadows: { name: string; config: ShadowConfig }[] = [
     }
   },
   {
-    name: 'Medium',
+    nameKey: 'app.generation.shadow.preset.medium',
     config: {
       offsetX: 0,
       offsetY: 4,
@@ -54,7 +79,7 @@ const presetShadows: { name: string; config: ShadowConfig }[] = [
     }
   },
   {
-    name: 'Floating',
+    nameKey: 'app.generation.shadow.preset.floating',
     config: {
       offsetX: 0,
       offsetY: 12,
@@ -66,7 +91,7 @@ const presetShadows: { name: string; config: ShadowConfig }[] = [
     }
   },
   {
-    name: 'Dramatic',
+    nameKey: 'app.generation.shadow.preset.dramatic',
     config: {
       offsetX: 8,
       offsetY: 16,
@@ -97,6 +122,7 @@ const hexToRgba = (hex: string, opacity: number): string => {
 }
 
 const ShadowClient = () => {
+  const { t } = useTranslation()
   const { copy } = useCopy()
 
   const [config, setConfig] = useState<ShadowConfig>(defaultConfig)
@@ -129,15 +155,15 @@ const ShadowClient = () => {
       </Card>
 
       {/* Presets */}
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-3">
         {presetShadows.map(preset => (
           <Button
-            key={preset.name}
+            key={preset.nameKey}
             size="sm"
             variant="default"
             onClick={() => setConfig(preset.config)}
           >
-            {preset.name}
+            {t(preset.nameKey)}
           </Button>
         ))}
       </div>
@@ -145,14 +171,14 @@ const ShadowClient = () => {
       {/* Controls */}
       <Card>
         <CardHeader>
-          <CardTitle>Controls</CardTitle>
+          <CardTitle>{t('app.generation.shadow.controls')}</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-5">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            {sliderConfigs.map(({ key, label, min, max, suffix }) => (
-              <div key={key} className="flex flex-col gap-2">
+            {sliderConfigs.map(({ key, labelKey, min, max, suffix }) => (
+              <div key={key} className="flex flex-col gap-3">
                 <div className="flex items-center justify-between">
-                  <Label>{label}</Label>
+                  <Label>{t(labelKey)}</Label>
                   <span className="text-sm font-mono text-[var(--text-secondary)]">
                     {config[key]}
                     {suffix}
@@ -169,13 +195,13 @@ const ShadowClient = () => {
             ))}
 
             {/* Color picker */}
-            <div className="flex flex-col gap-2">
-              <Label>Color</Label>
+            <div className="flex flex-col gap-3">
+              <Label>{t('app.generation.shadow.color')}</Label>
               <input
                 type="color"
                 value={config.color}
                 onChange={e => updateConfig('color', e.target.value)}
-                className="w-12 h-10 rounded-lg border border-[var(--border-base)] cursor-pointer bg-transparent p-0.5"
+                className="h-11 w-16 cursor-pointer rounded-lg border border-[var(--border-base)] bg-transparent p-1"
               />
             </div>
           </div>
@@ -184,7 +210,7 @@ const ShadowClient = () => {
           <Checkbox
             checked={config.inset}
             onChange={e => updateConfig('inset', (e.target as HTMLInputElement).checked)}
-            label="Inset shadow"
+            label={t('app.generation.shadow.inset')}
           />
         </CardContent>
       </Card>
@@ -193,21 +219,21 @@ const ShadowClient = () => {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>CSS</CardTitle>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-3">
             <Button
               size="sm"
               variant="ghost"
               icon={<RotateCcw className="w-3.5 h-3.5" />}
               onClick={() => setConfig(defaultConfig)}
             >
-              Reset
+              {t('public.reset')}
             </Button>
             <Button
               size="sm"
               icon={<Copy className="w-3.5 h-3.5" />}
               onClick={() => copy(cssOutput)}
             >
-              Copy
+              {t('public.copy')}
             </Button>
           </div>
         </CardHeader>

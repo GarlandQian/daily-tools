@@ -77,7 +77,7 @@ const UuidClient = () => {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="space-y-2">
+            <div className="space-y-3">
               <Label>{t('app.generation.uuid.version')}</Label>
               <Select value={version} onChange={e => setVersion(e.target.value as UUIDVersion)}>
                 <option value="v1">{t('app.generation.uuid.v1')}</option>
@@ -86,7 +86,7 @@ const UuidClient = () => {
                 <option value="v5">{t('app.generation.uuid.v5')}</option>
               </Select>
             </div>
-            <div className="space-y-2">
+            <div className="space-y-3">
               <Label>{t('app.generation.uuid.quantity')}</Label>
               <Input
                 type="number"
@@ -98,7 +98,7 @@ const UuidClient = () => {
             </div>
             {(version === 'v3' || version === 'v5') && (
               <>
-                <div className="space-y-2">
+                <div className="space-y-3">
                   <Label>{t('app.generation.uuid.namespace')}</Label>
                   <Input
                     value={namespace}
@@ -106,7 +106,7 @@ const UuidClient = () => {
                     placeholder={t('app.generation.uuid.ns_placeholder')}
                   />
                 </div>
-                <div className="space-y-2">
+                <div className="space-y-3">
                   <Label>{t('app.generation.uuid.name')}</Label>
                   <Input
                     value={name}
@@ -117,7 +117,7 @@ const UuidClient = () => {
               </>
             )}
           </div>
-          <div className="flex gap-2 mt-4">
+          <div className="mt-5 flex flex-wrap gap-3">
             <Button
               variant="primary"
               icon={<RotateCcw className="w-4 h-4" />}

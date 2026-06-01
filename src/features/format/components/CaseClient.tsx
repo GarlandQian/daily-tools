@@ -59,7 +59,7 @@ const CaseClient = () => {
           <Textarea
             value={input}
             onChange={e => setInput(e.target.value)}
-            placeholder="Enter text to convert..."
+            placeholder={t('app.format.case.placeholder')}
             rows={3}
             className="font-mono"
           />

@@ -44,7 +44,7 @@ export default function URLEncodeClient() {
     <div className="flex flex-col gap-5 size-full">
       <form onSubmit={handleSubmit} className="flex flex-col gap-5">
         {/* Encode/Decode toggle */}
-        <div className="space-y-2">
+        <div className="space-y-3">
           <Label>{t('app.encryption.aes.action')}</Label>
           <RadioGroup
             value={mode}
@@ -72,7 +72,7 @@ export default function URLEncodeClient() {
         </div>
 
         {/* Input */}
-        <div className="space-y-2">
+        <div className="space-y-3">
           <Label>{t('app.encryption.aes.str')}</Label>
           <Textarea
             rows={4}
@@ -96,10 +96,10 @@ export default function URLEncodeClient() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 10 }}
             transition={{ duration: 0.3 }}
-            className="space-y-2"
+            className="space-y-3"
           >
             <Label>{t('app.hash.result')}</Label>
-            <div className="flex items-start gap-2">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
               <div className="glass-input flex-1 rounded-lg p-3 font-mono text-sm break-all min-h-[60px]">
                 {result}
               </div>

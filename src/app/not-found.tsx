@@ -1,4 +1,3 @@
-
 import './404.css'
 
 export default function NotFound() {
@@ -6,13 +5,13 @@ export default function NotFound() {
     <html lang="en">
       <head>
         <meta charSet="UTF-8" />
-        <title>GarlandQian - 404page</title>
+        <title>GarlandQian - 404</title>
       </head>
       <body>
         <div className="anim">
           <div className="tooltip">
-            <span>Oh no...</span>
-            <span>something wrong</span>
+            <span>Page not found</span>
+            <span>页面不存在</span>
           </div>
           <div className="snail">
             <div className="snail__head">

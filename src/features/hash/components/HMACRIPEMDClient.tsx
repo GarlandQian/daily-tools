@@ -86,7 +86,7 @@ export default function HMACRIPEMDClient() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="flex flex-col gap-5">
-            <div className="space-y-2">
+            <div className="space-y-3">
               <Label>{t('app.hash.mode')}</Label>
               <RadioGroup
                 value={mode}
@@ -109,7 +109,7 @@ export default function HMACRIPEMDClient() {
             </div>
 
             {mode === 'encrypt' && (
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <Label htmlFor="hmacripemd-message">{t('app.hash.message')}</Label>
                 <Textarea
                   id="hmacripemd-message"
@@ -121,7 +121,7 @@ export default function HMACRIPEMDClient() {
               </div>
             )}
 
-            <div className="space-y-2">
+            <div className="space-y-3">
               <Label htmlFor="hmacripemd-key">{t('app.hash.key')}</Label>
               <Input
                 id="hmacripemd-key"
@@ -132,7 +132,7 @@ export default function HMACRIPEMDClient() {
             </div>
 
             {mode === 'verify' && (
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <Label htmlFor="hmacripemd-target">{t('app.hash.target')}</Label>
                 <Input
                   id="hmacripemd-target"
@@ -183,7 +183,7 @@ export default function HMACRIPEMDClient() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="flex items-start gap-2">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
                   <Textarea
                     readOnly
                     value={result.text}

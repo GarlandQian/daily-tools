@@ -13,7 +13,6 @@ import { Select } from '@/components/ui/select'
 type UnitCategory = 'length' | 'weight' | 'temperature' | 'data'
 
 interface UnitDef {
-  label: string
   ratio: number
 }
 
@@ -21,55 +20,48 @@ const unitData: Record<UnitCategory, { base: string; units: Record<string, UnitD
   length: {
     base: 'm',
     units: {
-      mm: { label: 'Millimeter (mm)', ratio: 0.001 },
-      cm: { label: 'Centimeter (cm)', ratio: 0.01 },
-      m: { label: 'Meter (m)', ratio: 1 },
-      km: { label: 'Kilometer (km)', ratio: 1000 },
-      in: { label: 'Inch (in)', ratio: 0.0254 },
-      ft: { label: 'Foot (ft)', ratio: 0.3048 },
-      mi: { label: 'Mile (mi)', ratio: 1609.344 }
+      mm: { ratio: 0.001 },
+      cm: { ratio: 0.01 },
+      m: { ratio: 1 },
+      km: { ratio: 1000 },
+      in: { ratio: 0.0254 },
+      ft: { ratio: 0.3048 },
+      mi: { ratio: 1609.344 }
     }
   },
   weight: {
     base: 'kg',
     units: {
-      mg: { label: 'Milligram (mg)', ratio: 0.000001 },
-      g: { label: 'Gram (g)', ratio: 0.001 },
-      kg: { label: 'Kilogram (kg)', ratio: 1 },
-      lb: { label: 'Pound (lb)', ratio: 0.453592 },
-      oz: { label: 'Ounce (oz)', ratio: 0.0283495 }
+      mg: { ratio: 0.000001 },
+      g: { ratio: 0.001 },
+      kg: { ratio: 1 },
+      lb: { ratio: 0.453592 },
+      oz: { ratio: 0.0283495 }
     }
   },
   temperature: {
     base: 'c',
     units: {
-      c: { label: 'Celsius (°C)', ratio: 1 },
-      f: { label: 'Fahrenheit (°F)', ratio: 1 },
-      k: { label: 'Kelvin (K)', ratio: 1 }
+      c: { ratio: 1 },
+      f: { ratio: 1 },
+      k: { ratio: 1 }
     }
   },
   data: {
     base: 'byte',
     units: {
-      bit: { label: 'Bit', ratio: 0.125 },
-      byte: { label: 'Byte', ratio: 1 },
-      kb: { label: 'Kilobyte (KB)', ratio: 1024 },
-      mb: { label: 'Megabyte (MB)', ratio: 1024 * 1024 },
-      gb: { label: 'Gigabyte (GB)', ratio: 1024 * 1024 * 1024 },
-      tb: { label: 'Terabyte (TB)', ratio: 1024 * 1024 * 1024 * 1024 }
+      bit: { ratio: 0.125 },
+      byte: { ratio: 1 },
+      kb: { ratio: 1024 },
+      mb: { ratio: 1024 * 1024 },
+      gb: { ratio: 1024 * 1024 * 1024 },
+      tb: { ratio: 1024 * 1024 * 1024 * 1024 }
     }
   }
 }
 
-const categoryLabels: Record<UnitCategory, string> = {
-  length: 'Length',
-  weight: 'Weight',
-  temperature: 'Temperature',
-  data: 'Data Storage'
-}
-
 const UnitClient = () => {
-  useTranslation()
+  const { t } = useTranslation()
 
   const [category, setCategory] = useState<UnitCategory>('length')
   const [fromUnit, setFromUnit] = useState('m')
@@ -77,11 +69,11 @@ const UnitClient = () => {
   const [fromValue, setFromValue] = useState<string>('1')
 
   const unitOptions = useMemo(() => {
-    return Object.entries(unitData[category].units).map(([key, def]) => ({
+    return Object.keys(unitData[category].units).map(key => ({
       value: key,
-      label: def.label
+      label: t(`app.converter.unit.${key}`)
     }))
-  }, [category])
+  }, [category, t])
 
   const convertTemperature = useCallback((value: number, from: string, to: string): number => {
     // Convert to Celsius first
@@ -135,7 +127,7 @@ const UnitClient = () => {
           <RadioGroup
             value={category}
             onValueChange={v => handleCategoryChange(v as UnitCategory)}
-            className="flex flex-wrap gap-2"
+            className="flex flex-wrap gap-3"
           >
             {(Object.keys(unitData) as UnitCategory[]).map(cat => (
               <label
@@ -147,7 +139,7 @@ const UnitClient = () => {
                 }`}
               >
                 <RadioGroupItem value={cat} className="sr-only" />
-                {categoryLabels[cat]}
+                {t(`app.converter.unit.category.${cat}`)}
               </label>
             ))}
           </RadioGroup>
@@ -159,7 +151,7 @@ const UnitClient = () => {
         {/* From */}
         <Card className="flex flex-col">
           <CardHeader>
-            <CardTitle className="text-base">From</CardTitle>
+            <CardTitle className="text-base">{t('app.converter.unit.from')}</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
             <Select value={fromUnit} onChange={e => setFromUnit(e.target.value)}>
@@ -192,7 +184,7 @@ const UnitClient = () => {
         {/* To */}
         <Card className="flex flex-col">
           <CardHeader>
-            <CardTitle className="text-base">To</CardTitle>
+            <CardTitle className="text-base">{t('app.converter.unit.to')}</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
             <Select value={toUnit} onChange={e => setToUnit(e.target.value)}>

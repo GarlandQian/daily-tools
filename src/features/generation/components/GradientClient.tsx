@@ -2,6 +2,7 @@
 
 import { Copy, Palette, Plus, Trash2 } from 'lucide-react'
 import { useCallback, useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -16,61 +17,62 @@ interface ColorStop {
   position: number
 }
 
-const presets: { name: string; stops: { color: string; position: number }[]; angle: number }[] = [
-  {
-    name: 'Sunset',
-    stops: [
-      { color: '#ff6b35', position: 0 },
-      { color: '#f7c948', position: 50 },
-      { color: '#ff3864', position: 100 }
-    ],
-    angle: 135
-  },
-  {
-    name: 'Ocean',
-    stops: [
-      { color: '#0077b6', position: 0 },
-      { color: '#00b4d8', position: 50 },
-      { color: '#90e0ef', position: 100 }
-    ],
-    angle: 180
-  },
-  {
-    name: 'Forest',
-    stops: [
-      { color: '#2d6a4f', position: 0 },
-      { color: '#52b788', position: 50 },
-      { color: '#b7e4c7', position: 100 }
-    ],
-    angle: 160
-  },
-  {
-    name: 'Lavender',
-    stops: [
-      { color: '#7209b7', position: 0 },
-      { color: '#b5179e', position: 50 },
-      { color: '#f72585', position: 100 }
-    ],
-    angle: 120
-  },
-  {
-    name: 'Midnight',
-    stops: [
-      { color: '#0f0c29', position: 0 },
-      { color: '#302b63', position: 50 },
-      { color: '#24243e', position: 100 }
-    ],
-    angle: 180
-  },
-  {
-    name: 'Peach',
-    stops: [
-      { color: '#ffecd2', position: 0 },
-      { color: '#fcb69f', position: 100 }
-    ],
-    angle: 135
-  }
-]
+const presets: { nameKey: string; stops: { color: string; position: number }[]; angle: number }[] =
+  [
+    {
+      nameKey: 'app.generation.gradient.preset.sunset',
+      stops: [
+        { color: '#ff6b35', position: 0 },
+        { color: '#f7c948', position: 50 },
+        { color: '#ff3864', position: 100 }
+      ],
+      angle: 135
+    },
+    {
+      nameKey: 'app.generation.gradient.preset.ocean',
+      stops: [
+        { color: '#0077b6', position: 0 },
+        { color: '#00b4d8', position: 50 },
+        { color: '#90e0ef', position: 100 }
+      ],
+      angle: 180
+    },
+    {
+      nameKey: 'app.generation.gradient.preset.forest',
+      stops: [
+        { color: '#2d6a4f', position: 0 },
+        { color: '#52b788', position: 50 },
+        { color: '#b7e4c7', position: 100 }
+      ],
+      angle: 160
+    },
+    {
+      nameKey: 'app.generation.gradient.preset.lavender',
+      stops: [
+        { color: '#7209b7', position: 0 },
+        { color: '#b5179e', position: 50 },
+        { color: '#f72585', position: 100 }
+      ],
+      angle: 120
+    },
+    {
+      nameKey: 'app.generation.gradient.preset.midnight',
+      stops: [
+        { color: '#0f0c29', position: 0 },
+        { color: '#302b63', position: 50 },
+        { color: '#24243e', position: 100 }
+      ],
+      angle: 180
+    },
+    {
+      nameKey: 'app.generation.gradient.preset.peach',
+      stops: [
+        { color: '#ffecd2', position: 0 },
+        { color: '#fcb69f', position: 100 }
+      ],
+      angle: 135
+    }
+  ]
 
 let stopIdCounter = 0
 const createStop = (color: string, position: number): ColorStop => ({
@@ -80,6 +82,7 @@ const createStop = (color: string, position: number): ColorStop => ({
 })
 
 const GradientClient = () => {
+  const { t } = useTranslation()
   const { copy } = useCopy()
 
   const [type, setType] = useState<GradientType>('linear')
@@ -137,12 +140,12 @@ const GradientClient = () => {
       </Card>
 
       {/* Presets */}
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-3">
         {presets.map(preset => {
           const previewGrad = `linear-gradient(${preset.angle}deg, ${preset.stops.map(s => `${s.color} ${s.position}%`).join(', ')})`
           return (
             <button
-              key={preset.name}
+              key={preset.nameKey}
               onClick={() => applyPreset(preset)}
               className="glass-panel rounded-lg px-3 py-2 text-xs font-medium text-[var(--text-primary)] hover:scale-[1.03] active:scale-[0.97] transition-all flex items-center gap-2"
             >
@@ -150,7 +153,7 @@ const GradientClient = () => {
                 className="w-5 h-5 rounded-full border border-[var(--border-base)]"
                 style={{ background: previewGrad }}
               />
-              {preset.name}
+              {t(preset.nameKey)}
             </button>
           )
         })}
@@ -161,25 +164,27 @@ const GradientClient = () => {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Palette className="w-5 h-5" />
-            Settings
+            {t('app.generation.gradient.settings')}
           </CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-5">
           {/* Type toggle */}
-          <div className="flex items-center gap-3">
-            <span className="text-sm text-[var(--text-secondary)] w-16">Type</span>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <span className="w-20 text-sm text-[var(--text-secondary)]">
+              {t('app.generation.gradient.type')}
+            </span>
             <div className="flex gap-1">
-              {(['linear', 'radial'] as const).map(t => (
+              {(['linear', 'radial'] as const).map(gradientType => (
                 <button
-                  key={t}
-                  onClick={() => setType(t)}
+                  key={gradientType}
+                  onClick={() => setType(gradientType)}
                   className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${
-                    type === t
+                    type === gradientType
                       ? 'bg-[var(--primary)] text-white shadow-md'
                       : 'glass-input text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
                   }`}
                 >
-                  {t.charAt(0).toUpperCase() + t.slice(1)}
+                  {t(`app.generation.gradient.type.${gradientType}`)}
                 </button>
               ))}
             </div>
@@ -187,8 +192,10 @@ const GradientClient = () => {
 
           {/* Angle slider */}
           {type === 'linear' && (
-            <div className="flex items-center gap-3">
-              <span className="text-sm text-[var(--text-secondary)] w-16">Angle</span>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <span className="w-20 text-sm text-[var(--text-secondary)]">
+                {t('app.generation.gradient.angle')}
+              </span>
               <div className="flex-1">
                 <Slider value={angle} onChange={setAngle} min={0} max={360} />
               </div>
@@ -201,18 +208,23 @@ const GradientClient = () => {
           {/* Color stops */}
           <div className="flex flex-col gap-3">
             <div className="flex items-center justify-between">
-              <span className="text-sm text-[var(--text-secondary)]">Color Stops</span>
+              <span className="text-sm text-[var(--text-secondary)]">
+                {t('app.generation.gradient.color_stops')}
+              </span>
               <Button size="sm" icon={<Plus className="w-3.5 h-3.5" />} onClick={addStop}>
-                Add
+                {t('public.add')}
               </Button>
             </div>
             {stops.map(stop => (
-              <div key={stop.id} className="flex items-center gap-3">
+              <div
+                key={stop.id}
+                className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4"
+              >
                 <input
                   type="color"
                   value={stop.color}
                   onChange={e => updateStopColor(stop.id, e.target.value)}
-                  className="w-10 h-10 rounded-lg border border-[var(--border-base)] cursor-pointer bg-transparent p-0.5"
+                  className="h-11 w-full shrink-0 cursor-pointer rounded-lg border border-[var(--border-base)] bg-transparent p-1 sm:w-12"
                 />
                 <div className="flex-1">
                   <Slider
@@ -243,7 +255,7 @@ const GradientClient = () => {
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>CSS</CardTitle>
           <Button size="sm" icon={<Copy className="w-3.5 h-3.5" />} onClick={() => copy(fullCSS)}>
-            Copy
+            {t('public.copy')}
           </Button>
         </CardHeader>
         <CardContent>

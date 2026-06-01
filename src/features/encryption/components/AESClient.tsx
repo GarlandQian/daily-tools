@@ -73,7 +73,7 @@ const AESClient = () => {
   return (
     <div className="flex size-full flex-col gap-5">
       <form onSubmit={handleSubmit} className="flex flex-col gap-5">
-        <div className="space-y-2">
+        <div className="space-y-3">
           <Label>{t('app.encryption.aes.action')}</Label>
           <RadioGroup
             value={isEncrypt ? 'encrypt' : 'decrypt'}
@@ -100,7 +100,7 @@ const AESClient = () => {
           </RadioGroup>
         </div>
 
-        <div className="space-y-2">
+        <div className="space-y-3">
           <Label htmlFor="aes-content">{t('app.encryption.aes.content')}</Label>
           <Textarea
             id="aes-content"
@@ -111,7 +111,7 @@ const AESClient = () => {
           />
         </div>
 
-        <div className="space-y-2">
+        <div className="space-y-3">
           <Label htmlFor="aes-secret">{t('app.encryption.aes.password')}</Label>
           <Input
             id="aes-secret"
@@ -123,7 +123,7 @@ const AESClient = () => {
         </div>
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <div className="space-y-2">
+          <div className="space-y-3">
             <Label htmlFor="aes-mode">{t('app.encryption.aes.mode')}</Label>
             <Select
               id="aes-mode"
@@ -137,7 +137,7 @@ const AESClient = () => {
               ))}
             </Select>
           </div>
-          <div className="space-y-2">
+          <div className="space-y-3">
             <Label htmlFor="aes-padding">{t('app.encryption.aes.padding')}</Label>
             <Select
               id="aes-padding"
@@ -151,7 +151,7 @@ const AESClient = () => {
               ))}
             </Select>
           </div>
-          <div className="space-y-2">
+          <div className="space-y-3">
             <Label htmlFor="aes-format">{t('app.encryption.aes.format')}</Label>
             <Select
               id="aes-format"
@@ -165,7 +165,7 @@ const AESClient = () => {
               ))}
             </Select>
           </div>
-          <div className="space-y-2">
+          <div className="space-y-3">
             <Label htmlFor="aes-encoding">{t('app.encryption.aes.encoding')}</Label>
             <Select
               id="aes-encoding"
@@ -181,13 +181,13 @@ const AESClient = () => {
           </div>
         </div>
 
-        <div className="space-y-2">
+        <div className="space-y-3">
           <Label htmlFor="aes-iv">{t('app.encryption.aes.iv')}</Label>
           <Input
             id="aes-iv"
             value={iv}
             onChange={event => setIv(event.target.value)}
-            placeholder="IV (optional for ECB)"
+            placeholder={t('app.encryption.aes.iv_placeholder')}
           />
         </div>
 
@@ -203,10 +203,10 @@ const AESClient = () => {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 10 }}
             transition={{ duration: 0.3 }}
-            className="space-y-2"
+            className="space-y-3"
           >
             <Label>{t('app.hash.result')}</Label>
-            <div className="flex items-start gap-2">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
               <div className="glass-input min-h-[60px] flex-1 break-all rounded-lg p-3 font-mono text-sm">
                 {result}
               </div>

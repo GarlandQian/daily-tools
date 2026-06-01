@@ -174,7 +174,7 @@ const ColorClient = () => {
               <span className="h-full w-full" style={{ backgroundColor: colors.hex }} />
             </label>
 
-            <div className="grid flex-1 gap-2">
+            <div className="grid flex-1 gap-3">
               <Label htmlFor="color-hex-input" className="flex items-center gap-2">
                 <ArrowLeftRight className="h-4 w-4" />
                 HEX
@@ -220,9 +220,9 @@ const ColorClient = () => {
             <CardTitle>RGB</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-3 gap-3">
               {(['r', 'g', 'b'] as const).map(key => (
-                <div key={key} className="space-y-2">
+                <div key={key} className="space-y-3">
                   <Label htmlFor={`color-rgb-${key}`}>{key.toUpperCase()}</Label>
                   <Input
                     id={`color-rgb-${key}`}
@@ -255,9 +255,9 @@ const ColorClient = () => {
             <CardTitle>HSL</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-3 gap-3">
               {(['h', 's', 'l'] as const).map(key => (
-                <div key={key} className="space-y-2">
+                <div key={key} className="space-y-3">
                   <Label htmlFor={`color-hsl-${key}`}>{key.toUpperCase()}</Label>
                   <Input
                     id={`color-hsl-${key}`}

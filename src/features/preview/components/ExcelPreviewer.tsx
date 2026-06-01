@@ -78,7 +78,7 @@ const ExcelPreviewer = () => {
               loading={loading}
               onClick={() => document.getElementById('excel-reupload')?.click()}
             >
-              {t('app.encryption.aes.action')}
+              {t('public.upload_again')}
             </Button>
             <input
               id="excel-reupload"

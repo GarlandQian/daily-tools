@@ -34,7 +34,7 @@ const ImageBase64Client = () => {
       if (!file) return
 
       if (!file.type.startsWith('image/')) {
-        toast.error('Please select an image file')
+        toast.error(t('app.converter.image.select_image'))
         return
       }
 
@@ -123,7 +123,7 @@ const ImageBase64Client = () => {
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={previewUrl}
-                  alt="Preview"
+                  alt={t('app.converter.image.preview')}
                   className="block max-w-full max-h-[300px] rounded-lg object-contain"
                 />
               </div>
@@ -145,10 +145,10 @@ const ImageBase64Client = () => {
                 <Checkbox
                   checked={includeDataUri}
                   onChange={e => setIncludeDataUri(e.target.checked)}
-                  label="Include Data URI"
+                  label={t('app.converter.image.include_data_uri')}
                 />
                 <Button icon={<Copy className="w-4 h-4" />} onClick={handleCopy} disabled={!base64}>
-                  {t('app.generation.uuid.copy')}
+                  {t('public.copy')}
                 </Button>
               </div>
             </div>
@@ -157,7 +157,7 @@ const ImageBase64Client = () => {
             <Textarea
               value={displayedBase64}
               readOnly
-              placeholder="Base64 output will appear here..."
+              placeholder={t('app.converter.image.base64_placeholder')}
               className="h-full min-h-[200px] resize-none font-mono text-xs"
             />
           </CardContent>

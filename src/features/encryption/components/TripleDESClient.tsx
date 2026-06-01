@@ -80,7 +80,7 @@ const TripleDESClient = () => {
     <div className="flex flex-col gap-5 size-full">
       <form onSubmit={handleSubmit} className="flex flex-col gap-5">
         {/* Encrypt/Decrypt toggle */}
-        <div className="space-y-2">
+        <div className="space-y-3">
           <Label>{t('app.encryption.aes.action')}</Label>
           <RadioGroup
             value={isEncrypt ? 'encrypt' : 'decrypt'}
@@ -108,7 +108,7 @@ const TripleDESClient = () => {
         </div>
 
         {/* Content */}
-        <div className="space-y-2">
+        <div className="space-y-3">
           <Label>{t('app.encryption.aes.content')}</Label>
           <Textarea
             rows={4}
@@ -119,7 +119,7 @@ const TripleDESClient = () => {
         </div>
 
         {/* Password */}
-        <div className="space-y-2">
+        <div className="space-y-3">
           <Label>{t('app.encryption.aes.password')}</Label>
           <Input
             type="password"
@@ -131,7 +131,7 @@ const TripleDESClient = () => {
 
         {/* Options grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="space-y-2">
+          <div className="space-y-3">
             <Label>{t('app.encryption.aes.mode')}</Label>
             <Select
               value={mode}
@@ -144,7 +144,7 @@ const TripleDESClient = () => {
               ))}
             </Select>
           </div>
-          <div className="space-y-2">
+          <div className="space-y-3">
             <Label>{t('app.encryption.aes.padding')}</Label>
             <Select
               value={padding}
@@ -157,7 +157,7 @@ const TripleDESClient = () => {
               ))}
             </Select>
           </div>
-          <div className="space-y-2">
+          <div className="space-y-3">
             <Label>{t('app.encryption.aes.format')}</Label>
             <Select
               value={format}
@@ -170,7 +170,7 @@ const TripleDESClient = () => {
               ))}
             </Select>
           </div>
-          <div className="space-y-2">
+          <div className="space-y-3">
             <Label>{t('app.encryption.aes.encoding')}</Label>
             <Select
               value={encoding}
@@ -186,12 +186,12 @@ const TripleDESClient = () => {
         </div>
 
         {/* IV */}
-        <div className="space-y-2">
+        <div className="space-y-3">
           <Label>{t('app.encryption.aes.iv')}</Label>
           <Input
             value={iv}
             onChange={e => setIv(e.target.value)}
-            placeholder="IV (optional for ECB)"
+            placeholder={t('app.encryption.aes.iv_placeholder')}
           />
         </div>
 
@@ -209,10 +209,10 @@ const TripleDESClient = () => {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 10 }}
             transition={{ duration: 0.3 }}
-            className="space-y-2"
+            className="space-y-3"
           >
             <Label>{t('app.hash.result')}</Label>
-            <div className="flex items-start gap-2">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
               <div className="glass-input flex-1 rounded-lg p-3 font-mono text-sm break-all min-h-[60px]">
                 {result}
               </div>

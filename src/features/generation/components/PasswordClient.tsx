@@ -95,16 +95,18 @@ const PasswordClient = () => {
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>{t('app.generation.password.length')}: {formData.length}</Label>
+            <div className="space-y-3">
+              <Label>
+                {t('app.generation.password.length')}: {formData.length}
+              </Label>
               <Slider
                 value={formData.length}
                 min={8}
                 max={128}
-                onChange={(value) => setFormData(prev => ({ ...prev, length: value }))}
+                onChange={value => setFormData(prev => ({ ...prev, length: value }))}
               />
             </div>
-            <div className="space-y-2">
+            <div className="space-y-3">
               <Label htmlFor="count">{t('app.generation.password.count')}</Label>
               <Input
                 id="count"
@@ -112,42 +114,50 @@ const PasswordClient = () => {
                 min={1}
                 max={100}
                 value={formData.count}
-                onChange={(e) => setFormData(prev => ({ ...prev, count: Number(e.target.value) }))}
+                onChange={e => setFormData(prev => ({ ...prev, count: Number(e.target.value) }))}
               />
             </div>
           </div>
 
-          <div className="space-y-2">
+          <div className="space-y-3">
             <Label>{t('app.generation.password.charset')}</Label>
             <div className="flex flex-wrap gap-4">
               <Checkbox
                 checked={formData.uppercase}
-                onChange={(e) => setFormData(prev => ({ ...prev, uppercase: e.target.checked }))}
+                onChange={e => setFormData(prev => ({ ...prev, uppercase: e.target.checked }))}
                 label={t('app.generation.password.uppercase')}
               />
               <Checkbox
                 checked={formData.lowercase}
-                onChange={(e) => setFormData(prev => ({ ...prev, lowercase: e.target.checked }))}
+                onChange={e => setFormData(prev => ({ ...prev, lowercase: e.target.checked }))}
                 label={t('app.generation.password.lowercase')}
               />
               <Checkbox
                 checked={formData.numbers}
-                onChange={(e) => setFormData(prev => ({ ...prev, numbers: e.target.checked }))}
+                onChange={e => setFormData(prev => ({ ...prev, numbers: e.target.checked }))}
                 label={t('app.generation.password.numbers')}
               />
               <Checkbox
                 checked={formData.symbols}
-                onChange={(e) => setFormData(prev => ({ ...prev, symbols: e.target.checked }))}
+                onChange={e => setFormData(prev => ({ ...prev, symbols: e.target.checked }))}
                 label={t('app.generation.password.symbols')}
               />
             </div>
           </div>
 
-          <div className="flex gap-2">
-            <Button variant="primary" icon={<RotateCcw className="w-4 h-4" />} onClick={handleGenerate}>
+          <div className="flex flex-wrap gap-3">
+            <Button
+              variant="primary"
+              icon={<RotateCcw className="w-4 h-4" />}
+              onClick={handleGenerate}
+            >
               {t('public.generate')}
             </Button>
-            <Button icon={<Copy className="w-4 h-4" />} onClick={handleCopyAll} disabled={!passwords.length}>
+            <Button
+              icon={<Copy className="w-4 h-4" />}
+              onClick={handleCopyAll}
+              disabled={!passwords.length}
+            >
               {t('app.generation.uuid.copy')}
             </Button>
           </div>
@@ -159,7 +169,7 @@ const PasswordClient = () => {
           <CardTitle>{t('app.generation.password.result')}</CardTitle>
         </CardHeader>
         <CardContent className="flex-1 overflow-auto">
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-3">
             {passwords.map((pwd, index) => (
               <div key={index} className="flex items-center gap-3">
                 <code className="flex-1 font-mono text-sm break-all text-[var(--text-primary)]">

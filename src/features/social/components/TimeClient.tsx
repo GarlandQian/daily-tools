@@ -10,7 +10,7 @@ import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { tzListMap, type tzMap } from '@/const/timezone'
+import { getTimezoneLabel, tzListMap, type tzMap } from '@/const/timezone'
 import { cn } from '@/lib/utils'
 
 dayjs.extend(utc)
@@ -20,28 +20,21 @@ type ZoneGroup = 'asia' | 'europe' | 'america' | 'pacific' | 'all'
 
 interface FeaturedZone {
   key: tzMap
-  city: string
   group: Exclude<ZoneGroup, 'all'>
 }
 
 const featuredZones: FeaturedZone[] = [
-  { key: 'chinaStandardTime', city: 'Beijing', group: 'asia' },
-  { key: 'japanStandardTime', city: 'Tokyo', group: 'asia' },
-  { key: 'greenwichMeanTime', city: 'London', group: 'europe' },
-  { key: 'centralEuropeanTime', city: 'Berlin', group: 'europe' },
-  { key: 'easternTime', city: 'New York', group: 'america' },
-  { key: 'pacificTime', city: 'Los Angeles', group: 'america' },
-  { key: 'australianEasternTime', city: 'Sydney', group: 'pacific' },
-  { key: 'newZealandTime', city: 'Auckland', group: 'pacific' }
+  { key: 'chinaStandardTime', group: 'asia' },
+  { key: 'japanStandardTime', group: 'asia' },
+  { key: 'greenwichMeanTime', group: 'europe' },
+  { key: 'centralEuropeanTime', group: 'europe' },
+  { key: 'easternTime', group: 'america' },
+  { key: 'pacificTime', group: 'america' },
+  { key: 'australianEasternTime', group: 'pacific' },
+  { key: 'newZealandTime', group: 'pacific' }
 ]
 
-const groupOptions: { value: ZoneGroup; label: string }[] = [
-  { value: 'all', label: 'All' },
-  { value: 'asia', label: 'Asia' },
-  { value: 'europe', label: 'Europe' },
-  { value: 'america', label: 'America' },
-  { value: 'pacific', label: 'Pacific' }
-]
+const groupOptionValues: ZoneGroup[] = ['all', 'asia', 'europe', 'america', 'pacific']
 
 const getZoneGroup = (zoneId: string): Exclude<ZoneGroup, 'all'> => {
   if (zoneId.startsWith('Asia/') || zoneId.startsWith('Africa/')) return 'asia'
@@ -55,15 +48,26 @@ const formatOffset = (date: Dayjs, zoneId: string) => {
   return `UTC${offset}`
 }
 
-const formatDiff = (localNow: Dayjs, zoneId: string) => {
+const formatDiff = (localNow: Dayjs, zoneId: string, t: ReturnType<typeof useTranslation>['t']) => {
   const diffHours = dayjs().tz(zoneId).utcOffset() / 60 - localNow.utcOffset() / 60
-  if (diffHours === 0) return 'Same as local'
+  if (diffHours === 0) return t('app.social.time.same_as_local')
   const direction = diffHours > 0 ? '+' : ''
-  return `${direction}${diffHours}h from local`
+  return t('app.social.time.from_local', { hours: `${direction}${diffHours}` })
 }
 
+const formatLongDate = (date: Dayjs, language: string) =>
+  new Intl.DateTimeFormat(language === 'cn' ? 'zh-CN' : 'en-US', {
+    dateStyle: 'full'
+  }).format(date.toDate())
+
+const formatShortMonthDay = (date: Dayjs, language: string) =>
+  new Intl.DateTimeFormat(language === 'cn' ? 'zh-CN' : 'en-US', {
+    month: language === 'cn' ? 'numeric' : 'short',
+    day: 'numeric'
+  }).format(date.toDate())
+
 const TimeClient = () => {
-  const { t } = useTranslation()
+  const { i18n, t } = useTranslation()
   const [now, setNow] = useState<Dayjs | null>(null)
   const [localZone, setLocalZone] = useState('')
   const [query, setQuery] = useState('')
@@ -88,9 +92,19 @@ const TimeClient = () => {
       (Object.entries(tzListMap) as [tzMap, (typeof tzListMap)[tzMap]][]).map(([key, data]) => ({
         key,
         ...data,
+        label: getTimezoneLabel(key, i18n.language),
         group: getZoneGroup(data.value)
       })),
-    []
+    [i18n.language]
+  )
+
+  const groupOptions = useMemo(
+    () =>
+      groupOptionValues.map(value => ({
+        value,
+        label: t(`app.social.time.group.${value}`)
+      })),
+    [t]
   )
 
   const visibleZones = useMemo(() => {
@@ -106,7 +120,9 @@ const TimeClient = () => {
   }, [activeGroup, query, zoneEntries])
 
   const localTime = isReady ? localNow.format('HH:mm:ss') : '--:--:--'
-  const localDate = isReady ? localNow.format('dddd, MMMM D, YYYY') : 'Loading local clock'
+  const localDate = isReady
+    ? formatLongDate(localNow, i18n.language)
+    : t('app.social.time.loading_local')
   const utcTime = isReady ? localNow.utc().format('HH:mm:ss') : '--:--:--'
   const unixTime = isReady ? localNow.unix().toLocaleString() : '--'
 
@@ -119,14 +135,14 @@ const TimeClient = () => {
               <div className="min-w-0">
                 <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-[var(--primary-subtle)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.08em] text-[var(--primary)]">
                   <Clock3 className="h-3.5 w-3.5" />
-                  Local Time
+                  {t('app.social.time.local_time')}
                 </div>
                 <h2 className="text-base font-medium text-[var(--text-secondary)]">
-                  {localZone || 'Local timezone'}
+                  {localZone || t('app.social.time.local_timezone')}
                 </h2>
               </div>
               <div className="rounded-full border border-[var(--border-base)] bg-[var(--success-subtle)] px-3 py-1 text-xs font-medium text-[var(--success)]">
-                Live
+                {t('app.social.time.live')}
               </div>
             </div>
 
@@ -142,7 +158,10 @@ const TimeClient = () => {
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <MetricBlock label="UTC" value={utcTime} />
               <MetricBlock label="Unix" value={unixTime} />
-              <MetricBlock label="Offset" value={isReady ? localNow.format('Z') : '--'} />
+              <MetricBlock
+                label={t('app.social.time.offset')}
+                value={isReady ? localNow.format('Z') : '--'}
+              />
             </div>
           </div>
         </div>
@@ -151,9 +170,11 @@ const TimeClient = () => {
           <div className="glass-panel glass-prism rounded-2xl p-5">
             <div className="mb-4 flex items-center justify-between gap-3">
               <div>
-                <h3 className="text-base font-semibold text-[var(--text-primary)]">Day Progress</h3>
+                <h3 className="text-base font-semibold text-[var(--text-primary)]">
+                  {t('app.social.time.day_progress')}
+                </h3>
                 <p className="mt-1 text-sm text-[var(--text-secondary)]">
-                  Seconds elapsed in your local day.
+                  {t('app.social.time.day_progress_hint')}
                 </p>
               </div>
               <TimerReset className="h-5 w-5 text-[var(--text-tertiary)]" />
@@ -173,7 +194,9 @@ const TimeClient = () => {
           </div>
 
           <div className="glass-panel glass-prism rounded-2xl p-5">
-            <h3 className="text-base font-semibold text-[var(--text-primary)]">Quick Groups</h3>
+            <h3 className="text-base font-semibold text-[var(--text-primary)]">
+              {t('app.social.time.quick_groups')}
+            </h3>
             <div className="mt-4 flex flex-wrap gap-2">
               {groupOptions.map(group => (
                 <button
@@ -205,7 +228,7 @@ const TimeClient = () => {
               <div className="flex min-w-0 items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="truncate text-sm font-semibold text-[var(--text-primary)]">
-                    {zone.city}
+                    {t(`app.social.time.city.${zone.key}`)}
                   </div>
                   <div className="mt-1 truncate text-xs text-[var(--text-tertiary)]">
                     {formatOffset(localNow, zoneData.value)}
@@ -217,7 +240,9 @@ const TimeClient = () => {
                 {isReady ? zoneNow.format('HH:mm') : '--:--'}
               </div>
               <div className="mt-1 text-xs text-[var(--text-secondary)]">
-                {isReady ? zoneNow.format('MMM D') : 'Loading'}
+                {isReady
+                  ? formatShortMonthDay(zoneNow, i18n.language)
+                  : t('app.social.time.loading')}
               </div>
             </div>
           )
@@ -231,7 +256,7 @@ const TimeClient = () => {
               {t('app.social.time.timezone')}
             </h3>
             <p className="mt-1 text-sm text-[var(--text-secondary)]">
-              {visibleZones.length} zones shown.
+              {t('app.social.time.zones_shown', { count: visibleZones.length })}
             </p>
           </div>
           <div className="flex w-full flex-col gap-2 sm:flex-row md:w-auto">
@@ -240,7 +265,7 @@ const TimeClient = () => {
               <Input
                 value={query}
                 onChange={event => setQuery(event.target.value)}
-                placeholder="Search city or timezone"
+                placeholder={t('app.social.time.search_placeholder')}
                 className="pl-9"
               />
             </div>
@@ -252,7 +277,7 @@ const TimeClient = () => {
                 setQuery('')
               }}
             >
-              Reset
+              {t('app.social.time.reset')}
             </Button>
           </div>
         </div>
@@ -287,7 +312,7 @@ const TimeClient = () => {
                     <div className="text-right text-xs text-[var(--text-secondary)]">
                       <div>{isReady ? zoneNow.format('YYYY-MM-DD') : '---- -- --'}</div>
                       <div className="mt-1">
-                        {isReady ? formatDiff(localNow, zone.value) : '--'}
+                        {isReady ? formatDiff(localNow, zone.value, t) : '--'}
                       </div>
                     </div>
                   </div>

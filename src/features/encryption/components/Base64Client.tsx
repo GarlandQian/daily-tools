@@ -49,9 +49,13 @@ export default function Base64Client() {
     <div className="flex justify-center">
       <div className="w-full max-w-[700px]">
         <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="grid grid-cols-1 sm:grid-cols-[200px_1fr] gap-4 items-start">
-            <Label className="sm:pt-3">{t('app.encryption.aes.action')}</Label>
-            <RadioGroup value={mode} onValueChange={v => setMode(v as 'encode' | 'decode')}>
+          <div className="grid grid-cols-1 items-start gap-x-6 gap-y-3 sm:grid-cols-[200px_1fr]">
+            <Label className="sm:pt-3.5">{t('app.encryption.aes.action')}</Label>
+            <RadioGroup
+              value={mode}
+              onValueChange={v => setMode(v as 'encode' | 'decode')}
+              className="gap-3 sm:pt-2"
+            >
               <div className="flex items-center space-x-2">
                 <RadioGroupItem value="encode" id="encode" />
                 <Label htmlFor="encode" className="cursor-pointer">
@@ -67,8 +71,8 @@ export default function Base64Client() {
             </RadioGroup>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-[200px_1fr] gap-4 items-start">
-            <Label className="sm:pt-3">{t('app.encryption.aes.str')}</Label>
+          <div className="grid grid-cols-1 items-start gap-x-6 gap-y-3 sm:grid-cols-[200px_1fr]">
+            <Label className="sm:pt-3.5">{t('app.encryption.aes.str')}</Label>
             <Textarea
               rows={4}
               value={text}
@@ -77,7 +81,7 @@ export default function Base64Client() {
             />
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-[200px_1fr] gap-4">
+          <div className="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-[200px_1fr]">
             <div />
             <Button type="submit" variant="primary" className="w-full sm:w-auto">
               {mode === 'encode'
@@ -99,9 +103,9 @@ export default function Base64Client() {
               <div className="glass-panel rounded-3xl p-8 relative overflow-hidden">
                 <div className="glass-specular" />
 
-                <div className="grid grid-cols-1 sm:grid-cols-[200px_1fr] gap-4 items-start">
-                  <Label className="sm:pt-3">{t('app.hash.result')}</Label>
-                  <div className="flex items-start gap-2">
+                <div className="grid grid-cols-1 items-start gap-x-6 gap-y-3 sm:grid-cols-[200px_1fr]">
+                  <Label className="sm:pt-3.5">{t('app.hash.result')}</Label>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
                     <Textarea rows={4} value={result.text} readOnly className="flex-1" />
                     <Button
                       variant="default"
