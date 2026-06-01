@@ -1,7 +1,17 @@
 'use client'
 
 import { AnimatePresence, motion } from 'framer-motion'
-import { ArrowLeftRight, ChevronRight, Github, Laptop, Menu, Moon, Sun } from 'lucide-react'
+import {
+  ArrowLeftRight,
+  ChevronRight,
+  Github,
+  Laptop,
+  Menu,
+  Moon,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Sun
+} from 'lucide-react'
 import { usePathname } from 'next/navigation'
 import { useRouter } from 'nextjs-toploader/app'
 import React, { useMemo, useState } from 'react'
@@ -11,7 +21,7 @@ import { useTranslation } from 'react-i18next'
 import { MeshGradient } from '@/components/effects/MeshGradient'
 import { type ThemeMode, useTheme } from '@/components/ThemeProvider'
 import TransitionLayout from '@/components/TransitionLayout'
-import { menus } from '@/config/menus'
+import { type MenuConfig, menus } from '@/config/menus'
 import { cn } from '@/lib/utils'
 
 type ViewTransitionDocument = Document & {
@@ -22,6 +32,7 @@ type DirectionMode = 'ltr' | 'rtl'
 
 const UI_LANGUAGE_STORAGE_KEY = 'ui-language'
 const UI_DIRECTION_STORAGE_KEY = 'ui-direction'
+const UI_SIDEBAR_COLLAPSED_STORAGE_KEY = 'ui-sidebar-collapsed'
 const RANDOM_EFFECT_SELECTOR =
   '.glass-panel, .glass-panel-strong, .glass-float, .glass-specular, .glass-caustic, .glass-prism, .glass-shimmer'
 
@@ -109,6 +120,7 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
   } = useTranslation()
 
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null)
   const [direction, setDirection] = useState<DirectionMode>('ltr')
 
@@ -125,10 +137,25 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  React.useLayoutEffect(() => {
+    const savedSidebarState = window.localStorage.getItem(UI_SIDEBAR_COLLAPSED_STORAGE_KEY)
+
+    if (savedSidebarState === 'true') {
+      setSidebarCollapsed(true)
+    }
+  }, [])
+
   React.useEffect(() => {
     document.documentElement.setAttribute('dir', direction)
     window.localStorage.setItem(UI_DIRECTION_STORAGE_KEY, direction)
   }, [direction])
+
+  React.useEffect(() => {
+    window.localStorage.setItem(
+      UI_SIDEBAR_COLLAPSED_STORAGE_KEY,
+      sidebarCollapsed ? 'true' : 'false'
+    )
+  }, [sidebarCollapsed])
 
   React.useEffect(() => {
     const savedLanguage = window.localStorage.getItem(UI_LANGUAGE_STORAGE_KEY)
@@ -142,7 +169,6 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
     document.documentElement.setAttribute('lang', language === 'cn' ? 'zh-CN' : 'en')
   }, [language])
 
-  // Get current category and breadcrumbs
   const { currentCategory, breadcrumbs } = useMemo(() => {
     const pathParts = pathname.split('/').filter(Boolean)
     const category = pathParts.length > 0 ? `/${pathParts[0]}` : null
@@ -154,7 +180,6 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
     return { currentCategory: category, breadcrumbs: crumbs }
   }, [pathname, t])
 
-  // Auto-expand current category
   React.useEffect(() => {
     if (currentCategory && !expandedCategory) {
       setExpandedCategory(currentCategory)
@@ -168,6 +193,20 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
 
   const toggleCategory = (path: string) => {
     setExpandedCategory(expandedCategory === path ? null : path)
+  }
+
+  const handleCategoryAction = (category: MenuConfig, collapsedView: boolean) => {
+    if (collapsedView && category.children?.[0]) {
+      handleNavigate(category.children[0].path)
+      return
+    }
+
+    if (category.children?.length) {
+      toggleCategory(category.path)
+      return
+    }
+
+    handleNavigate(category.path)
   }
 
   const handleLanguageChange = () => {
@@ -229,85 +268,166 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
     { mode: 'system', label: t('app.theme.system'), icon: <Laptop className="h-4 w-4" /> }
   ]
 
-  return (
-    <div className="relative isolate flex h-screen w-full overflow-hidden">
-      {/* Animated mesh gradient background */}
-      <MeshGradient />
+  const currentTitle = breadcrumbs[breadcrumbs.length - 1]?.label ?? 'Daily Tools'
+  const collapseLabel = sidebarCollapsed ? t('public.expand_sidebar') : t('public.collapse_sidebar')
 
-      {/* Sidebar - Desktop */}
-      <aside className="relative z-10 hidden w-64 flex-col border-r border-[var(--glass-border-strong)] glass-panel-strong lg:flex">
-        <div className="glass-specular" />
+  const renderNavigation = (collapsedView = false) => (
+    <nav
+      className={cn('flex-1 overflow-y-auto py-4', collapsedView ? 'px-2' : 'px-3 sm:px-4')}
+      aria-label={t('public.open_navigation')}
+    >
+      <div className={cn('flex flex-col', collapsedView ? 'gap-2.5' : 'gap-4')}>
+        {menus.map(category => {
+          const isExpanded = expandedCategory === category.path
+          const isActive = currentCategory === category.path
+          const categoryLabel = t(`app${category.path.replaceAll('/', '.')}`)
 
-        {/* Logo */}
-        <div className="p-6 border-b border-[var(--glass-border)]">
-          <h1 className="text-xl font-semibold text-[var(--text-primary)]">Daily Tools</h1>
-          <p className="text-xs text-[var(--text-tertiary)] mt-1">by GarlandQian</p>
-        </div>
-
-        {/* Navigation */}
-        <nav className="flex-1 overflow-y-auto p-4 space-y-1">
-          {menus.map(category => {
-            const isExpanded = expandedCategory === category.path
-            const isActive = currentCategory === category.path
-
-            return (
-              <div key={category.path}>
-                <button
-                  onClick={() => toggleCategory(category.path)}
+          return (
+            <div key={category.path} className="min-w-0">
+              <button
+                type="button"
+                onClick={() => handleCategoryAction(category, collapsedView)}
+                aria-expanded={!collapsedView && category.children ? isExpanded : undefined}
+                aria-current={isActive ? 'page' : undefined}
+                aria-label={categoryLabel}
+                title={categoryLabel}
+                className={cn(
+                  'group relative flex min-h-11 w-full items-center rounded-2xl text-sm font-medium transition-[background-color,color,box-shadow,transform] duration-200',
+                  collapsedView ? 'justify-center px-0' : 'gap-3 px-3.5',
+                  isActive
+                    ? 'bg-[var(--glass-bg-active)] text-[var(--primary)] shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_10px_28px_rgba(0,113,227,0.12)]'
+                    : 'text-[var(--text-secondary)] hover:bg-[var(--glass-bg-hover)] hover:text-[var(--text-primary)]'
+                )}
+              >
+                <span
                   className={cn(
-                    'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
-                    'hover:bg-[var(--glass-bg-hover)]',
-                    isActive && 'bg-[var(--glass-bg-active)] text-[var(--primary)]'
+                    'grid h-8 w-8 shrink-0 place-items-center rounded-xl transition-colors',
+                    isActive
+                      ? 'bg-[var(--primary-subtle)] text-[var(--primary)]'
+                      : 'bg-[var(--glass-input-bg)] text-[var(--text-tertiary)] group-hover:text-[var(--text-primary)]'
                   )}
                 >
                   {category.icon}
-                  <span className="flex-1 text-left">
-                    {t(`app${category.path.replaceAll('/', '.')}`)}
-                  </span>
-                  <ChevronRight
-                    className={cn('w-4 h-4 transition-transform', isExpanded && 'rotate-90')}
-                  />
-                </button>
+                </span>
 
-                <AnimatePresence>
-                  {isExpanded && category.children && (
-                    <motion.div
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: 'auto', opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      transition={{ duration: 0.2 }}
-                      className="overflow-hidden"
-                    >
-                      <div className="ml-7 mt-1 space-y-0.5 border-l border-[var(--border-subtle)] pl-3">
-                        {category.children.map(child => {
-                          const isChildActive = pathname === child.path
-                          return (
-                            <button
-                              key={child.path}
-                              onClick={() => handleNavigate(child.path)}
-                              className={cn(
-                                'w-full text-left px-3 py-1.5 rounded-md text-sm transition-colors',
-                                'hover:bg-[var(--glass-bg-hover)]',
-                                isChildActive
-                                  ? 'text-[var(--primary)] font-medium bg-[var(--primary-subtle)]'
-                                  : 'text-[var(--text-secondary)]'
-                              )}
-                            >
-                              {t(`app${child.path.replaceAll('/', '.')}`)}
-                            </button>
-                          )
-                        })}
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-            )
-          })}
-        </nav>
+                {!collapsedView && (
+                  <>
+                    <span className="min-w-0 flex-1 truncate text-left">{categoryLabel}</span>
+                    {category.children && (
+                      <ChevronRight
+                        className={cn(
+                          'h-4 w-4 shrink-0 text-[var(--text-tertiary)] transition-transform',
+                          isExpanded && 'rotate-90'
+                        )}
+                        aria-hidden="true"
+                      />
+                    )}
+                  </>
+                )}
+              </button>
+
+              <AnimatePresence initial={false}>
+                {!collapsedView && isExpanded && category.children && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+                    className="overflow-hidden"
+                  >
+                    <div className="ml-6 mt-2 space-y-1 border-l border-[var(--border-subtle)] pl-3">
+                      {category.children.map(child => {
+                        const isChildActive = pathname === child.path
+                        const childLabel = t(`app${child.path.replaceAll('/', '.')}`)
+
+                        return (
+                          <button
+                            key={child.path}
+                            type="button"
+                            onClick={() => handleNavigate(child.path)}
+                            aria-current={isChildActive ? 'page' : undefined}
+                            title={childLabel}
+                            className={cn(
+                              'flex min-h-9 w-full min-w-0 items-center rounded-xl px-3 text-left text-sm transition-[background-color,color,transform]',
+                              isChildActive
+                                ? 'bg-[var(--primary-subtle)] font-medium text-[var(--primary)]'
+                                : 'text-[var(--text-secondary)] hover:bg-[var(--glass-bg-hover)] hover:text-[var(--text-primary)]'
+                            )}
+                          >
+                            <span className="truncate">{childLabel}</span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          )
+        })}
+      </div>
+    </nav>
+  )
+
+  return (
+    <div className="relative isolate flex h-screen w-full overflow-hidden">
+      <MeshGradient />
+
+      <aside
+        className="relative z-10 hidden h-full shrink-0 flex-col overflow-hidden border-r border-[var(--glass-border-strong)] glass-panel-strong transition-[width] duration-300 ease-out lg:flex"
+        style={{
+          width: sidebarCollapsed ? 'var(--sidebar-collapsed)' : 'var(--sidebar-width)'
+        }}
+      >
+        <div className="glass-specular" />
+
+        <div
+          className={cn(
+            'flex h-20 shrink-0 items-center border-b border-[var(--glass-border)] px-3',
+            sidebarCollapsed ? 'justify-center' : 'gap-3 px-4'
+          )}
+        >
+          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl border border-[var(--glass-border-strong)] bg-[var(--primary)] text-sm font-semibold text-white shadow-[0_14px_34px_rgba(0,113,227,0.22)]">
+            DT
+          </div>
+          {!sidebarCollapsed && (
+            <div className="min-w-0">
+              <h1
+                className="truncate text-[15px] font-semibold leading-tight text-[var(--text-primary)]"
+                translate="no"
+              >
+                Daily Tools
+              </h1>
+              <p className="mt-1 truncate text-xs text-[var(--text-tertiary)]" translate="no">
+                GarlandQian
+              </p>
+            </div>
+          )}
+        </div>
+
+        {renderNavigation(sidebarCollapsed)}
+
+        <div className={cn('shrink-0 border-t border-[var(--glass-border)] p-3')}>
+          <button
+            type="button"
+            onClick={() => setSidebarCollapsed(current => !current)}
+            aria-label={collapseLabel}
+            title={collapseLabel}
+            className={cn(
+              'flex h-10 w-full items-center rounded-2xl text-sm font-medium text-[var(--text-secondary)] transition-[background-color,color] hover:bg-[var(--glass-bg-hover)] hover:text-[var(--text-primary)]',
+              sidebarCollapsed ? 'justify-center px-0' : 'gap-2.5 px-3'
+            )}
+          >
+            {sidebarCollapsed ? (
+              <PanelLeftOpen className="h-4 w-4" aria-hidden="true" />
+            ) : (
+              <PanelLeftClose className="h-4 w-4" aria-hidden="true" />
+            )}
+            {!sidebarCollapsed && <span className="truncate">{collapseLabel}</span>}
+          </button>
+        </div>
       </aside>
 
-      {/* Mobile Sidebar Overlay */}
       <AnimatePresence>
         {sidebarOpen && (
           <>
@@ -316,150 +436,116 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setSidebarOpen(false)}
-              className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40 lg:hidden"
+              className="fixed inset-0 z-40 bg-black/45 backdrop-blur-sm lg:hidden"
             />
             <motion.aside
-              initial={{ x: -280 }}
+              initial={{ x: -308 }}
               animate={{ x: 0 }}
-              exit={{ x: -280 }}
-              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="fixed left-0 top-0 bottom-0 w-64 glass-panel-strong border-r border-[var(--glass-border-strong)] z-50 lg:hidden flex flex-col"
+              exit={{ x: -308 }}
+              transition={{ type: 'spring', damping: 28, stiffness: 230 }}
+              className="fixed bottom-0 left-0 top-0 z-50 flex w-[19.25rem] max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden border-r border-[var(--glass-border-strong)] glass-panel-strong lg:hidden"
             >
               <div className="glass-specular" />
 
-              <div className="p-6 border-b border-[var(--glass-border)]">
-                <h1 className="text-xl font-semibold text-[var(--text-primary)]">Daily Tools</h1>
-                <p className="text-xs text-[var(--text-tertiary)] mt-1">by GarlandQian</p>
+              <div className="flex h-20 shrink-0 items-center gap-3 border-b border-[var(--glass-border)] px-5">
+                <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl border border-[var(--glass-border-strong)] bg-[var(--primary)] text-sm font-semibold text-white">
+                  DT
+                </div>
+                <div className="min-w-0">
+                  <h1
+                    className="truncate text-[15px] font-semibold leading-tight text-[var(--text-primary)]"
+                    translate="no"
+                  >
+                    Daily Tools
+                  </h1>
+                  <p className="mt-1 truncate text-xs text-[var(--text-tertiary)]" translate="no">
+                    GarlandQian
+                  </p>
+                </div>
               </div>
 
-              <nav className="flex-1 overflow-y-auto p-4 space-y-1">
-                {menus.map(category => {
-                  const isExpanded = expandedCategory === category.path
-                  const isActive = currentCategory === category.path
-
-                  return (
-                    <div key={category.path}>
-                      <button
-                        onClick={() => toggleCategory(category.path)}
-                        className={cn(
-                          'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
-                          'hover:bg-[var(--glass-bg-hover)]',
-                          isActive && 'bg-[var(--glass-bg-active)] text-[var(--primary)]'
-                        )}
-                      >
-                        {category.icon}
-                        <span className="flex-1 text-left">
-                          {t(`app${category.path.replaceAll('/', '.')}`)}
-                        </span>
-                        <ChevronRight
-                          className={cn('w-4 h-4 transition-transform', isExpanded && 'rotate-90')}
-                        />
-                      </button>
-
-                      <AnimatePresence>
-                        {isExpanded && category.children && (
-                          <motion.div
-                            initial={{ height: 0, opacity: 0 }}
-                            animate={{ height: 'auto', opacity: 1 }}
-                            exit={{ height: 0, opacity: 0 }}
-                            transition={{ duration: 0.2 }}
-                            className="overflow-hidden"
-                          >
-                            <div className="ml-7 mt-1 space-y-0.5 border-l border-[var(--border-subtle)] pl-3">
-                              {category.children.map(child => {
-                                const isChildActive = pathname === child.path
-                                return (
-                                  <button
-                                    key={child.path}
-                                    onClick={() => handleNavigate(child.path)}
-                                    className={cn(
-                                      'w-full text-left px-3 py-1.5 rounded-md text-sm transition-colors',
-                                      'hover:bg-[var(--glass-bg-hover)]',
-                                      isChildActive
-                                        ? 'text-[var(--primary)] font-medium bg-[var(--primary-subtle)]'
-                                        : 'text-[var(--text-secondary)]'
-                                    )}
-                                  >
-                                    {t(`app${child.path.replaceAll('/', '.')}`)}
-                                  </button>
-                                )
-                              })}
-                            </div>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </div>
-                  )
-                })}
-              </nav>
+              {renderNavigation(false)}
             </motion.aside>
           </>
         )}
       </AnimatePresence>
 
-      {/* Main Content */}
-      <div className="relative z-10 flex flex-1 flex-col overflow-hidden">
-        {/* Top Bar */}
-        <header className="glass-panel border-b border-[var(--glass-border)] relative">
+      <div className="relative z-10 flex min-w-0 flex-1 flex-col overflow-hidden">
+        <header className="relative border-b border-[var(--glass-border)] glass-panel">
           <div className="glass-specular" />
-          <div className="flex items-center justify-between h-14 px-4 lg:px-6">
-            {/* Left: Mobile Menu + Breadcrumbs */}
-            <div className="flex items-center gap-4">
+          <div className="flex h-[var(--header-height)] items-center justify-between gap-3 px-4 sm:px-5 lg:px-7">
+            <div className="flex min-w-0 items-center gap-3">
               <button
+                type="button"
                 onClick={() => setSidebarOpen(true)}
-                className="lg:hidden p-2 hover:bg-[var(--glass-bg-hover)] rounded-lg transition-colors"
+                className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl text-[var(--text-secondary)] transition-[background-color,color] hover:bg-[var(--glass-bg-hover)] hover:text-[var(--text-primary)] lg:hidden"
                 aria-label={t('public.open_navigation')}
               >
-                <Menu className="w-5 h-5" />
+                <Menu className="h-5 w-5" aria-hidden="true" />
               </button>
 
-              {/* Breadcrumbs */}
-              <div className="hidden sm:flex items-center gap-2 text-sm">
-                {breadcrumbs.map((crumb, index) => (
-                  <React.Fragment key={crumb.path}>
-                    {index > 0 && <ChevronRight className="w-4 h-4 text-[var(--text-tertiary)]" />}
-                    <button
-                      onClick={() => handleNavigate(crumb.path)}
-                      className={cn(
-                        'px-2 py-1 rounded-md transition-colors hover:bg-[var(--glass-bg-hover)]',
-                        index === breadcrumbs.length - 1
-                          ? 'text-[var(--text-primary)] font-medium'
-                          : 'text-[var(--text-secondary)]'
-                      )}
-                    >
-                      {crumb.label}
-                    </button>
-                  </React.Fragment>
-                ))}
+              <div className="min-w-0">
+                <div className="hidden text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--text-tertiary)] sm:block">
+                  Daily Tools
+                </div>
+                <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-sm">
+                  {breadcrumbs.length > 0 ? (
+                    breadcrumbs.map((crumb, index) => (
+                      <React.Fragment key={crumb.path}>
+                        {index > 0 && (
+                          <ChevronRight
+                            className="h-3.5 w-3.5 shrink-0 text-[var(--text-tertiary)]"
+                            aria-hidden="true"
+                          />
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleNavigate(crumb.path)}
+                          className={cn(
+                            'min-w-0 rounded-lg px-1.5 py-1 transition-[background-color,color] hover:bg-[var(--glass-bg-hover)]',
+                            index === breadcrumbs.length - 1
+                              ? 'truncate font-semibold text-[var(--text-primary)]'
+                              : 'hidden text-[var(--text-secondary)] sm:block'
+                          )}
+                        >
+                          <span className="truncate">{crumb.label}</span>
+                        </button>
+                      </React.Fragment>
+                    ))
+                  ) : (
+                    <span className="truncate font-semibold text-[var(--text-primary)]">
+                      {currentTitle}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
 
-            {/* Right: Actions */}
-            <div className="flex items-center gap-2">
-              {/* GitHub */}
+            <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
               <a
                 href={process.env.NEXT_PUBLIC_GITHUB_URL}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="p-2 hover:bg-[var(--glass-bg-hover)] rounded-lg transition-colors"
+                className="hidden h-9 w-9 place-items-center rounded-2xl text-[var(--text-secondary)] transition-[background-color,color] hover:bg-[var(--glass-bg-hover)] hover:text-[var(--text-primary)] sm:grid"
                 aria-label={t('public.open_github')}
               >
-                <Github className="w-5 h-5" />
+                <Github className="h-4 w-4" aria-hidden="true" />
               </a>
 
-              {/* Theme Toggle */}
-              <div className="flex items-center glass-input rounded-lg p-1">
+              <div className="flex items-center rounded-2xl p-1 glass-input">
                 {themeOptions.map(option => {
                   const isActive = themeMode === option.mode
 
                   return (
                     <button
                       key={option.mode}
+                      type="button"
                       onClick={event => handleThemeChange(option.mode, event)}
                       aria-label={option.label}
                       aria-pressed={isActive}
+                      title={option.label}
                       className={cn(
-                        'relative grid h-8 w-8 place-items-center overflow-hidden rounded-md text-[var(--text-secondary)] transition-colors duration-300',
+                        'relative grid h-8 w-8 place-items-center overflow-hidden rounded-xl text-[var(--text-secondary)] transition-[color,background-color] duration-300',
                         isActive
                           ? 'text-white'
                           : 'hover:bg-[var(--glass-bg-hover)] hover:text-[var(--text-primary)]'
@@ -468,7 +554,7 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
                       {isActive && (
                         <motion.span
                           layoutId="theme-toggle-indicator"
-                          className="absolute inset-0 rounded-md bg-[var(--primary)] shadow-[0_8px_20px_rgba(0,113,227,0.26)]"
+                          className="absolute inset-0 rounded-xl bg-[var(--primary)] shadow-[0_8px_20px_rgba(0,113,227,0.26)]"
                           transition={{ type: 'spring', stiffness: 420, damping: 32 }}
                         />
                       )}
@@ -478,31 +564,31 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
                 })}
               </div>
 
-              {/* Language Toggle */}
               <button
+                type="button"
                 onClick={handleLanguageChange}
-                className="px-3 py-1.5 glass-input rounded-lg text-sm font-medium hover:bg-[var(--glass-bg-hover)] transition-colors"
+                className="h-9 rounded-2xl px-3 text-sm font-semibold transition-[background-color,color] hover:bg-[var(--glass-bg-hover)] glass-input"
                 aria-label={t('public.switch_language')}
               >
                 {language === 'cn' ? '中' : 'EN'}
               </button>
 
-              {/* Direction Toggle */}
               <button
+                type="button"
                 onClick={handleDirectionChange}
-                className="flex items-center gap-1.5 px-3 py-1.5 glass-input rounded-lg text-sm font-medium hover:bg-[var(--glass-bg-hover)] transition-colors"
+                className="flex h-9 items-center gap-1.5 rounded-2xl px-3 text-sm font-semibold transition-[background-color,color] hover:bg-[var(--glass-bg-hover)] glass-input"
                 aria-label={t('public.switch_direction')}
                 aria-pressed={direction === 'rtl'}
+                title={t('public.switch_direction')}
               >
-                <ArrowLeftRight className="h-4 w-4" />
-                {direction.toUpperCase()}
+                <ArrowLeftRight className="h-4 w-4" aria-hidden="true" />
+                <span className="hidden sm:inline">{direction.toUpperCase()}</span>
               </button>
             </div>
           </div>
         </header>
 
-        {/* Content Area */}
-        <main className="flex-1 overflow-auto p-4 lg:p-6 bg-transparent">
+        <main className="flex-1 overflow-auto bg-transparent px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
           <TransitionLayout
             style={{
               maxWidth: 'var(--content-max)',
@@ -513,11 +599,6 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
             {children}
           </TransitionLayout>
         </main>
-
-        {/* Footer */}
-        <footer className="glass-panel border-t border-[var(--glass-border)] py-4 px-6 text-center text-sm text-[var(--text-tertiary)]">
-          Tools ©2024-{new Date().getFullYear()} Created by GarlandQian
-        </footer>
       </div>
     </div>
   )

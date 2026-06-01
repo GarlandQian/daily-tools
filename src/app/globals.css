@@ -102,10 +102,10 @@
   --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.1);
 
   /* Layout */
-  --sidebar-width: 240px;
-  --sidebar-collapsed: 64px;
-  --header-height: 56px;
-  --content-max: 1400px;
+  --sidebar-width: 276px;
+  --sidebar-collapsed: 76px;
+  --header-height: 64px;
+  --content-max: 1520px;
 
   /* Transitions */
   --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
@@ -213,6 +213,17 @@ body {
   background-color: var(--bg-base);
   margin: 0;
   padding: 0;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+:where(button, a, input, textarea, select, [role='button']):focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }
 
 [dir='rtl'] body {
