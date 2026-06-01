@@ -113,7 +113,7 @@ const TimeClient = () => {
   return (
     <div className="flex size-full flex-col gap-5">
       <section className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(340px,0.8fr)]">
-        <div className="glass-panel glass-accent-border glass-glow-primary rounded-2xl p-5 sm:p-6">
+        <div className="glass-panel glass-accent-border glass-glow-primary glass-prism rounded-2xl p-5 sm:p-6">
           <div className="relative z-10 flex min-h-[290px] flex-col justify-between gap-8">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="min-w-0">
@@ -148,7 +148,7 @@ const TimeClient = () => {
         </div>
 
         <div className="grid grid-cols-1 gap-5">
-          <div className="glass-panel rounded-2xl p-5">
+          <div className="glass-panel glass-prism rounded-2xl p-5">
             <div className="mb-4 flex items-center justify-between gap-3">
               <div>
                 <h3 className="text-base font-semibold text-[var(--text-primary)]">Day Progress</h3>
@@ -172,7 +172,7 @@ const TimeClient = () => {
             </div>
           </div>
 
-          <div className="glass-panel rounded-2xl p-5">
+          <div className="glass-panel glass-prism rounded-2xl p-5">
             <h3 className="text-base font-semibold text-[var(--text-primary)]">Quick Groups</h3>
             <div className="mt-4 flex flex-wrap gap-2">
               {groupOptions.map(group => (
@@ -201,7 +201,7 @@ const TimeClient = () => {
           const zoneNow = localNow.tz(zoneData.value)
 
           return (
-            <div key={zone.key} className="glass-panel rounded-2xl p-4">
+            <div key={zone.key} className="glass-panel glass-prism rounded-2xl p-4">
               <div className="flex min-w-0 items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="truncate text-sm font-semibold text-[var(--text-primary)]">
@@ -224,7 +224,7 @@ const TimeClient = () => {
         })}
       </section>
 
-      <section className="glass-panel flex min-h-0 flex-1 flex-col rounded-2xl">
+      <section className="glass-panel glass-prism flex min-h-0 flex-1 flex-col rounded-2xl">
         <div className="flex flex-col gap-4 border-b border-[var(--glass-border)] p-5 md:flex-row md:items-center md:justify-between">
           <div>
             <h3 className="text-base font-semibold text-[var(--text-primary)]">

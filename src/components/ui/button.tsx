@@ -5,14 +5,14 @@ import * as React from 'react'
 import { cn } from '@/lib/utils'
 
 const buttonVariants = cva(
-  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)] focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50',
+  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)] focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50',
   {
     variants: {
       variant: {
         default:
-          'glass-input text-[var(--text-primary)] hover:bg-[var(--glass-bg-hover)] active:translate-y-px',
+          'glass-panel glass-shimmer text-[var(--text-primary)] hover:glass-panel-strong hover:scale-[1.02] active:translate-y-px active:scale-[0.98]',
         primary:
-          'bg-[var(--primary)] text-white shadow-sm shadow-[var(--primary)]/20 hover:bg-[var(--primary-hover)] active:translate-y-px',
+          'relative overflow-hidden bg-[var(--primary)] text-white shadow-md shadow-[var(--primary)]/25 hover:bg-[var(--primary-hover)] hover:shadow-lg hover:shadow-[var(--primary)]/35 hover:scale-[1.02] active:translate-y-px active:scale-[0.98]',
         ghost:
           'hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] active:bg-[var(--bg-muted)]',
         outline:
