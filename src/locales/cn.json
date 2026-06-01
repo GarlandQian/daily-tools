@@ -100,6 +100,8 @@
   "public.open_github": "打开 GitHub 仓库",
   "public.switch_language": "切换语言",
   "public.switch_direction": "切换文字方向",
+  "public.collapse_sidebar": "收起侧栏",
+  "public.expand_sidebar": "展开侧栏",
   "rules.msg.required": "{{msg}}是必填的",
   "app.social.retires.gender": "性别",
   "app.social.retires.male": "男",

@@ -101,6 +101,8 @@
   "public.open_github": "Open GitHub repository",
   "public.switch_language": "Switch language",
   "public.switch_direction": "Switch text direction",
+  "public.collapse_sidebar": "Collapse sidebar",
+  "public.expand_sidebar": "Expand sidebar",
   "rules.msg.required": "{{msg}} is required",
   "app.social.retires.gender": "Gender",
   "app.social.retires.male": "Male",
