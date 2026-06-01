@@ -6,6 +6,8 @@
    ============================================ */
 
 :root {
+  color-scheme: light;
+
   /* Colors - Light Mode */
   --bg-base: #f0f2f5;
   --bg-subtle: #f8f9fa;
@@ -110,6 +112,10 @@
   --transition-base: 250ms cubic-bezier(0.4, 0, 0.2, 1);
   --transition-slow: 400ms cubic-bezier(0.4, 0, 0.2, 1);
   --transition-spring: 500ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  --theme-switch-duration: 620ms;
+  --theme-switch-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --theme-transition-x: 100%;
+  --theme-transition-y: 0%;
 
   /* Mesh Gradient Colors (Light) */
   --mesh-color-1: rgba(120, 119, 198, 0.45);
@@ -121,6 +127,8 @@
 
 /* Dark Mode */
 [data-theme='dark'] {
+  color-scheme: dark;
+
   --bg-base: #0c0c14;
   --bg-subtle: #141420;
   --bg-muted: #1a1a2e;
@@ -193,6 +201,7 @@
 html {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  background: var(--bg-base);
   text-rendering: optimizeLegibility;
 }
 
@@ -204,6 +213,121 @@ body {
   background-color: var(--bg-base);
   margin: 0;
   padding: 0;
+}
+
+[dir='rtl'] body {
+  direction: rtl;
+}
+
+[dir='rtl'] .text-left {
+  text-align: right;
+}
+
+[dir='rtl'] .text-right {
+  text-align: left;
+}
+
+[dir='rtl'] .ml-7 {
+  margin-left: 0;
+  margin-right: 1.75rem;
+}
+
+[dir='rtl'] .pl-3 {
+  padding-left: 0;
+  padding-right: 0.75rem;
+}
+
+[dir='rtl'] .pl-9 {
+  padding-left: 0.875rem;
+  padding-right: 2.25rem;
+}
+
+[dir='rtl'] .left-0 {
+  left: auto;
+  right: 0;
+}
+
+[dir='rtl'] .left-3 {
+  left: auto;
+  right: 0.75rem;
+}
+
+[dir='rtl'] .border-l {
+  border-left-width: 0;
+  border-right-width: 1px;
+}
+
+[dir='rtl'] .border-r {
+  border-left-width: 1px;
+  border-right-width: 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html.theme-transitioning,
+  html.theme-transitioning body,
+  html.theme-transitioning .glass-panel,
+  html.theme-transitioning .glass-panel-strong,
+  html.theme-transitioning .glass-popover,
+  html.theme-transitioning .glass-input,
+  html.theme-transitioning .mesh-gradient-theme-layer,
+  html.theme-transitioning button,
+  html.theme-transitioning input,
+  html.theme-transitioning textarea,
+  html.theme-transitioning select {
+    transition-duration: var(--theme-switch-duration);
+    transition-property:
+      background,
+      background-color,
+      border-color,
+      box-shadow,
+      color,
+      filter,
+      opacity,
+      text-shadow;
+    transition-timing-function: var(--theme-switch-ease);
+  }
+
+  html.theme-view-transition::view-transition-group(root) {
+    animation-duration: var(--theme-switch-duration);
+    animation-timing-function: var(--theme-switch-ease);
+  }
+
+  html.theme-view-transition::view-transition-image-pair(root) {
+    isolation: auto;
+  }
+
+  html.theme-view-transition::view-transition-old(root),
+  html.theme-view-transition::view-transition-new(root) {
+    animation-duration: var(--theme-switch-duration);
+    animation-timing-function: var(--theme-switch-ease);
+    mix-blend-mode: normal;
+  }
+
+  html.theme-view-transition::view-transition-old(root) {
+    animation-name: themeFadeOut;
+  }
+
+  html.theme-view-transition::view-transition-new(root) {
+    animation-name: themeReveal;
+  }
+}
+
+@keyframes themeReveal {
+  from {
+    clip-path: circle(0 at var(--theme-transition-x) var(--theme-transition-y));
+  }
+  to {
+    clip-path: circle(150vmax at var(--theme-transition-x) var(--theme-transition-y));
+  }
+}
+
+@keyframes themeFadeOut {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 code, pre, kbd, samp {
@@ -276,7 +400,9 @@ code, pre, kbd, samp {
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
   mask-composite: exclude;
-  animation: borderRotate 6s linear infinite;
+  animation: borderRotate var(--fx-border-duration, 6s) linear infinite;
+  animation-delay: var(--fx-border-delay, 0s);
+  animation-direction: var(--fx-border-direction, normal);
   opacity: 0.6;
   pointer-events: none;
   z-index: 1;
@@ -360,7 +486,9 @@ code, pre, kbd, samp {
   );
   border-radius: var(--radius-pill);
   pointer-events: none;
-  animation: specularDrift 4s ease-in-out infinite alternate;
+  animation: specularDrift var(--fx-specular-duration, 4s) ease-in-out infinite alternate;
+  animation-delay: var(--fx-specular-delay, 0s);
+  animation-direction: var(--fx-specular-direction, alternate);
 }
 
 @keyframes specularDrift {
@@ -413,7 +541,9 @@ code, pre, kbd, samp {
     transparent 70%
   );
   pointer-events: none;
-  animation: causticShift 8s ease-in-out infinite;
+  animation: causticShift var(--fx-caustic-duration, 8s) ease-in-out infinite;
+  animation-delay: var(--fx-caustic-delay, 0s);
+  animation-direction: var(--fx-caustic-direction, normal);
 }
 
 .glass-prism::after {
@@ -430,8 +560,9 @@ code, pre, kbd, samp {
   opacity: 0.5;
   pointer-events: none;
   z-index: 0;
-  transform: translate3d(-8%, -6%, 0) rotate(0deg);
-  animation: prismOrbit 14s ease-in-out infinite;
+  transform: translate3d(var(--fx-prism-x0, -8%), var(--fx-prism-y0, -6%), 0) rotate(0deg);
+  animation: prismOrbit var(--fx-prism-duration, 14s) ease-in-out infinite;
+  animation-delay: var(--fx-prism-delay, 0s);
 }
 
 [data-theme='dark'] .glass-prism::after {
@@ -439,9 +570,15 @@ code, pre, kbd, samp {
 }
 
 @keyframes prismOrbit {
-  0%, 100% { transform: translate3d(-8%, -6%, 0) rotate(0deg) scale(1); }
-  33% { transform: translate3d(8%, 4%, 0) rotate(5deg) scale(1.04); }
-  66% { transform: translate3d(-2%, 10%, 0) rotate(-4deg) scale(0.98); }
+  0%, 100% {
+    transform: translate3d(var(--fx-prism-x0, -8%), var(--fx-prism-y0, -6%), 0) rotate(0deg) scale(1);
+  }
+  33% {
+    transform: translate3d(var(--fx-prism-x1, 8%), var(--fx-prism-y1, 4%), 0) rotate(var(--fx-prism-rotation, 5deg)) scale(1.04);
+  }
+  66% {
+    transform: translate3d(var(--fx-prism-x2, -2%), var(--fx-prism-y2, 10%), 0) rotate(var(--fx-prism-rotation-reverse, -4deg)) scale(0.98);
+  }
 }
 
 [data-theme='dark'] .glass-caustic::after {
@@ -469,7 +606,7 @@ code, pre, kbd, samp {
   inset: 0;
   border-radius: inherit;
   background: linear-gradient(
-    105deg,
+    var(--fx-shimmer-angle, 105deg),
     transparent 40%,
     rgba(255, 255, 255, 0.15) 45%,
     rgba(255, 255, 255, 0.25) 50%,
@@ -477,13 +614,15 @@ code, pre, kbd, samp {
     transparent 60%
   );
   background-size: 200% 100%;
-  animation: shimmerSweep 10s ease-in-out infinite;
+  animation: shimmerSweep var(--fx-shimmer-duration, 10s) ease-in-out infinite;
+  animation-delay: var(--fx-shimmer-delay, 0s);
+  animation-direction: var(--fx-shimmer-direction, normal);
   pointer-events: none;
 }
 
 [data-theme='dark'] .glass-shimmer::after {
   background: linear-gradient(
-    105deg,
+    var(--fx-shimmer-angle, 105deg),
     transparent 40%,
     rgba(255, 255, 255, 0.06) 45%,
     rgba(255, 255, 255, 0.12) 50%,

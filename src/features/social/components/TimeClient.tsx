@@ -10,17 +10,36 @@ import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { getTimezoneLabel, tzListMap, type tzMap } from '@/const/timezone'
+import { tzListMap, type tzMap } from '@/const/timezone'
 import { cn } from '@/lib/utils'
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
 
-type ZoneGroup = 'asia' | 'europe' | 'america' | 'pacific' | 'all'
+type ZoneGroup =
+  | 'africa'
+  | 'all'
+  | 'america'
+  | 'antarctica'
+  | 'asia'
+  | 'atlantic'
+  | 'australia'
+  | 'europe'
+  | 'indian'
+  | 'other'
+  | 'pacific'
 
 interface FeaturedZone {
   key: tzMap
   group: Exclude<ZoneGroup, 'all'>
+}
+
+interface WorldZone {
+  group: Exclude<ZoneGroup, 'all'>
+  key: string
+  label: string
+  searchable: string
+  value: string
 }
 
 const featuredZones: FeaturedZone[] = [
@@ -34,13 +53,81 @@ const featuredZones: FeaturedZone[] = [
   { key: 'newZealandTime', group: 'pacific' }
 ]
 
-const groupOptionValues: ZoneGroup[] = ['all', 'asia', 'europe', 'america', 'pacific']
+const groupOptionValues: ZoneGroup[] = [
+  'all',
+  'asia',
+  'europe',
+  'america',
+  'africa',
+  'australia',
+  'pacific',
+  'atlantic',
+  'indian',
+  'antarctica',
+  'other'
+]
+
+const fallbackTimezoneIds = Array.from(
+  new Set(Object.values(tzListMap).map(timezone => timezone.value))
+).sort((a, b) => a.localeCompare(b))
 
 const getZoneGroup = (zoneId: string): Exclude<ZoneGroup, 'all'> => {
-  if (zoneId.startsWith('Asia/') || zoneId.startsWith('Africa/')) return 'asia'
-  if (zoneId.startsWith('Europe/')) return 'europe'
-  if (zoneId.startsWith('America/')) return 'america'
-  return 'pacific'
+  const region = zoneId.split('/')[0]?.toLowerCase()
+
+  switch (region) {
+    case 'africa':
+    case 'america':
+    case 'antarctica':
+    case 'asia':
+    case 'atlantic':
+    case 'australia':
+    case 'europe':
+    case 'indian':
+    case 'pacific':
+      return region
+    default:
+      return 'other'
+  }
+}
+
+const getSupportedTimezoneIds = () => {
+  if (typeof Intl.supportedValuesOf !== 'function') {
+    return fallbackTimezoneIds
+  }
+
+  try {
+    return Array.from(
+      new Set([...Intl.supportedValuesOf('timeZone'), ...fallbackTimezoneIds])
+    ).sort((a, b) => a.localeCompare(b))
+  } catch {
+    return fallbackTimezoneIds
+  }
+}
+
+const getRegionLabel = (group: Exclude<ZoneGroup, 'all'>, language: string) => {
+  const labels: Record<Exclude<ZoneGroup, 'all'>, { cn: string; en: string }> = {
+    africa: { cn: '非洲', en: 'Africa' },
+    america: { cn: '美洲', en: 'Americas' },
+    antarctica: { cn: '南极洲', en: 'Antarctica' },
+    asia: { cn: '亚洲', en: 'Asia' },
+    atlantic: { cn: '大西洋', en: 'Atlantic' },
+    australia: { cn: '澳大利亚', en: 'Australia' },
+    europe: { cn: '欧洲', en: 'Europe' },
+    indian: { cn: '印度洋', en: 'Indian Ocean' },
+    other: { cn: '其他', en: 'Other' },
+    pacific: { cn: '太平洋', en: 'Pacific' }
+  }
+
+  return language === 'cn' ? labels[group].cn : labels[group].en
+}
+
+const formatWorldTimezoneLabel = (zoneId: string, language: string) => {
+  const group = getZoneGroup(zoneId)
+  const region = getRegionLabel(group, language)
+  const city = zoneId.split('/').slice(1).join(' / ').replaceAll('_', ' ')
+
+  if (!city) return region
+  return language === 'cn' ? `${region} / ${city}` : `${city} (${region})`
 }
 
 const formatOffset = (date: Dayjs, zoneId: string) => {
@@ -49,7 +136,7 @@ const formatOffset = (date: Dayjs, zoneId: string) => {
 }
 
 const formatDiff = (localNow: Dayjs, zoneId: string, t: ReturnType<typeof useTranslation>['t']) => {
-  const diffHours = dayjs().tz(zoneId).utcOffset() / 60 - localNow.utcOffset() / 60
+  const diffHours = localNow.tz(zoneId).utcOffset() / 60 - localNow.utcOffset() / 60
   if (diffHours === 0) return t('app.social.time.same_as_local')
   const direction = diffHours > 0 ? '+' : ''
   return t('app.social.time.from_local', { hours: `${direction}${diffHours}` })
@@ -86,17 +173,23 @@ const TimeClient = () => {
   const isReady = now !== null
   const secondsToday = localNow.hour() * 3600 + localNow.minute() * 60 + localNow.second()
   const dayProgress = (secondsToday / 86400) * 100
+  const timezoneIds = useMemo(() => getSupportedTimezoneIds(), [])
 
-  const zoneEntries = useMemo(
-    () =>
-      (Object.entries(tzListMap) as [tzMap, (typeof tzListMap)[tzMap]][]).map(([key, data]) => ({
-        key,
-        ...data,
-        label: getTimezoneLabel(key, i18n.language),
-        group: getZoneGroup(data.value)
-      })),
-    [i18n.language]
-  )
+  const zoneEntries = useMemo(() => {
+    const entries: WorldZone[] = timezoneIds.map(zoneId => {
+      const label = formatWorldTimezoneLabel(zoneId, i18n.language)
+
+      return {
+        group: getZoneGroup(zoneId),
+        key: zoneId,
+        label,
+        searchable: `${label} ${zoneId}`.toLowerCase(),
+        value: zoneId
+      }
+    })
+
+    return entries.sort((a, b) => a.label.localeCompare(b.label))
+  }, [i18n.language, timezoneIds])
 
   const groupOptions = useMemo(
     () =>
@@ -115,7 +208,7 @@ const TimeClient = () => {
       if (!matchesGroup) return false
       if (!normalizedQuery) return true
 
-      return `${zone.label} ${zone.value}`.toLowerCase().includes(normalizedQuery)
+      return zone.searchable.includes(normalizedQuery)
     })
   }, [activeGroup, query, zoneEntries])
 
