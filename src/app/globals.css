@@ -755,6 +755,96 @@ code, pre, kbd, samp {
   box-shadow: var(--glass-input-shadow);
 }
 
+.glass-select-trigger {
+  background:
+    radial-gradient(circle at 10% 0%, rgba(255, 255, 255, 0.56), transparent 36%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.42), rgba(255, 255, 255, 0.18)),
+    var(--glass-input-bg);
+  backdrop-filter: blur(18px) saturate(180%);
+  -webkit-backdrop-filter: blur(18px) saturate(180%);
+  border: 1px solid var(--glass-border-strong);
+  box-shadow:
+    var(--glass-input-shadow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.54),
+    0 10px 28px rgba(31, 38, 135, 0.08);
+}
+
+.glass-select-trigger:hover {
+  border-color: var(--glass-border-strong);
+  filter: saturate(1.12);
+  box-shadow:
+    var(--glass-input-shadow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7),
+    0 14px 36px rgba(31, 38, 135, 0.12);
+}
+
+[data-theme='dark'] .glass-select-trigger {
+  background:
+    radial-gradient(circle at 10% 0%, rgba(255, 255, 255, 0.12), transparent 36%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02)),
+    var(--glass-input-bg);
+  box-shadow:
+    var(--glass-input-shadow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 10px 28px rgba(0, 0, 0, 0.28);
+}
+
+.glass-select-menu {
+  box-shadow:
+    0 28px 80px rgba(31, 38, 135, 0.24),
+    0 8px 28px rgba(0, 0, 0, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.72),
+    inset 0 -18px 48px rgba(255, 255, 255, 0.14);
+}
+
+.glass-select-option {
+  position: relative;
+  background: transparent;
+}
+
+.glass-select-option::before {
+  content: '';
+  position: absolute;
+  inset: 1px;
+  z-index: -1;
+  border-radius: inherit;
+  background:
+    radial-gradient(circle at 18% 12%, rgba(255, 255, 255, 0.5), transparent 34%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.36), rgba(255, 255, 255, 0.14));
+  opacity: 0;
+  transition: opacity var(--transition-fast), transform var(--transition-fast);
+}
+
+.glass-select-option:hover::before,
+.glass-select-option.is-active::before {
+  opacity: 0.72;
+}
+
+.glass-select-option.is-selected::before {
+  opacity: 1;
+  background:
+    radial-gradient(circle at 18% 12%, rgba(255, 255, 255, 0.58), transparent 34%),
+    linear-gradient(135deg, var(--primary-subtle), rgba(255, 255, 255, 0.26));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.44),
+    0 8px 22px rgba(0, 113, 227, 0.1);
+}
+
+[data-theme='dark'] .glass-select-option::before {
+  background:
+    radial-gradient(circle at 18% 12%, rgba(255, 255, 255, 0.14), transparent 34%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.03));
+}
+
+[data-theme='dark'] .glass-select-option.is-selected::before {
+  background:
+    radial-gradient(circle at 18% 12%, rgba(255, 255, 255, 0.16), transparent 34%),
+    linear-gradient(135deg, var(--primary-subtle), rgba(255, 255, 255, 0.06));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 8px 22px rgba(94, 158, 255, 0.08);
+}
+
 /* Mesh gradient background (CSS fallback) */
 .mesh-gradient-bg {
   background:
