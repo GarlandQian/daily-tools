@@ -845,6 +845,37 @@ code, pre, kbd, samp {
     0 8px 22px rgba(94, 158, 255, 0.08);
 }
 
+.glass-color-picker {
+  background:
+    radial-gradient(circle at 12% 0%, rgba(255, 255, 255, 0.5), transparent 36%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.36), rgba(255, 255, 255, 0.14)),
+    var(--glass-input-bg);
+  border: 1px solid var(--glass-border-strong);
+  box-shadow:
+    var(--glass-input-shadow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.48),
+    0 10px 28px rgba(31, 38, 135, 0.08);
+}
+
+.glass-color-picker:hover {
+  filter: saturate(1.16);
+  box-shadow:
+    var(--glass-input-shadow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.68),
+    0 14px 36px rgba(31, 38, 135, 0.12);
+}
+
+[data-theme='dark'] .glass-color-picker {
+  background:
+    radial-gradient(circle at 12% 0%, rgba(255, 255, 255, 0.12), transparent 36%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02)),
+    var(--glass-input-bg);
+  box-shadow:
+    var(--glass-input-shadow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 10px 28px rgba(0, 0, 0, 0.28);
+}
+
 /* Mesh gradient background (CSS fallback) */
 .mesh-gradient-bg {
   background:

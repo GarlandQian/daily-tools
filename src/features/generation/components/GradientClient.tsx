@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { ColorPicker } from '@/components/ui/color-picker'
 import { Slider } from '@/components/ui/slider'
 import { useCopy } from '@/hooks/useCopy'
 
@@ -220,11 +221,10 @@ const GradientClient = () => {
                 key={stop.id}
                 className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4"
               >
-                <input
-                  type="color"
+                <ColorPicker
                   value={stop.color}
-                  onChange={e => updateStopColor(stop.id, e.target.value)}
-                  className="h-11 w-full shrink-0 cursor-pointer rounded-lg border border-[var(--border-base)] bg-transparent p-1 sm:w-12"
+                  onChange={value => updateStopColor(stop.id, value)}
+                  className="shrink-0 sm:w-44"
                 />
                 <div className="flex-1">
                   <Slider

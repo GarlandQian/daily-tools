@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
+import { ColorPicker } from '@/components/ui/color-picker'
 import { Label } from '@/components/ui/label'
 import { Slider } from '@/components/ui/slider'
 import { useCopy } from '@/hooks/useCopy'
@@ -197,11 +198,10 @@ const ShadowClient = () => {
             {/* Color picker */}
             <div className="flex flex-col gap-3">
               <Label>{t('app.generation.shadow.color')}</Label>
-              <input
-                type="color"
+              <ColorPicker
                 value={config.color}
-                onChange={e => updateConfig('color', e.target.value)}
-                className="h-11 w-16 cursor-pointer rounded-lg border border-[var(--border-base)] bg-transparent p-1"
+                onChange={value => updateConfig('color', value)}
+                className="max-w-48"
               />
             </div>
           </div>
