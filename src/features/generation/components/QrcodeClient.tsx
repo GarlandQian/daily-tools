@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { ColorPicker } from '@/components/ui/color-picker'
 import { Label } from '@/components/ui/label'
 import { Slider } from '@/components/ui/slider'
 import { Textarea } from '@/components/ui/textarea'
@@ -78,22 +79,18 @@ const QrcodeClient = () => {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-3">
                   <Label htmlFor="fgColor">{t('app.generation.qrcode.fgColor')}</Label>
-                  <input
+                  <ColorPicker
                     id="fgColor"
-                    type="color"
                     value={formData.fgColor}
-                    onChange={e => setFormData(prev => ({ ...prev, fgColor: e.target.value }))}
-                    className="h-11 w-full cursor-pointer rounded-lg p-1.5 glass-input"
+                    onChange={value => setFormData(prev => ({ ...prev, fgColor: value }))}
                   />
                 </div>
                 <div className="space-y-3">
                   <Label htmlFor="bgColor">{t('app.generation.qrcode.bgColor')}</Label>
-                  <input
+                  <ColorPicker
                     id="bgColor"
-                    type="color"
                     value={formData.bgColor}
-                    onChange={e => setFormData(prev => ({ ...prev, bgColor: e.target.value }))}
-                    className="h-11 w-full cursor-pointer rounded-lg p-1.5 glass-input"
+                    onChange={value => setFormData(prev => ({ ...prev, bgColor: value }))}
                   />
                 </div>
               </div>
