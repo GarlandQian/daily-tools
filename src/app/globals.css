@@ -16,7 +16,7 @@
 
   --surface-base: rgba(255, 255, 255, 0.55);
   --surface-raised: rgba(255, 255, 255, 0.7);
-  --surface-popover: #f8faff;
+  --surface-popover: rgba(248, 250, 255, 0.38);
 
   --border-subtle: rgba(255, 255, 255, 0.3);
   --border-base: rgba(255, 255, 255, 0.4);
@@ -136,7 +136,7 @@
 
   --surface-base: rgba(30, 30, 50, 0.6);
   --surface-raised: rgba(40, 40, 65, 0.7);
-  --surface-popover: #161624;
+  --surface-popover: rgba(18, 18, 34, 0.54);
 
   --border-subtle: rgba(255, 255, 255, 0.06);
   --border-base: rgba(255, 255, 255, 0.1);
@@ -377,6 +377,7 @@ code, pre, kbd, samp {
   position: relative;
   isolation: isolate;
   background: var(--glass-bg);
+  background-clip: padding-box;
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   border: 1px solid var(--glass-border);
@@ -391,6 +392,26 @@ code, pre, kbd, samp {
     border-color var(--transition-base),
     background-color var(--transition-base),
     filter var(--transition-base);
+}
+
+/* Keep liquid glass highlights inside rounded surfaces unless the component explicitly scrolls. */
+:where(.glass-panel, .glass-float, .glass-popover):not(
+    :where(
+        .overflow-visible,
+        .overflow-auto,
+        .overflow-scroll,
+        .overflow-x-auto,
+        .overflow-y-auto,
+        .overflow-x-scroll,
+        .overflow-y-scroll
+      )
+  ) {
+  overflow: hidden;
+}
+
+.glass-clip {
+  overflow: hidden;
+  background-clip: padding-box;
 }
 
 /* Animated flowing gradient border light */
@@ -423,8 +444,7 @@ code, pre, kbd, samp {
   opacity: 0.8;
 }
 
-.glass-panel-strong::before,
-.glass-popover::before {
+.glass-panel-strong::before {
   opacity: 0;
 }
 
@@ -473,16 +493,90 @@ code, pre, kbd, samp {
 }
 
 .glass-popover {
-  background: var(--surface-popover);
+  background:
+    radial-gradient(circle at 18% 0%, rgba(255, 255, 255, 0.86), transparent 28%),
+    radial-gradient(circle at 95% 20%, rgba(183, 148, 244, 0.34), transparent 32%),
+    radial-gradient(circle at 15% 92%, rgba(78, 205, 196, 0.22), transparent 34%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.58), rgba(255, 255, 255, 0.26) 44%, rgba(255, 255, 255, 0.18)),
+    var(--surface-popover);
+  backdrop-filter: blur(34px) saturate(220%) brightness(1.05);
+  -webkit-backdrop-filter: blur(34px) saturate(220%) brightness(1.05);
+  border-color: rgba(255, 255, 255, 0.68);
   transform: none;
   box-shadow:
-    0 20px 64px rgba(0, 0, 0, 0.2),
-    0 8px 24px rgba(0, 0, 0, 0.14),
-    var(--glass-inner-shadow);
+    0 28px 80px rgba(31, 38, 135, 0.24),
+    0 8px 28px rgba(0, 0, 0, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.72),
+    inset 0 -18px 48px rgba(255, 255, 255, 0.14);
+}
+
+[data-theme='dark'] .glass-popover {
+  background:
+    radial-gradient(circle at 16% 0%, rgba(255, 255, 255, 0.18), transparent 30%),
+    radial-gradient(circle at 94% 16%, rgba(94, 158, 255, 0.22), transparent 34%),
+    radial-gradient(circle at 14% 92%, rgba(78, 205, 196, 0.12), transparent 34%),
+    linear-gradient(135deg, rgba(42, 42, 70, 0.72), rgba(22, 22, 42, 0.42) 48%, rgba(10, 10, 22, 0.34)),
+    var(--surface-popover);
+  border-color: rgba(255, 255, 255, 0.18);
+  box-shadow:
+    0 28px 80px rgba(0, 0, 0, 0.52),
+    0 8px 28px rgba(0, 0, 0, 0.36),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 -18px 48px rgba(255, 255, 255, 0.04);
+}
+
+.glass-popover::before {
+  background: conic-gradient(
+    from var(--border-angle, 0deg),
+    transparent 8%,
+    rgba(255, 255, 255, 0.82) 18%,
+    rgba(0, 113, 227, 0.22) 32%,
+    transparent 48%,
+    rgba(255, 255, 255, 0.45) 62%,
+    transparent 78%
+  );
+  opacity: 0.5;
+}
+
+[data-theme='dark'] .glass-popover::before {
+  opacity: 0.42;
+}
+
+.glass-popover::after {
+  content: '';
+  position: absolute;
+  inset: -28%;
+  border-radius: inherit;
+  background:
+    radial-gradient(circle at 24% 24%, rgba(255, 255, 255, 0.34), transparent 18%),
+    radial-gradient(circle at 78% 20%, rgba(0, 113, 227, 0.16), transparent 22%),
+    linear-gradient(116deg, transparent 34%, rgba(255, 255, 255, 0.24) 49%, transparent 64%);
+  mix-blend-mode: screen;
+  opacity: 0.5;
+  pointer-events: none;
+  z-index: 0;
+  transform: translate3d(-6%, -4%, 0) rotate(0deg);
+  animation: popoverLiquidDrift 12s ease-in-out infinite;
+}
+
+[data-theme='dark'] .glass-popover::after {
+  opacity: 0.3;
 }
 
 .glass-popover:hover {
   transform: none;
+}
+
+@keyframes popoverLiquidDrift {
+  0%, 100% {
+    transform: translate3d(-6%, -4%, 0) rotate(0deg) scale(1);
+  }
+  45% {
+    transform: translate3d(7%, 5%, 0) rotate(3deg) scale(1.04);
+  }
+  72% {
+    transform: translate3d(-2%, 9%, 0) rotate(-2deg) scale(0.98);
+  }
 }
 
 /* Specular highlight on glass panels */
