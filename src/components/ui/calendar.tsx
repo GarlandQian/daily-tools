@@ -36,7 +36,7 @@ function Calendar({
         ...formatters
       }}
       className={cn(
-        'glass-panel glass-panel-strong glass-popover w-[min(20rem,calc(100vw-2rem))] rounded-xl p-3 text-[var(--text-primary)]',
+        'glass-panel glass-panel-strong glass-popover glass-clip w-[min(20rem,calc(100vw-2rem))] rounded-2xl p-3.5 text-[var(--text-primary)]',
         className
       )}
       classNames={{

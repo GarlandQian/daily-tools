@@ -73,19 +73,18 @@ export function DatePicker({ value, onChange, placeholder, disabled, className }
       ? createPortal(
           <>
             <div className="fixed inset-0 z-[999]" onClick={() => setOpen(false)} />
-            <div
-              className="fixed z-[1000] max-h-[calc(100vh-2rem)] overflow-auto"
-              style={popoverStyle}
-            >
-              <Calendar
-                mode="single"
-                selected={value}
-                onSelect={date => {
-                  onChange?.(date)
-                  setOpen(false)
-                }}
-                initialFocus
-              />
+            <div className="fixed z-[1000] rounded-2xl bg-transparent" style={popoverStyle}>
+              <div className="glass-clip max-h-[calc(100vh-2rem)] overflow-auto rounded-2xl">
+                <Calendar
+                  mode="single"
+                  selected={value}
+                  onSelect={date => {
+                    onChange?.(date)
+                    setOpen(false)
+                  }}
+                  initialFocus
+                />
+              </div>
             </div>
           </>,
           document.body

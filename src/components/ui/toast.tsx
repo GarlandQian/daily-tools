@@ -62,7 +62,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
               exit={{ opacity: 0, x: 100, scale: 0.95 }}
               transition={{ type: 'spring', stiffness: 300, damping: 25 }}
               className={cn(
-                'glass-panel rounded-lg px-4 py-3 shadow-lg min-w-[300px] max-w-[400px] pointer-events-auto',
+                'glass-panel glass-clip rounded-lg px-4 py-3 shadow-lg min-w-[300px] max-w-[400px] pointer-events-auto',
                 'flex items-center gap-3 border',
                 toast.type === 'success' && 'border-[var(--success)] bg-[var(--success-subtle)]',
                 toast.type === 'error' && 'border-[var(--error)] bg-[var(--error-subtle)]',
