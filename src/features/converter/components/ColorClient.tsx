@@ -156,14 +156,14 @@ const ColorClient = () => {
   const hslStr = `hsl(${colors.hsl.h}, ${colors.hsl.s}%, ${colors.hsl.l}%)`
 
   return (
-    <div className="flex size-full flex-col gap-5">
-      <Card>
-        <CardHeader>
+    <div className="flex w-full min-w-0 max-w-full flex-col gap-6 overflow-x-hidden pb-1">
+      <Card className="rounded-3xl">
+        <CardHeader className="pb-5">
           <CardTitle>{t('app.converter.color')}</CardTitle>
         </CardHeader>
-        <CardContent>
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-            <label className="relative flex h-16 w-16 shrink-0 cursor-pointer overflow-hidden rounded-xl border border-[var(--border-base)]">
+        <CardContent className="pb-6">
+          <div className="flex min-w-0 flex-col gap-6 sm:flex-row sm:items-end">
+            <label className="relative flex h-24 w-24 shrink-0 cursor-pointer overflow-hidden rounded-3xl border border-[var(--border-base)] shadow-[inset_0_1px_0_rgba(255,255,255,0.45),0_14px_34px_rgba(0,0,0,0.10)]">
               <input
                 type="color"
                 value={colors.hex}
@@ -174,7 +174,7 @@ const ColorClient = () => {
               <span className="h-full w-full" style={{ backgroundColor: colors.hex }} />
             </label>
 
-            <div className="grid flex-1 gap-3">
+            <div className="grid min-w-0 flex-1 gap-3">
               <Label htmlFor="color-hex-input" className="flex items-center gap-2">
                 <ArrowLeftRight className="h-4 w-4" />
                 HEX
@@ -190,23 +190,24 @@ const ColorClient = () => {
         </CardContent>
       </Card>
 
-      <div className="grid flex-1 gap-5 lg:grid-cols-3">
-        <Card>
-          <CardHeader>
+      <div className="grid min-w-0 gap-6 lg:grid-cols-3">
+        <Card className="rounded-3xl">
+          <CardHeader className="pb-5">
             <CardTitle>HEX</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="flex flex-col gap-5 pb-6">
             <Input
               value={colors.hex}
               onChange={event => handleHexChange(event.target.value)}
               className="font-mono"
             />
-            <div className="flex items-center justify-between gap-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-muted)] px-3 py-2">
-              <code className="text-sm text-[var(--text-primary)]">{hexStr}</code>
+            <div className="flex min-h-14 items-center justify-between gap-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--glass-input-bg)] px-4 py-3">
+              <code className="min-w-0 truncate text-sm text-[var(--text-primary)]">{hexStr}</code>
               <Button
                 type="button"
                 variant="ghost"
                 size="icon"
+                className="h-9 w-9 shrink-0 rounded-xl"
                 onClick={() => copyToClipboard(hexStr)}
               >
                 <Copy className="h-4 w-4" />
@@ -215,14 +216,14 @@ const ColorClient = () => {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
+        <Card className="rounded-3xl">
+          <CardHeader className="pb-5">
             <CardTitle>RGB</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-3 gap-3">
+          <CardContent className="flex flex-col gap-5 pb-6">
+            <div className="grid min-w-0 grid-cols-3 gap-4">
               {(['r', 'g', 'b'] as const).map(key => (
-                <div key={key} className="space-y-3">
+                <div key={key} className="flex min-w-0 flex-col gap-3">
                   <Label htmlFor={`color-rgb-${key}`}>{key.toUpperCase()}</Label>
                   <Input
                     id={`color-rgb-${key}`}
@@ -236,12 +237,13 @@ const ColorClient = () => {
                 </div>
               ))}
             </div>
-            <div className="flex items-center justify-between gap-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-muted)] px-3 py-2">
-              <code className="text-sm text-[var(--text-primary)]">{rgbStr}</code>
+            <div className="flex min-h-14 items-center justify-between gap-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--glass-input-bg)] px-4 py-3">
+              <code className="min-w-0 truncate text-sm text-[var(--text-primary)]">{rgbStr}</code>
               <Button
                 type="button"
                 variant="ghost"
                 size="icon"
+                className="h-9 w-9 shrink-0 rounded-xl"
                 onClick={() => copyToClipboard(rgbStr)}
               >
                 <Copy className="h-4 w-4" />
@@ -250,14 +252,14 @@ const ColorClient = () => {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
+        <Card className="rounded-3xl">
+          <CardHeader className="pb-5">
             <CardTitle>HSL</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-3 gap-3">
+          <CardContent className="flex flex-col gap-5 pb-6">
+            <div className="grid min-w-0 grid-cols-3 gap-4">
               {(['h', 's', 'l'] as const).map(key => (
-                <div key={key} className="space-y-3">
+                <div key={key} className="flex min-w-0 flex-col gap-3">
                   <Label htmlFor={`color-hsl-${key}`}>{key.toUpperCase()}</Label>
                   <Input
                     id={`color-hsl-${key}`}
@@ -271,12 +273,13 @@ const ColorClient = () => {
                 </div>
               ))}
             </div>
-            <div className="flex items-center justify-between gap-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-muted)] px-3 py-2">
-              <code className="text-sm text-[var(--text-primary)]">{hslStr}</code>
+            <div className="flex min-h-14 items-center justify-between gap-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--glass-input-bg)] px-4 py-3">
+              <code className="min-w-0 truncate text-sm text-[var(--text-primary)]">{hslStr}</code>
               <Button
                 type="button"
                 variant="ghost"
                 size="icon"
+                className="h-9 w-9 shrink-0 rounded-xl"
                 onClick={() => copyToClipboard(hslStr)}
               >
                 <Copy className="h-4 w-4" />

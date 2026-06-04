@@ -342,7 +342,7 @@ const TimeClient = () => {
         })}
       </section>
 
-      <section className="glass-panel glass-prism flex min-w-0 flex-col overflow-hidden rounded-2xl">
+      <section className="glass-panel glass-panel-static glass-prism flex min-w-0 flex-col overflow-hidden rounded-2xl">
         <div className="flex flex-col gap-4 border-b border-[var(--glass-border)] p-5 md:flex-row md:items-center md:justify-between">
           <div>
             <h3 className="text-base font-semibold text-[var(--text-primary)]">
