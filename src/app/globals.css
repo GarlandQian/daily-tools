@@ -460,6 +460,10 @@ code, pre, kbd, samp {
     inset 0 0 28px rgba(255, 255, 255, 0.06);
 }
 
+.glass-panel.glass-panel-static:hover {
+  transform: none;
+}
+
 .glass-panel-strong {
   background: var(--glass-bg-active);
   backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-saturate));
