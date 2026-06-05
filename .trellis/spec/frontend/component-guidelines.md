@@ -75,6 +75,7 @@ export default function YamlPage() {
 - Select controls use the shared headless `Select` component. Keep the native `<select>` hidden for form compatibility, and render the visible control as a liquid-glass trigger plus portal listbox so the menu can escape clipped cards.
 - Color inputs use the shared `ColorPicker` component. Keep the native color input hidden inside a liquid-glass swatch control with a visible color preview and HEX value instead of exposing the browser's raw color input.
 - Inspector-style tools should keep the raw input as the primary state, derive parsed summaries with `useMemo`, and expose practical affordances such as current/sample input, copy actions, empty states, compact signal badges, and raw JSON output.
+- Local uploaded image previews should use `next/image` with fixed dimensions and `unoptimized` when the source is a browser Data URL. This satisfies Next lint while avoiding remote image optimization for local-only previews.
 
 ---
 
@@ -95,3 +96,4 @@ export default function YamlPage() {
 - Do not expose native browser select dropdowns in tool forms. They cannot match the liquid-glass visual system and their option panels are not consistently styleable across browsers.
 - Do not expose native browser color inputs as visible long rectangles. They look inconsistent across browsers and break the liquid-glass control language.
 - Do not store duplicated parser result state when it can be derived from the current input. Duplicated parse state drifts easily when sample/reset/clear actions are added.
+- Do not use raw `<img>` for local upload previews in Next client tools. Prefer `next/image` with `unoptimized` for Data URL previews so lint stays clean without requiring external loaders.
