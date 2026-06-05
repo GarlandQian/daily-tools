@@ -82,7 +82,7 @@ const CronClient = () => {
 
   const handleCopy = useCallback(() => {
     navigator.clipboard.writeText(cronExpression)
-    toast.success(t('app.social.retires.copy_success'))
+    toast.success(t('public.copy.success'))
   }, [cronExpression, toast, t])
 
   const handleReset = useCallback(() => {

@@ -5,7 +5,7 @@ import React, { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
@@ -16,6 +16,43 @@ interface QueryParam {
   key: string
   value: string
   id: string
+}
+
+const makeParamId = () => globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)
+
+const normalizeUrlInput = (value: string) => {
+  const trimmed = value.trim()
+  if (!trimmed) return ''
+  if (/^[a-z][a-z\d+.-]*:/i.test(trimmed)) return trimmed
+  if (trimmed.startsWith('//')) return `https:${trimmed}`
+  return `https://${trimmed}`
+}
+
+const decodeUrlSafely = (value: string) => {
+  try {
+    return decodeURIComponent(value)
+  } catch {
+    return value
+  }
+}
+
+const toQueryJson = (params: QueryParam[]) => {
+  const record: Record<string, string | string[]> = {}
+
+  params.forEach(param => {
+    if (!param.key) return
+
+    const current = record[param.key]
+    if (Array.isArray(current)) {
+      current.push(param.value)
+    } else if (current !== undefined) {
+      record[param.key] = [current, param.value]
+    } else {
+      record[param.key] = param.value
+    }
+  })
+
+  return JSON.stringify(record, null, 2)
 }
 
 const UrlClient = () => {
@@ -34,15 +71,16 @@ const UrlClient = () => {
     if (!inputUrl.trim()) return
 
     try {
-      const url = new URL(inputUrl)
+      const url = new URL(normalizeUrlInput(inputUrl))
       setProtocol(url.protocol)
       setHost(url.host)
       setPathname(url.pathname)
       setHash(url.hash)
+      setInputUrl(url.toString())
 
       const params: QueryParam[] = []
       url.searchParams.forEach((value, key) => {
-        params.push({ key, value, id: Math.random().toString(36).substring(2, 11) })
+        params.push({ key, value, id: makeParamId() })
       })
       setQueryParams(params)
       setError(null)
@@ -74,19 +112,50 @@ const UrlClient = () => {
     }
   }, [protocol, host, pathname, hash, queryParams])
 
+  const decodedUrl = useMemo(() => {
+    if (!constructedUrl) return ''
+    return decodeUrlSafely(constructedUrl)
+  }, [constructedUrl])
+
+  const queryJson = useMemo(() => toQueryJson(queryParams), [queryParams])
+
+  const urlSummary = useMemo(() => {
+    if (!constructedUrl) return null
+
+    try {
+      const url = new URL(constructedUrl)
+      return {
+        origin: url.origin,
+        queryCount: queryParams.filter(param => param.key).length,
+        pathDepth: url.pathname.split('/').filter(Boolean).length,
+        hasHash: Boolean(url.hash)
+      }
+    } catch {
+      return null
+    }
+  }, [constructedUrl, queryParams])
+
   const handleParamChange = (id: string, field: 'key' | 'value', value: string) => {
     setQueryParams(prev => prev.map(p => (p.id === id ? { ...p, [field]: value } : p)))
   }
 
   const handleAddParam = () => {
-    setQueryParams(prev => [
-      ...prev,
-      { key: '', value: '', id: Math.random().toString(36).substring(2, 11) }
-    ])
+    setQueryParams(prev => [...prev, { key: '', value: '', id: makeParamId() }])
   }
 
   const handleDeleteParam = (id: string) => {
     setQueryParams(prev => prev.filter(p => p.id !== id))
+  }
+
+  const handleSortParams = () => {
+    setQueryParams(prev =>
+      [...prev].sort((a, b) => a.key.localeCompare(b.key) || a.value.localeCompare(b.value))
+    )
+  }
+
+  const handleCopyCurl = () => {
+    if (!constructedUrl) return
+    void copy(`curl ${JSON.stringify(constructedUrl)}`)
   }
 
   const handleFromCurrentPage = () => {
@@ -109,11 +178,14 @@ const UrlClient = () => {
     <div className="flex flex-col gap-5 size-full">
       <Card>
         <CardHeader>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <CardTitle className="flex items-center gap-2">
-              <Link className="w-5 h-5 text-[var(--primary)]" />
-              {t('app.format.url')}
-            </CardTitle>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="space-y-2">
+              <CardTitle className="flex items-center gap-2">
+                <Link className="w-5 h-5 text-[var(--primary)]" />
+                {t('app.format.url')}
+              </CardTitle>
+              <CardDescription>{t('app.format.url.description')}</CardDescription>
+            </div>
             <div className="flex flex-wrap gap-3">
               <Button
                 size="sm"
@@ -133,7 +205,7 @@ const UrlClient = () => {
             <Textarea
               value={inputUrl}
               onChange={e => setInputUrl(e.target.value)}
-              placeholder="https://example.com/path?query=123"
+              placeholder="example.com/path?query=123"
               rows={2}
               className="flex-1 font-mono resize-none"
             />
@@ -205,16 +277,35 @@ const UrlClient = () => {
 
         <Card>
           <CardHeader>
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <CardTitle>{t('app.format.url.query_params')}</CardTitle>
-              <Button
-                size="sm"
-                variant="outline"
-                icon={<Plus className="w-4 h-4" />}
-                onClick={handleAddParam}
-              >
-                {t('public.add')}
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleSortParams}
+                  disabled={!queryParams.length}
+                >
+                  {t('app.format.url.sort_query')}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  icon={<Copy className="w-4 h-4" />}
+                  onClick={() => void copy(queryJson)}
+                  disabled={!queryParams.length}
+                >
+                  JSON
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  icon={<Plus className="w-4 h-4" />}
+                  onClick={handleAddParam}
+                >
+                  {t('public.add')}
+                </Button>
+              </div>
             </div>
           </CardHeader>
           <CardContent>
@@ -255,28 +346,82 @@ const UrlClient = () => {
 
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <CardTitle>{t('app.format.url.constructed')}</CardTitle>
-            <Button
-              size="sm"
-              icon={<Copy className="w-4 h-4" />}
-              onClick={() => copy(constructedUrl)}
-              disabled={!constructedUrl}
-            >
-              {t('public.copy')}
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                icon={<Copy className="w-4 h-4" />}
+                onClick={() => void copy(constructedUrl)}
+                disabled={!constructedUrl}
+              >
+                {t('public.copy')}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => void copy(decodedUrl)}
+                disabled={!decodedUrl}
+              >
+                {t('app.format.url.copy_decoded')}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleCopyCurl}
+                disabled={!constructedUrl}
+              >
+                cURL
+              </Button>
+            </div>
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
+          {urlSummary && (
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+              <UrlMetric label={t('app.format.url.origin')} value={urlSummary.origin} />
+              <UrlMetric
+                label={t('app.format.url.query_count')}
+                value={String(urlSummary.queryCount)}
+              />
+              <UrlMetric
+                label={t('app.format.url.path_depth')}
+                value={String(urlSummary.pathDepth)}
+              />
+              <UrlMetric
+                label={t('app.format.url.has_hash')}
+                value={urlSummary.hasHash ? t('public.yes') : t('public.no')}
+              />
+            </div>
+          )}
           <div className="glass-input rounded-lg p-3 font-mono text-sm break-all">
             {constructedUrl || (
               <span className="text-[var(--text-tertiary)]">{t('app.format.url.waiting')}</span>
             )}
           </div>
+          {decodedUrl && decodedUrl !== constructedUrl && (
+            <div className="glass-panel glass-clip rounded-lg p-3">
+              <div className="text-xs font-medium text-[var(--text-tertiary)]">
+                {t('app.format.url.decoded')}
+              </div>
+              <div className="mt-2 break-all font-mono text-sm text-[var(--text-primary)]">
+                {decodedUrl}
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
   )
 }
+
+const UrlMetric = ({ label, value }: { label: string; value: string }) => (
+  <div className="glass-input rounded-2xl p-3">
+    <div className="text-xs text-[var(--text-tertiary)]">{label}</div>
+    <div className="mt-1 truncate font-mono text-sm font-semibold text-[var(--text-primary)]">
+      {value}
+    </div>
+  </div>
+)
 
 export default UrlClient

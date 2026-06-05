@@ -79,6 +79,20 @@ const QR_PRESETS = [
   {
     key: 'wifi',
     value: 'WIFI:T:WPA;S:DailyTools;P:password123;;'
+  },
+  {
+    key: 'vcard',
+    value:
+      'BEGIN:VCARD\nVERSION:3.0\nFN:Daily Tools\nORG:Daily Tools\nEMAIL:hello@example.com\nURL:https://daily-tools.vercel.app\nEND:VCARD'
+  },
+  {
+    key: 'geo',
+    value: 'geo:31.2304,121.4737?q=Shanghai'
+  },
+  {
+    key: 'event',
+    value:
+      'BEGIN:VEVENT\nSUMMARY:Daily Tools Demo\nDTSTART:20260605T090000Z\nDTEND:20260605T093000Z\nLOCATION:Online\nEND:VEVENT'
   }
 ] as const
 
@@ -118,6 +132,21 @@ const getPayloadDensity = (bytes: number) => {
   return 'dense'
 }
 
+const getPayloadType = (value: string) => {
+  const trimmed = value.trim()
+  const lower = trimmed.toLowerCase()
+
+  if (/^https?:\/\//i.test(trimmed)) return 'url'
+  if (lower.startsWith('mailto:')) return 'email'
+  if (lower.startsWith('tel:')) return 'phone'
+  if (lower.startsWith('sms:')) return 'sms'
+  if (lower.startsWith('wifi:')) return 'wifi'
+  if (lower.startsWith('geo:')) return 'geo'
+  if (lower.includes('begin:vcard')) return 'vcard'
+  if (lower.includes('begin:vevent')) return 'event'
+  return 'text'
+}
+
 const serializeSvg = (svg: SVGSVGElement) => new XMLSerializer().serializeToString(svg)
 
 const QrcodeClient = () => {
@@ -132,6 +161,7 @@ const QrcodeClient = () => {
   const hasContent = qrValue.length > 0
   const payloadBytes = useMemo(() => new TextEncoder().encode(qrValue).length, [qrValue])
   const payloadDensity = getPayloadDensity(payloadBytes)
+  const payloadType = getPayloadType(qrValue)
   const safeFileName = sanitizeFileName(formData.fileName)
   const bgColor = formData.transparentBg ? 'transparent' : formData.bgColor
   const logoPixelSize = Math.round(formData.size * (formData.logoSize / 100))
@@ -190,6 +220,11 @@ const QrcodeClient = () => {
 
       if (!file.type.startsWith('image/')) {
         toast.warning(t('app.generation.qrcode.logo_invalid'))
+        return
+      }
+
+      if (file.size > MAX_LOGO_SIZE) {
+        toast.warning(t('app.generation.qrcode.logo_too_large'))
         return
       }
 
@@ -290,6 +325,20 @@ const QrcodeClient = () => {
     }
   }, [hasContent, toast, t])
 
+  const handleCopyPayload = useCallback(async () => {
+    if (!hasContent) {
+      toast.warning(t('app.generation.qrcode.empty'))
+      return
+    }
+
+    try {
+      await navigator.clipboard.writeText(qrValue)
+      toast.success(t('public.copy.success'))
+    } catch {
+      toast.error(t('public.error'))
+    }
+  }, [hasContent, qrValue, toast, t])
+
   return (
     <div className="flex size-full flex-col gap-5">
       <Card>
@@ -338,7 +387,7 @@ const QrcodeClient = () => {
                 ))}
               </div>
 
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 <div className="glass-panel glass-clip rounded-2xl p-4">
                   <div className="text-xs font-medium text-[var(--text-secondary)]">
                     {t('app.generation.qrcode.bytes')}
@@ -353,6 +402,14 @@ const QrcodeClient = () => {
                   </div>
                   <div className="mt-2 text-sm font-semibold text-[var(--text-primary)]">
                     {t(`app.generation.qrcode.density.${payloadDensity}`)}
+                  </div>
+                </div>
+                <div className="glass-panel glass-clip rounded-2xl p-4">
+                  <div className="text-xs font-medium text-[var(--text-secondary)]">
+                    {t('app.generation.qrcode.payload_type')}
+                  </div>
+                  <div className="mt-2 text-sm font-semibold text-[var(--text-primary)]">
+                    {t(`app.generation.qrcode.type.${payloadType}`)}
                   </div>
                 </div>
                 <div className="glass-panel glass-clip rounded-2xl p-4">
@@ -470,7 +527,7 @@ const QrcodeClient = () => {
                 </Button>
               </div>
 
-              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+              <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
                 <Button
                   type="button"
                   variant="primary"
@@ -506,6 +563,15 @@ const QrcodeClient = () => {
                   onClick={handleCopySvg}
                 >
                   {t('app.generation.qrcode.copy_svg')}
+                </Button>
+                <Button
+                  type="button"
+                  variant="default"
+                  icon={<Copy className="h-4 w-4" />}
+                  disabled={!hasContent}
+                  onClick={handleCopyPayload}
+                >
+                  {t('app.generation.qrcode.copy_payload')}
                 </Button>
               </div>
             </div>

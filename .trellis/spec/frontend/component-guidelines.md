@@ -76,6 +76,8 @@ export default function YamlPage() {
 - Color inputs use the shared `ColorPicker` component. Keep the native color input hidden inside a liquid-glass swatch control with a visible color preview and HEX value instead of exposing the browser's raw color input.
 - Inspector-style tools should keep the raw input as the primary state, derive parsed summaries with `useMemo`, and expose practical affordances such as current/sample input, copy actions, empty states, compact signal badges, and raw JSON output.
 - Local uploaded image previews should use `next/image` with fixed dimensions and `unoptimized` when the source is a browser Data URL. This satisfies Next lint while avoiding remote image optimization for local-only previews.
+- Shared copy actions should use the global `public.copy.success` translation, preferably through `useCopy()`. Do not reuse page-specific success text such as `app.social.retires.copy_success` outside its owning feature.
+- Numeric converter tools that operate on integers should avoid `parseInt` for user-visible base conversion results. Use `BigInt()` plus explicit formatting so large values do not silently lose precision.
 
 ---
 
@@ -97,3 +99,4 @@ export default function YamlPage() {
 - Do not expose native browser color inputs as visible long rectangles. They look inconsistent across browsers and break the liquid-glass control language.
 - Do not store duplicated parser result state when it can be derived from the current input. Duplicated parse state drifts easily when sample/reset/clear actions are added.
 - Do not use raw `<img>` for local upload previews in Next client tools. Prefer `next/image` with `unoptimized` for Data URL previews so lint stays clean without requiring external loaders.
+- Do not run `pnpm build` against the same `.next` directory while relying on an already-running `next dev` process to stay healthy. The production build can leave the dev server with stale or corrupted HMR/cache state; restart `next dev` after build verification.

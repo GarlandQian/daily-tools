@@ -66,7 +66,7 @@ const JsonClient = () => {
   const handleCopy = useCallback(() => {
     if (!output) return
     navigator.clipboard.writeText(output)
-    toast.success(t('app.social.retires.copy_success'))
+    toast.success(t('public.copy.success'))
   }, [output, toast, t])
 
   const handleClear = useCallback(() => {

@@ -66,7 +66,7 @@ const UuidClient = () => {
   const handleCopy = () => {
     if (!result) return
     navigator.clipboard.writeText(result)
-    toast.success(t('app.social.retires.copy_success'))
+    toast.success(t('public.copy.success'))
   }
 
   return (
