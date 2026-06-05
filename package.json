@@ -67,7 +67,8 @@
     "three-stdlib": "^2.36.1",
     "ua-parser-js": "^2.0.8",
     "uuid": "^13.0.0",
-    "xml-formatter": "^3.6.7"
+    "xml-formatter": "^3.6.7",
+    "yaml": "^2.9.0"
   },
   "devDependencies": {
     "@commitlint/cli": "^20.2.0",

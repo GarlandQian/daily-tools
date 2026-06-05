@@ -24,7 +24,35 @@ Questions to answer:
 
 <!-- Standard structure of a component file -->
 
-(To be filled by the team)
+### Convention: Tool Page Additions
+
+**What**: A new tool page must include all of these project touchpoints:
+
+- `src/app/[locale]/(tools)/<category>/<tool>/page.tsx` with static `metadata`
+- `src/features/<category>/components/<Tool>Client.tsx` for the interactive client UI
+- `src/config/menus.tsx` entry so the tool is discoverable in navigation
+- Matching `app.<category>.<tool>` title and feature-specific keys in both `src/locales/en.json` and `src/locales/cn.json`
+- `package.json` and `pnpm-lock.yaml` updates when a parser or domain library is needed
+
+**Why**: Tool pages are routed, navigated, translated, and statically built through separate layers. Missing one layer creates invisible pages, untranslated menu labels, or Vercel build drift.
+
+**Example**:
+
+```tsx
+// src/app/[locale]/(tools)/format/yaml/page.tsx
+import type { Metadata } from 'next'
+
+import YamlClient from '@/features/format/components/YamlClient'
+
+export const metadata: Metadata = {
+  title: 'YAML Formatter - Daily Tools',
+  description: 'Format, minify, validate, and convert YAML and JSON'
+}
+
+export default function YamlPage() {
+  return <YamlClient />
+}
+```
 
 ---
 

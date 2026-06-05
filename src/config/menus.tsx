@@ -1,12 +1,4 @@
-import {
-  Barcode,
-  FileText,
-  Hash,
-  Palette,
-  Shield,
-  User,
-  Video
-} from 'lucide-react'
+import { Barcode, FileText, Hash, Palette, Shield, User, Video } from 'lucide-react'
 import React from 'react'
 
 export interface MenuConfig {
@@ -62,9 +54,11 @@ export const menus: MenuConfig[] = [
     icon: <Barcode className="w-4 h-4" />,
     children: [
       { path: '/generation/uuid' },
+      { path: '/generation/token' },
       { path: '/generation/qrcode' },
       { path: '/generation/password' },
       { path: '/generation/cron' },
+      { path: '/generation/clamp' },
       { path: '/generation/shadow' },
       { path: '/generation/lorem' },
       { path: '/generation/gradient' }
@@ -75,6 +69,7 @@ export const menus: MenuConfig[] = [
     icon: <FileText className="w-4 h-4" />,
     children: [
       { path: '/format/json' },
+      { path: '/format/yaml' },
       { path: '/format/diff' },
       { path: '/format/regex' },
       { path: '/format/sql' },
