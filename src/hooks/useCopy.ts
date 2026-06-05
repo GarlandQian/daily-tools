@@ -16,7 +16,7 @@ export const useCopy = () => {
     async (text: string | number) => {
       try {
         await navigator.clipboard.writeText(String(text))
-        toast.success(t('app.social.retires.copy_success'))
+        toast.success(t('public.copy.success'))
         return true
       } catch {
         toast.error(t('public.error'))

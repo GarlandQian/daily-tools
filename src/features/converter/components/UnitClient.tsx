@@ -1,16 +1,25 @@
 'use client'
 
-import { ArrowRightLeft } from 'lucide-react'
+import { ArrowRightLeft, Copy, RotateCcw, Ruler } from 'lucide-react'
 import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Select } from '@/components/ui/select'
+import { useCopy } from '@/hooks/useCopy'
 
-type UnitCategory = 'length' | 'weight' | 'temperature' | 'data'
+type UnitCategory =
+  | 'length'
+  | 'area'
+  | 'weight'
+  | 'temperature'
+  | 'volume'
+  | 'data'
+  | 'speed'
+  | 'time'
 
 interface UnitDef {
   ratio: number
@@ -27,6 +36,18 @@ const unitData: Record<UnitCategory, { base: string; units: Record<string, UnitD
       in: { ratio: 0.0254 },
       ft: { ratio: 0.3048 },
       mi: { ratio: 1609.344 }
+    }
+  },
+  area: {
+    base: 'm2',
+    units: {
+      mm2: { ratio: 0.000001 },
+      cm2: { ratio: 0.0001 },
+      m2: { ratio: 1 },
+      km2: { ratio: 1000000 },
+      ft2: { ratio: 0.09290304 },
+      acre: { ratio: 4046.8564224 },
+      ha: { ratio: 10000 }
     }
   },
   weight: {
@@ -47,6 +68,19 @@ const unitData: Record<UnitCategory, { base: string; units: Record<string, UnitD
       k: { ratio: 1 }
     }
   },
+  volume: {
+    base: 'l',
+    units: {
+      ml: { ratio: 0.001 },
+      l: { ratio: 1 },
+      m3: { ratio: 1000 },
+      tsp: { ratio: 0.00492892159375 },
+      tbsp: { ratio: 0.01478676478125 },
+      cup: { ratio: 0.2365882365 },
+      floz: { ratio: 0.0295735295625 },
+      gal: { ratio: 3.785411784 }
+    }
+  },
   data: {
     base: 'byte',
     units: {
@@ -57,11 +91,33 @@ const unitData: Record<UnitCategory, { base: string; units: Record<string, UnitD
       gb: { ratio: 1024 * 1024 * 1024 },
       tb: { ratio: 1024 * 1024 * 1024 * 1024 }
     }
+  },
+  speed: {
+    base: 'mps',
+    units: {
+      mps: { ratio: 1 },
+      kph: { ratio: 0.2777777777777778 },
+      mph: { ratio: 0.44704 },
+      knot: { ratio: 0.5144444444444445 },
+      fps: { ratio: 0.3048 }
+    }
+  },
+  time: {
+    base: 's',
+    units: {
+      ms: { ratio: 0.001 },
+      s: { ratio: 1 },
+      min: { ratio: 60 },
+      h: { ratio: 3600 },
+      day: { ratio: 86400 },
+      week: { ratio: 604800 }
+    }
   }
 }
 
 const UnitClient = () => {
   const { t } = useTranslation()
+  const { copy } = useCopy()
 
   const [category, setCategory] = useState<UnitCategory>('length')
   const [fromUnit, setFromUnit] = useState('m')
@@ -103,6 +159,15 @@ const UnitClient = () => {
     return baseValue / toRatio
   }, [category, fromUnit, toUnit, fromValue, convertTemperature])
 
+  const formattedResult = useMemo(() => {
+    if (result === null) return '-'
+
+    return result.toLocaleString(undefined, {
+      maximumFractionDigits: 10,
+      useGrouping: true
+    })
+  }, [result])
+
   const handleCategoryChange = (newCategory: UnitCategory) => {
     setCategory(newCategory)
     const units = Object.keys(unitData[newCategory].units)
@@ -119,11 +184,43 @@ const UnitClient = () => {
     }
   }
 
+  const handleReset = () => {
+    setCategory('length')
+    setFromUnit('m')
+    setToUnit('km')
+    setFromValue('1')
+  }
+
+  const handleCopyResult = () => {
+    if (result === null) return
+    void copy(
+      `${fromValue} ${t(`app.converter.unit.${fromUnit}`)} = ${formattedResult} ${t(`app.converter.unit.${toUnit}`)}`
+    )
+  }
+
   return (
     <div className="flex flex-col gap-5 size-full">
-      {/* Category pills */}
       <Card>
-        <CardContent className="p-4">
+        <CardHeader>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="space-y-2">
+              <CardTitle className="flex items-center gap-2">
+                <Ruler className="h-5 w-5 text-[var(--primary)]" />
+                {t('app.converter.unit')}
+              </CardTitle>
+              <CardDescription>{t('app.converter.unit.description')}</CardDescription>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              icon={<RotateCcw className="h-4 w-4" />}
+              onClick={handleReset}
+            >
+              {t('public.reset')}
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="pt-0">
           <RadioGroup
             value={category}
             onValueChange={v => handleCategoryChange(v as UnitCategory)}
@@ -146,9 +243,7 @@ const UnitClient = () => {
         </CardContent>
       </Card>
 
-      {/* From / To columns */}
       <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] gap-4 flex-1">
-        {/* From */}
         <Card className="flex flex-col">
           <CardHeader>
             <CardTitle className="text-base">{t('app.converter.unit.from')}</CardTitle>
@@ -170,7 +265,6 @@ const UnitClient = () => {
           </CardContent>
         </Card>
 
-        {/* Swap button */}
         <div className="flex items-center justify-center">
           <Button
             variant="outline"
@@ -181,10 +275,20 @@ const UnitClient = () => {
           />
         </div>
 
-        {/* To */}
         <Card className="flex flex-col">
           <CardHeader>
-            <CardTitle className="text-base">{t('app.converter.unit.to')}</CardTitle>
+            <div className="flex items-center justify-between gap-3">
+              <CardTitle className="text-base">{t('app.converter.unit.to')}</CardTitle>
+              <Button
+                type="button"
+                size="sm"
+                icon={<Copy className="h-4 w-4" />}
+                onClick={handleCopyResult}
+                disabled={result === null}
+              >
+                {t('public.copy')}
+              </Button>
+            </div>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
             <Select value={toUnit} onChange={e => setToUnit(e.target.value)}>
@@ -196,11 +300,17 @@ const UnitClient = () => {
             </Select>
             <div className="flex items-center h-14 px-3 rounded-lg glass-panel border border-[var(--border-base)]">
               <span className="text-3xl md:text-4xl font-mono font-semibold text-[var(--text-primary)]">
-                {result !== null
-                  ? result.toLocaleString(undefined, { maximumFractionDigits: 10 })
-                  : '-'}
+                {formattedResult}
               </span>
             </div>
+            {result !== null && (
+              <div className="glass-input rounded-lg p-3 text-sm text-[var(--text-secondary)]">
+                <span className="font-mono text-[var(--text-primary)]">{fromValue}</span>{' '}
+                {t(`app.converter.unit.${fromUnit}`)} ={' '}
+                <span className="font-mono text-[var(--text-primary)]">{formattedResult}</span>{' '}
+                {t(`app.converter.unit.${toUnit}`)}
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

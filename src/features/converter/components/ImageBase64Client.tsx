@@ -61,7 +61,7 @@ const ImageBase64Client = () => {
     if (!base64) return
     const textToCopy = includeDataUri ? base64 : base64.split(',')[1] || base64
     navigator.clipboard.writeText(textToCopy)
-    toast.success(t('app.social.retires.copy_success'))
+    toast.success(t('public.copy.success'))
   }, [base64, includeDataUri, toast, t])
 
   const displayedBase64 = includeDataUri ? base64 : base64.split(',')[1] || ''
