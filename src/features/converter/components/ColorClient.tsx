@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { ColorPicker } from '@/components/ui/color-picker'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useToast } from '@/components/ui/toast'
@@ -162,29 +163,31 @@ const ColorClient = () => {
           <CardTitle>{t('app.converter.color')}</CardTitle>
         </CardHeader>
         <CardContent className="pb-6">
-          <div className="flex min-w-0 flex-col gap-6 sm:flex-row sm:items-end">
-            <label className="relative flex h-24 w-24 shrink-0 cursor-pointer overflow-hidden rounded-3xl border border-[var(--border-base)] shadow-[inset_0_1px_0_rgba(255,255,255,0.45),0_14px_34px_rgba(0,0,0,0.10)]">
-              <input
-                type="color"
-                value={colors.hex}
-                onChange={event => handleHexChange(event.target.value)}
-                className="absolute inset-0 h-full w-full cursor-pointer border-0 p-0 opacity-0"
-                aria-label={t('app.converter.color')}
-              />
-              <span className="h-full w-full" style={{ backgroundColor: colors.hex }} />
-            </label>
+          <div className="grid min-w-0 gap-5 md:grid-cols-[7rem_minmax(0,1fr)] md:items-end">
+            <div
+              className="h-28 w-full rounded-3xl border border-[var(--glass-border-strong)] shadow-[inset_0_1px_0_rgba(255,255,255,0.45),0_14px_34px_rgba(0,0,0,0.10)] md:w-28"
+              style={{ backgroundColor: colors.hex }}
+              aria-label={hexStr}
+            />
 
-            <div className="grid min-w-0 flex-1 gap-3">
-              <Label htmlFor="color-hex-input" className="flex items-center gap-2">
-                <ArrowLeftRight className="h-4 w-4" />
-                HEX
-              </Label>
-              <Input
-                id="color-hex-input"
-                value={colors.hex}
-                onChange={event => handleHexChange(event.target.value)}
-                className="font-mono uppercase"
-              />
+            <div className="grid min-w-0 gap-4 sm:grid-cols-2">
+              <div className="grid min-w-0 gap-3">
+                <Label htmlFor="color-picker" className="flex items-center gap-2">
+                  <ArrowLeftRight className="h-4 w-4" />
+                  {t('app.converter.color')}
+                </Label>
+                <ColorPicker id="color-picker" value={colors.hex} onChange={handleHexChange} />
+              </div>
+
+              <div className="grid min-w-0 gap-3">
+                <Label htmlFor="color-hex-input">HEX</Label>
+                <Input
+                  id="color-hex-input"
+                  value={colors.hex}
+                  onChange={event => handleHexChange(event.target.value)}
+                  className="font-mono uppercase"
+                />
+              </div>
             </div>
           </div>
         </CardContent>
