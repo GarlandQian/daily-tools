@@ -19,6 +19,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { FileUploadZone } from '@/components/ui/file-upload'
 import { useToast } from '@/components/ui/toast'
 import { useCopy } from '@/hooks/useCopy'
+import { yieldToMain } from '@/utils/scheduler'
 
 interface FileHashResult {
   id: string
@@ -32,6 +33,7 @@ interface FileHashResult {
 }
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024
+const HEX_TABLE = Array.from({ length: 256 }, (_, value) => value.toString(16).padStart(2, '0'))
 
 const formatSize = (bytes: number) => {
   if (bytes < 1024) return `${bytes} B`
@@ -50,8 +52,37 @@ const arrayBufferToWordArray = (buffer: ArrayBuffer) => {
   return CryptoJS.lib.WordArray.create(words, bytes.length)
 }
 
+const arrayBufferToHex = (buffer: ArrayBuffer) => {
+  const bytes = new Uint8Array(buffer)
+  const hex = new Array<string>(bytes.length)
+
+  for (let index = 0; index < bytes.length; index += 1) {
+    hex[index] = HEX_TABLE[bytes[index]]
+  }
+
+  return hex.join('')
+}
+
+const digestHex = async (algorithm: 'SHA-1' | 'SHA-256' | 'SHA-512', buffer: ArrayBuffer) => {
+  if (!crypto.subtle) return null
+
+  try {
+    return arrayBufferToHex(await crypto.subtle.digest(algorithm, buffer))
+  } catch {
+    return null
+  }
+}
+
 const hashFile = async (file: File): Promise<FileHashResult> => {
   const buffer = await file.arrayBuffer()
+  const [sha1Digest, sha256Digest, sha512Digest] = await Promise.all([
+    digestHex('SHA-1', buffer),
+    digestHex('SHA-256', buffer),
+    digestHex('SHA-512', buffer)
+  ])
+
+  await yieldToMain()
+
   const wordArray = arrayBufferToWordArray(buffer)
 
   return {
@@ -60,9 +91,9 @@ const hashFile = async (file: File): Promise<FileHashResult> => {
     size: file.size,
     type: file.type || 'application/octet-stream',
     md5: CryptoJS.MD5(wordArray).toString(CryptoJS.enc.Hex),
-    sha1: CryptoJS.SHA1(wordArray).toString(CryptoJS.enc.Hex),
-    sha256: CryptoJS.SHA256(wordArray).toString(CryptoJS.enc.Hex),
-    sha512: CryptoJS.SHA512(wordArray).toString(CryptoJS.enc.Hex)
+    sha1: sha1Digest ?? CryptoJS.SHA1(wordArray).toString(CryptoJS.enc.Hex),
+    sha256: sha256Digest ?? CryptoJS.SHA256(wordArray).toString(CryptoJS.enc.Hex),
+    sha512: sha512Digest ?? CryptoJS.SHA512(wordArray).toString(CryptoJS.enc.Hex)
   }
 }
 
@@ -89,7 +120,11 @@ const FileHashClient = () => {
       setProcessing(true)
 
       try {
-        const nextResults = await Promise.all(validFiles.map(file => hashFile(file)))
+        const nextResults: FileHashResult[] = []
+        for (const file of validFiles) {
+          await yieldToMain()
+          nextResults.push(await hashFile(file))
+        }
         setResults(prev => [...nextResults, ...prev])
         toast.success(t('public.success'))
       } catch {

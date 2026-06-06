@@ -1,7 +1,7 @@
 'use client'
 
 import { Braces, Copy, FileCode2, RotateCcw, Sparkles, Trash2 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useDeferredValue, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
@@ -164,8 +164,9 @@ const JsonToTsClient = () => {
   const [rootName, setRootName] = useState('Root')
   const [readonlyProps, setReadonlyProps] = useState(false)
   const [nullableAsOptional, setNullableAsOptional] = useState(false)
+  const deferredInput = useDeferredValue(input)
 
-  const parsed = useMemo(() => parseJson(input), [input])
+  const parsed = useMemo(() => parseJson(deferredInput), [deferredInput])
   const analysis = useMemo(
     () => (parsed.data === null ? null : analyzeJson(parsed.data)),
     [parsed.data]

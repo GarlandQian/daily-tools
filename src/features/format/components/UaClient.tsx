@@ -15,7 +15,7 @@ import {
   Sparkles,
   Trash2
 } from 'lucide-react'
-import { type ReactNode, useMemo, useState, useSyncExternalStore } from 'react'
+import { type ReactNode, useDeferredValue, useMemo, useState, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
 import { UAParser } from 'ua-parser-js'
 import { Bots, Crawlers, InApps } from 'ua-parser-js/extensions'
@@ -125,11 +125,12 @@ const UaClient = () => {
   const [inputOverride, setInputOverride] = useState<string | null>(null)
   const input = inputOverride ?? userAgent
   const trimmedInput = input.trim()
+  const deferredTrimmedInput = useDeferredValue(trimmedInput)
 
   const parsed = useMemo(() => {
-    if (!trimmedInput) return null
-    return new UAParser(trimmedInput, UA_EXTENSIONS).getResult()
-  }, [trimmedInput])
+    if (!deferredTrimmedInput) return null
+    return new UAParser(deferredTrimmedInput, UA_EXTENSIONS).getResult()
+  }, [deferredTrimmedInput])
 
   const analysis = useMemo(() => {
     if (!parsed) return null
@@ -137,7 +138,7 @@ const UaClient = () => {
     const browserName = parsed.browser.name || ''
     const engineName = parsed.engine.name || ''
     const deviceType = parsed.device.type
-    const family = getEngineFamily(browserName, engineName, trimmedInput)
+    const family = getEngineFamily(browserName, engineName, deferredTrimmedInput)
     const score = getConfidenceScore(parsed)
     const confidenceKey =
       score >= 7
@@ -146,10 +147,10 @@ const UaClient = () => {
           ? 'app.format.ua.confidence.medium'
           : 'app.format.ua.confidence.low'
     const browserType = parsed.browser.type?.toLowerCase()
-    const isBot = BOT_PATTERN.test(trimmedInput) || browserType === 'crawler'
+    const isBot = BOT_PATTERN.test(deferredTrimmedInput) || browserType === 'crawler'
     const isWebView =
-      WEBVIEW_PATTERN.test(trimmedInput) || browserName.toLowerCase().includes('webview')
-    const isInApp = IN_APP_PATTERN.test(trimmedInput) || browserType === 'inapp'
+      WEBVIEW_PATTERN.test(deferredTrimmedInput) || browserName.toLowerCase().includes('webview')
+    const isInApp = IN_APP_PATTERN.test(deferredTrimmedInput) || browserType === 'inapp'
     const isMobile = deviceType === 'mobile'
     const isTablet = deviceType === 'tablet'
     const isDesktop = !deviceType
@@ -164,9 +165,9 @@ const UaClient = () => {
       isMobile,
       isTablet,
       isDesktop,
-      length: trimmedInput.length
+      length: deferredTrimmedInput.length
     }
-  }, [parsed, trimmedInput])
+  }, [deferredTrimmedInput, parsed])
 
   const sections = useMemo<Section[]>(() => {
     if (!parsed) return []

@@ -1,7 +1,7 @@
 'use client'
 
 import { ArrowRightLeft, CheckCircle2, Copy, FileCode2, Minimize2, Sparkles } from 'lucide-react'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useDeferredValue, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import YAML from 'yaml'
 
@@ -95,10 +95,11 @@ const YamlClient = () => {
   const toast = useToast()
   const [input, setInput] = useState(YAML_SAMPLE)
   const [action, setAction] = useState<YamlAction>('format')
+  const deferredInput = useDeferredValue(input)
 
-  const parsed = useMemo(() => runAction(input, action), [action, input])
+  const parsed = useMemo(() => runAction(deferredInput, action), [action, deferredInput])
   const hasInput = input.trim().length > 0
-  const lineCount = useMemo(() => input.split(/\r\n|\r|\n/).length, [input])
+  const lineCount = useMemo(() => deferredInput.split(/\r\n|\r|\n/).length, [deferredInput])
 
   const handleCopy = useCallback(async () => {
     if (!parsed.output) return

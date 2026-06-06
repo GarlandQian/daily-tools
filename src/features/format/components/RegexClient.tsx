@@ -1,7 +1,7 @@
 'use client'
 
 import { Trash2 } from 'lucide-react'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useDeferredValue, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
@@ -22,6 +22,12 @@ interface HighlightSegment {
   text: string
   highlighted: boolean
 }
+
+const MAX_REGEX_INPUT_CHARS = 5000
+const MAX_REGEX_PATTERN_CHARS = 500
+const MAX_REGEX_MATCHES = 500
+const SUSPICIOUS_REGEX_INPUT_CHARS = 1000
+const SUSPICIOUS_NESTED_QUANTIFIER = /\([^)]*[+*][^)]*\)[+*?{]/
 
 const regexFlagOptions = [
   { label: 'g (global)', value: 'g' },
@@ -72,26 +78,60 @@ const RegexClient = () => {
   const [pattern, setPattern] = useState('')
   const [flags, setFlags] = useState<string[]>(['g'])
   const [testText, setTestText] = useState('')
+  const deferredPattern = useDeferredValue(pattern)
+  const deferredFlags = useDeferredValue(flags)
+  const deferredTestText = useDeferredValue(testText)
 
-  const { matches, highlightedSegments, error } = useMemo(() => {
-    if (!pattern || !testText) {
+  const { matches, highlightedSegments, error, warning } = useMemo(() => {
+    if (!deferredPattern || !deferredTestText) {
       return {
         matches: [] as MatchResult[],
-        highlightedSegments: buildHighlightSegments(testText, []),
-        error: null as string | null
+        highlightedSegments: buildHighlightSegments(deferredTestText, []),
+        error: null as string | null,
+        warning: null as string | null
+      }
+    }
+
+    if (deferredPattern.length > MAX_REGEX_PATTERN_CHARS) {
+      return {
+        matches: [] as MatchResult[],
+        highlightedSegments: buildHighlightSegments(deferredTestText, []),
+        error: null,
+        warning: t('app.format.regex.warning.pattern_too_long', {
+          count: MAX_REGEX_PATTERN_CHARS
+        })
       }
     }
 
     try {
-      const flagStr = flags.join('')
-      const regex = new RegExp(pattern, flagStr)
+      const hasSuspiciousPattern = SUSPICIOUS_NESTED_QUANTIFIER.test(deferredPattern)
+      const safeInputLimit = hasSuspiciousPattern
+        ? SUSPICIOUS_REGEX_INPUT_CHARS
+        : MAX_REGEX_INPUT_CHARS
+      const safeTestText = deferredTestText.slice(0, safeInputLimit)
+      const warnings: string[] = []
+
+      if (deferredTestText.length > safeInputLimit) {
+        warnings.push(
+          t('app.format.regex.warning.input_truncated', {
+            count: safeInputLimit
+          })
+        )
+      }
+
+      if (hasSuspiciousPattern && deferredTestText.length > SUSPICIOUS_REGEX_INPUT_CHARS) {
+        warnings.push(t('app.format.regex.warning.backtracking'))
+      }
+
+      const flagStr = deferredFlags.join('')
+      const regex = new RegExp(deferredPattern, flagStr)
       const matchResults: MatchResult[] = []
       const ranges: Array<{ index: number; value: string }> = []
       let match: RegExpExecArray | null
       let key = 0
 
       if (flagStr.includes('g')) {
-        while ((match = regex.exec(testText)) !== null) {
+        while ((match = regex.exec(safeTestText)) !== null) {
           ranges.push({ index: match.index, value: match[0] })
           matchResults.push({
             key: key++,
@@ -100,12 +140,21 @@ const RegexClient = () => {
             groups: match.slice(1).join(', ') || '-'
           })
 
+          if (matchResults.length >= MAX_REGEX_MATCHES) {
+            warnings.push(
+              t('app.format.regex.warning.match_cap', {
+                count: MAX_REGEX_MATCHES
+              })
+            )
+            break
+          }
+
           if (match[0].length === 0) {
             regex.lastIndex += 1
           }
         }
       } else {
-        match = regex.exec(testText)
+        match = regex.exec(safeTestText)
         if (match) {
           ranges.push({ index: match.index, value: match[0] })
           matchResults.push({
@@ -119,18 +168,20 @@ const RegexClient = () => {
 
       return {
         matches: matchResults,
-        highlightedSegments: buildHighlightSegments(testText, ranges),
-        error: null
+        highlightedSegments: buildHighlightSegments(safeTestText, ranges),
+        error: null,
+        warning: warnings.length ? warnings.join(' ') : null
       }
     } catch (e) {
       const err = e as Error
       return {
         matches: [] as MatchResult[],
-        highlightedSegments: buildHighlightSegments(testText, []),
-        error: err.message
+        highlightedSegments: buildHighlightSegments(deferredTestText, []),
+        error: err.message,
+        warning: null
       }
     }
-  }, [pattern, flags, testText])
+  }, [deferredFlags, deferredPattern, deferredTestText, t])
 
   const handleClear = useCallback(() => {
     setPattern('')
@@ -208,6 +259,12 @@ const RegexClient = () => {
           {error && (
             <p className="rounded-lg border border-[var(--error)] bg-[var(--error-subtle)] px-3 py-2 text-sm text-[var(--error)]">
               {t('app.format.json.error')}: {error}
+            </p>
+          )}
+
+          {warning && (
+            <p className="rounded-lg border border-[var(--warning)] bg-[var(--warning-subtle)] px-3 py-2 text-sm text-[var(--warning)]">
+              {warning}
             </p>
           )}
         </CardContent>

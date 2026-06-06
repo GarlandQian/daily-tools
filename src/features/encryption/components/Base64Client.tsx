@@ -56,13 +56,13 @@ export default function Base64Client() {
               onValueChange={v => setMode(v as 'encode' | 'decode')}
               className="gap-3 sm:pt-2"
             >
-              <div className="flex items-center space-x-2">
+              <div className="flex min-h-8 items-center gap-3">
                 <RadioGroupItem value="encode" id="encode" />
                 <Label htmlFor="encode" className="cursor-pointer">
                   {t('app.encryption.aes.encrypt')}
                 </Label>
               </div>
-              <div className="flex items-center space-x-2">
+              <div className="flex min-h-8 items-center gap-3">
                 <RadioGroupItem value="decode" id="decode" />
                 <Label htmlFor="decode" className="cursor-pointer">
                   {t('app.encryption.aes.decrypt')}

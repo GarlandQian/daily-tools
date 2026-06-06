@@ -3,7 +3,7 @@
 import dayjs from 'dayjs'
 import utc from 'dayjs/plugin/utc'
 import { CalendarClock, Clock, Copy, Pause, Play, RotateCcw, TimerReset } from 'lucide-react'
-import { useCallback, useMemo, useState, useSyncExternalStore } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { useCopy } from '@/hooks/useCopy'
+import { useVisibleNow } from '@/hooks/useVisibleNow'
 
 type TimestampUnit = 'seconds' | 'milliseconds'
 type TimestampInputUnit = 'auto' | TimestampUnit
@@ -20,29 +21,6 @@ dayjs.extend(utc)
 
 const formatDateTimeLocal = (date: dayjs.ConfigType) => dayjs(date).format('YYYY-MM-DDTHH:mm:ss')
 const getCurrentDateTimeLocal = () => formatDateTimeLocal(Date.now())
-
-let currentTimeSnapshot = 0
-
-const updateCurrentTimeSnapshot = () => {
-  currentTimeSnapshot = Date.now()
-}
-
-const subscribeCurrentTime = (onStoreChange: () => void) => {
-  const update = () => {
-    updateCurrentTimeSnapshot()
-    onStoreChange()
-  }
-  const immediate = window.setTimeout(update, 0)
-  const interval = window.setInterval(update, 1000)
-
-  return () => {
-    window.clearTimeout(immediate)
-    window.clearInterval(interval)
-  }
-}
-
-const getCurrentTimeSnapshot = () => currentTimeSnapshot
-const getServerTimeSnapshot = () => 0
 
 const parseTimestamp = (value: string, unit: TimestampInputUnit) => {
   const trimmed = value.trim()
@@ -64,11 +42,6 @@ const TimestampClient = () => {
   const { t } = useTranslation()
   const { copy } = useCopy()
 
-  const liveTimestamp = useSyncExternalStore(
-    subscribeCurrentTime,
-    getCurrentTimeSnapshot,
-    getServerTimeSnapshot
-  )
   const [pausedTimestamp, setPausedTimestamp] = useState<number | null>(null)
   const [unit, setUnit] = useState<TimestampUnit>('seconds')
   const [timestampUnit, setTimestampUnit] = useState<TimestampInputUnit>('auto')
@@ -77,6 +50,7 @@ const TimestampClient = () => {
   const [inputDatetime, setInputDatetime] = useState('')
 
   const isPaused = pausedTimestamp !== null
+  const liveTimestamp = useVisibleNow(!isPaused)
   const currentTimestamp = pausedTimestamp ?? liveTimestamp
   const hasCurrentTime = currentTimestamp > 0
 
@@ -122,7 +96,9 @@ const TimestampClient = () => {
   }, [])
 
   const togglePaused = useCallback(() => {
-    setPausedTimestamp(value => (value === null ? liveTimestamp : null))
+    setPausedTimestamp(value =>
+      value === null ? (liveTimestamp > 0 ? liveTimestamp : Date.now()) : null
+    )
   }, [liveTimestamp])
 
   return (

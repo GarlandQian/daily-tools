@@ -18,7 +18,7 @@ const ColorPicker = React.forwardRef<HTMLInputElement, ColorPickerProps>(
     return (
       <div
         className={cn(
-          'glass-color-picker glass-panel glass-panel-static glass-shimmer glass-clip relative flex h-12 w-full items-center gap-3 rounded-2xl px-3',
+          'glass-color-picker glass-panel glass-panel-static glass-shimmer glass-clip relative flex h-12 w-full min-w-0 items-center justify-between gap-3 rounded-2xl px-3',
           'focus-within:ring-2 focus-within:ring-[var(--primary)] focus-within:ring-offset-2',
           disabled && 'cursor-not-allowed opacity-50',
           className
@@ -39,7 +39,7 @@ const ColorPicker = React.forwardRef<HTMLInputElement, ColorPickerProps>(
           aria-hidden="true"
         />
         {showValue && (
-          <span className="min-w-0 truncate font-mono text-sm font-medium uppercase text-[var(--text-primary)]">
+          <span className="min-w-[7ch] shrink-0 text-right font-mono text-sm font-semibold uppercase tracking-normal text-[var(--text-primary)] tabular-nums">
             {value}
           </span>
         )}

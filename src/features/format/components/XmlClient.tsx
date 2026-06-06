@@ -1,7 +1,7 @@
 'use client'
 
 import { CheckCircle2, Code2, Copy, Minimize2, Paintbrush, Trash2, XCircle } from 'lucide-react'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useDeferredValue, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import xmlFormat from 'xml-formatter'
 
@@ -19,18 +19,19 @@ const XmlClient = () => {
   const [input, setInput] = useState('')
   const [output, setOutput] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const deferredInput = useDeferredValue(input)
 
   // Live validity check (only when input present)
   const validity = useMemo<{ valid: boolean; message?: string } | null>(() => {
-    if (!input.trim()) return null
+    if (!deferredInput.trim()) return null
     try {
       // Use xmlFormat in a permissive way to detect parse errors
-      xmlFormat(input, { indentation: '  ', collapseContent: true, lineSeparator: '\n' })
+      xmlFormat(deferredInput, { indentation: '  ', collapseContent: true, lineSeparator: '\n' })
       return { valid: true }
     } catch (e) {
       return { valid: false, message: (e as Error).message }
     }
-  }, [input])
+  }, [deferredInput])
 
   const handleFormat = useCallback(() => {
     if (!input.trim()) {

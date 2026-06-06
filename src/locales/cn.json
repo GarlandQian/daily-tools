@@ -154,6 +154,9 @@
   "app.social.time.reset": "重置",
   "app.social.time.same_as_local": "与本地相同",
   "app.social.time.from_local": "相对本地 {{hours}} 小时",
+  "app.social.time.date.today": "今天",
+  "app.social.time.date.tomorrow": "明天",
+  "app.social.time.date.yesterday": "昨天",
   "app.social.time.group.all": "全部",
   "app.social.time.group.asia": "亚洲",
   "app.social.time.group.europe": "欧洲",
@@ -395,6 +398,7 @@
   "app.format.diff.modified_placeholder": "输入修改后文本...",
   "app.format.diff.result": "差异结果",
   "app.format.diff.swap": "交换",
+  "app.format.diff.warning.preview": "检测到大输入。当前仅展示两侧前 {{count}} 个字符的字符级差异预览。",
 
   "app.format.regex": "正则测试器",
   "app.format.regex.pattern": "正则表达式",
@@ -408,6 +412,10 @@
   "app.format.regex.index": "位置",
   "app.format.regex.match": "匹配",
   "app.format.regex.groups": "捕获组",
+  "app.format.regex.warning.pattern_too_long": "正则表达式过长，无法安全执行。请控制在 {{count}} 个字符以内。",
+  "app.format.regex.warning.input_truncated": "为保持界面响应，仅评估前 {{count}} 个字符。",
+  "app.format.regex.warning.backtracking": "该表达式可能产生大量回溯，已缩短评估文本。",
+  "app.format.regex.warning.match_cap": "当前仅显示前 {{count}} 个匹配。",
 
   "app.generation.cron": "Cron 生成器",
   "app.generation.cron.second": "秒",

@@ -1,5 +1,4 @@
 'use client'
-import { useRafInterval } from 'ahooks'
 import dayjs from 'dayjs'
 import timezone from 'dayjs/plugin/timezone'
 import utc from 'dayjs/plugin/utc'
@@ -13,10 +12,11 @@ import {
 import * as echarts from 'echarts/core'
 import { SVGRenderer } from 'echarts/renderers'
 import ReactECharts from 'echarts-for-react'
-import React, { useMemo, useRef } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { getTimezoneLabel, tzListMap, tzMap } from '@/const/timezone'
+import { createVisibleInterval } from '@/utils/visibleInterval'
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
@@ -39,7 +39,7 @@ const Clock: React.FC<ClockProps> = ({ tz }) => {
   const chartRef = useRef<ReactECharts>(null)
   const timeRef = useRef<HTMLDivElement>(null)
 
-  useRafInterval(() => {
+  const updateClock = useCallback(() => {
     const nowTime = dayjs().tz(tzListMap[tz].value)
     const second = nowTime.second()
     const minute = nowTime.minute() + second / 60
@@ -71,7 +71,9 @@ const Clock: React.FC<ClockProps> = ({ tz }) => {
     if (timeRef.current) {
       timeRef.current.innerText = nowTime.format('YYYY-MM-DD HH:mm:ss')
     }
-  }, 1000)
+  }, [tz])
+
+  useEffect(() => createVisibleInterval(updateClock, 1000), [updateClock])
 
   // 生成配置项
   const options = useMemo(
