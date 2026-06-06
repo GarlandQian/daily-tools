@@ -77,6 +77,25 @@ const isDirectionMode = (value: string | null): value is DirectionMode =>
 const isSupportedLanguage = (value: string | null): value is 'cn' | 'en' =>
   value === 'cn' || value === 'en'
 
+const resolveNavigableMenuPath = (path: string) => {
+  const visit = (items: MenuConfig[]): string | null => {
+    for (const item of items) {
+      if (item.path === path) {
+        return item.children?.[0]?.path ?? item.path
+      }
+
+      if (item.children) {
+        const childPath = visit(item.children)
+        if (childPath) return childPath
+      }
+    }
+
+    return null
+  }
+
+  return visit(menus)
+}
+
 const useRandomizedGlassEffects = () => {
   React.useLayoutEffect(() => {
     const initialized = new WeakSet<HTMLElement>()
@@ -498,18 +517,25 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
                             aria-hidden="true"
                           />
                         )}
-                        <button
-                          type="button"
-                          onClick={() => handleNavigate(crumb.path)}
-                          className={cn(
-                            'min-w-0 rounded-lg px-1.5 py-1 transition-[background-color,color] hover:bg-[var(--glass-bg-hover)]',
-                            index === breadcrumbs.length - 1
-                              ? 'truncate font-semibold text-[var(--text-primary)]'
-                              : 'hidden text-[var(--text-secondary)] sm:block'
-                          )}
-                        >
-                          <span className="truncate">{crumb.label}</span>
-                        </button>
+                        {index === breadcrumbs.length - 1 ? (
+                          <span
+                            className="min-w-0 truncate rounded-lg px-1.5 py-1 font-semibold text-[var(--text-primary)]"
+                            aria-current="page"
+                          >
+                            {crumb.label}
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const nextPath = resolveNavigableMenuPath(crumb.path) ?? crumb.path
+                              handleNavigate(nextPath)
+                            }}
+                            className="hidden min-w-0 rounded-lg px-1.5 py-1 text-[var(--text-secondary)] transition-[background-color,color] hover:bg-[var(--glass-bg-hover)] hover:text-[var(--text-primary)] sm:block"
+                          >
+                            <span className="truncate">{crumb.label}</span>
+                          </button>
+                        )}
                       </React.Fragment>
                     ))
                   ) : (
