@@ -23,7 +23,8 @@ export const menus: MenuConfig[] = [
       { path: '/hash/hmacSHA' },
       { path: '/hash/ripemd' },
       { path: '/hash/hmacRIPEMD' },
-      { path: '/hash/pbkdf' }
+      { path: '/hash/pbkdf' },
+      { path: '/hash/file' }
     ]
   },
   {
@@ -57,7 +58,13 @@ export const menus: MenuConfig[] = [
       { path: '/generation/token' },
       { path: '/generation/qrcode' },
       { path: '/generation/password' },
+      { path: '/generation/manifest' },
+      { path: '/generation/og' },
+      { path: '/generation/env' },
+      { path: '/generation/robots' },
+      { path: '/generation/utm' },
       { path: '/generation/cron' },
+      { path: '/generation/grid' },
       { path: '/generation/clamp' },
       { path: '/generation/shadow' },
       { path: '/generation/lorem' },
@@ -69,6 +76,9 @@ export const menus: MenuConfig[] = [
     icon: <FileText className="w-4 h-4" />,
     children: [
       { path: '/format/json' },
+      { path: '/format/json2ts' },
+      { path: '/format/csv' },
+      { path: '/format/markdown-toc' },
       { path: '/format/yaml' },
       { path: '/format/diff' },
       { path: '/format/regex' },
@@ -88,6 +98,10 @@ export const menus: MenuConfig[] = [
       { path: '/converter/image' },
       { path: '/converter/timestamp' },
       { path: '/converter/base' },
+      { path: '/converter/cidr' },
+      { path: '/converter/uuid' },
+      { path: '/converter/px-rem' },
+      { path: '/converter/http-status' },
       { path: '/converter/html' },
       { path: '/converter/unit' }
     ]
