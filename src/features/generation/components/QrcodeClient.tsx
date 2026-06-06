@@ -12,7 +12,7 @@ import {
 } from 'lucide-react'
 import Image from 'next/image'
 import { QRCodeCanvas, QRCodeSVG } from 'qrcode.react'
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useDeferredValue, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
@@ -156,45 +156,49 @@ const QrcodeClient = () => {
   const svgRef = useRef<SVGSVGElement>(null)
   const [formData, setFormData] = useState<QrcodeFormData>(DEFAULT_FORM_DATA)
   const [logo, setLogo] = useState<LogoState | null>(null)
+  const deferredFormData = useDeferredValue(formData)
 
-  const qrValue = useMemo(() => formData.content.trim(), [formData.content])
-  const hasContent = qrValue.length > 0
+  const payloadValue = useMemo(() => formData.content.trim(), [formData.content])
+  const qrValue = useMemo(() => deferredFormData.content.trim(), [deferredFormData.content])
+  const hasContent = payloadValue.length > 0
+  const previewHasContent = qrValue.length > 0
   const payloadBytes = useMemo(() => new TextEncoder().encode(qrValue).length, [qrValue])
   const payloadDensity = getPayloadDensity(payloadBytes)
   const payloadType = getPayloadType(qrValue)
   const safeFileName = sanitizeFileName(formData.fileName)
-  const bgColor = formData.transparentBg ? 'transparent' : formData.bgColor
+  const bgColor = deferredFormData.transparentBg ? 'transparent' : deferredFormData.bgColor
   const logoPixelSize = Math.round(formData.size * (formData.logoSize / 100))
+  const previewLogoPixelSize = Math.round(deferredFormData.size * (deferredFormData.logoSize / 100))
 
   const imageSettings = useMemo(() => {
-    if (!logo || !hasContent) return undefined
+    if (!logo || !previewHasContent) return undefined
 
     return {
       src: logo.src,
-      width: logoPixelSize,
-      height: logoPixelSize,
-      excavate: formData.logoExcavate
+      width: previewLogoPixelSize,
+      height: previewLogoPixelSize,
+      excavate: deferredFormData.logoExcavate
     }
-  }, [formData.logoExcavate, hasContent, logo, logoPixelSize])
+  }, [deferredFormData.logoExcavate, logo, previewHasContent, previewLogoPixelSize])
 
   const qrProps = useMemo(
     () => ({
       value: qrValue,
-      size: formData.size,
-      fgColor: formData.fgColor,
+      size: deferredFormData.size,
+      fgColor: deferredFormData.fgColor,
       bgColor,
-      level: formData.level,
-      marginSize: formData.marginSize,
+      level: deferredFormData.level,
+      marginSize: deferredFormData.marginSize,
       boostLevel: true,
       title: t('app.generation.qrcode.preview'),
       imageSettings
     }),
     [
       bgColor,
-      formData.fgColor,
-      formData.level,
-      formData.marginSize,
-      formData.size,
+      deferredFormData.fgColor,
+      deferredFormData.level,
+      deferredFormData.marginSize,
+      deferredFormData.size,
       imageSettings,
       qrValue,
       t
@@ -332,12 +336,12 @@ const QrcodeClient = () => {
     }
 
     try {
-      await navigator.clipboard.writeText(qrValue)
+      await navigator.clipboard.writeText(payloadValue)
       toast.success(t('public.copy.success'))
     } catch {
       toast.error(t('public.error'))
     }
-  }, [hasContent, qrValue, toast, t])
+  }, [hasContent, payloadValue, toast, t])
 
   return (
     <div className="flex size-full flex-col gap-5">
@@ -597,7 +601,7 @@ const QrcodeClient = () => {
           </CardHeader>
           <CardContent className="flex flex-1 flex-col">
             <div className="flex min-h-[360px] flex-1 items-center justify-center rounded-2xl border border-[var(--glass-border)] bg-[var(--glass-bg)] p-4 sm:p-6">
-              {hasContent ? (
+              {previewHasContent ? (
                 <div
                   ref={qrRef}
                   className="glass-panel glass-shimmer glass-caustic glass-clip relative rounded-[2rem] p-5 shadow-[0_24px_80px_rgba(0,0,0,0.20)] sm:p-6"
@@ -606,7 +610,9 @@ const QrcodeClient = () => {
                     <div
                       className="rounded-[1.35rem] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7),0_12px_40px_rgba(0,0,0,0.18)]"
                       style={
-                        formData.transparentBg ? checkerboardStyle : { backgroundColor: bgColor }
+                        deferredFormData.transparentBg
+                          ? checkerboardStyle
+                          : { backgroundColor: bgColor }
                       }
                     >
                       <QRCodeCanvas {...qrProps} />

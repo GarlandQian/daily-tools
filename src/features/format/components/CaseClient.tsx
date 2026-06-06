@@ -11,7 +11,7 @@ import {
   upperFirst
 } from 'lodash-es'
 import { Copy, Sparkles, Trash2, Type } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useDeferredValue, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
@@ -35,11 +35,12 @@ const CaseClient = () => {
   const { copy } = useCopy()
 
   const [input, setInput] = useState('')
+  const deferredInput = useDeferredValue(input)
 
   const conversions = useMemo<Conversion[]>(() => {
-    if (!input.trim()) return []
+    if (!deferredInput.trim()) return []
 
-    const text = input.trim()
+    const text = deferredInput.trim()
     const titleCase = startCase(camelCase(text))
     const kebab = kebabCase(text)
     const snake = snakeCase(text)
@@ -60,7 +61,7 @@ const CaseClient = () => {
       { label: 'lower case', value: toLower(text), hint: 'Normalized text' },
       { label: 'slug', value: kebab, hint: 'SEO-friendly slug' }
     ]
-  }, [input])
+  }, [deferredInput])
 
   const copyAll = () => {
     void copy(conversions.map(item => `${item.label}: ${item.value}`).join('\n'))

@@ -50,9 +50,18 @@ export function DatePicker({ value, onChange, placeholder, disabled, className }
   React.useEffect(() => {
     if (!open) return
 
+    let animationFrame: number | null = null
+    const schedulePopoverPosition = () => {
+      if (animationFrame !== null) return
+      animationFrame = window.requestAnimationFrame(() => {
+        animationFrame = null
+        updatePopoverPosition()
+      })
+    }
+
     updatePopoverPosition()
-    window.addEventListener('resize', updatePopoverPosition)
-    window.addEventListener('scroll', updatePopoverPosition, true)
+    window.addEventListener('resize', schedulePopoverPosition, { passive: true })
+    window.addEventListener('scroll', schedulePopoverPosition, { capture: true, passive: true })
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
@@ -62,8 +71,11 @@ export function DatePicker({ value, onChange, placeholder, disabled, className }
     window.addEventListener('keydown', handleKeyDown)
 
     return () => {
-      window.removeEventListener('resize', updatePopoverPosition)
-      window.removeEventListener('scroll', updatePopoverPosition, true)
+      if (animationFrame !== null) {
+        window.cancelAnimationFrame(animationFrame)
+      }
+      window.removeEventListener('resize', schedulePopoverPosition)
+      window.removeEventListener('scroll', schedulePopoverPosition, { capture: true })
       window.removeEventListener('keydown', handleKeyDown)
     }
   }, [open, updatePopoverPosition])

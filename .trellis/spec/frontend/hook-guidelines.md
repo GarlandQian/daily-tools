@@ -24,7 +24,27 @@ Questions to answer:
 
 <!-- How to create and structure custom hooks -->
 
-(To be filled by the team)
+### Convention: Shared Visible Timers
+
+**What**: Components that need live wall-clock updates should share `useVisibleNow()` from `src/hooks/useVisibleNow.ts` instead of creating page-local `setInterval`, `useRafInterval`, or repeated `Date.now()` state loops.
+
+**Why**: Tool pages such as `/social/time`, timestamp conversion, and JWT expiration can be mounted in the same app shell. A timer per component fans out into avoidable React renders and keeps work running while the tab is hidden.
+
+**Example**:
+
+```tsx
+const now = useVisibleNow(expTimestamp !== null)
+const isExpired = expTimestamp === null ? null : now >= expTimestamp
+```
+
+For large lists, pass `enabled=false` until the live region is near the viewport:
+
+```tsx
+const [ref, isNearViewport] = useNearViewport<HTMLDivElement>()
+const now = useVisibleNow(isNearViewport)
+```
+
+**Related**: Use `createVisibleInterval()` only for imperative integrations that cannot reasonably subscribe through React, such as a third-party chart instance.
 
 ---
 
@@ -48,4 +68,5 @@ Questions to answer:
 
 <!-- Hook-related mistakes your team has made -->
 
-(To be filled by the team)
+- Do not call `Date.now()` during render as a fallback value. React Compiler treats it as an impure render. Use a visible external store snapshot or compute the value in an event/effect.
+- Do not subscribe every row in a large list to the shared live clock. Split static card chrome from live content, or enable the subscription only when the row is near the viewport.

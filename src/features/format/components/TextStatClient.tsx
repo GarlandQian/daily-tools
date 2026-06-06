@@ -2,7 +2,7 @@
 
 import { BarChart3, Clock3, Copy, FileText, Hash, Trash2, Type } from 'lucide-react'
 import type { ReactNode } from 'react'
-import { useMemo, useState } from 'react'
+import { useDeferredValue, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
@@ -78,9 +78,10 @@ const TextStatClient = () => {
   const { copy } = useCopy()
 
   const [input, setInput] = useState('')
+  const deferredInput = useDeferredValue(input)
 
   const analysis = useMemo(() => {
-    const text = input
+    const text = deferredInput
     const words = text.match(WORD_PATTERN) ?? []
     const chars = text.length
     const charsNoSpaces = text.replace(/\s/g, '').length
@@ -158,7 +159,7 @@ const TextStatClient = () => {
       readingMinutes: getMinutes(words.length, 225),
       speakingMinutes: getMinutes(words.length, 150)
     }
-  }, [input])
+  }, [deferredInput])
 
   const copySummary = () => {
     const summary = [

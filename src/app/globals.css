@@ -376,6 +376,7 @@ code, pre, kbd, samp {
 .glass-panel {
   position: relative;
   isolation: isolate;
+  contain: paint;
   background: var(--glass-bg);
   background-clip: padding-box;
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
@@ -485,6 +486,7 @@ code, pre, kbd, samp {
 }
 
 .glass-panel-strong {
+  contain: paint;
   background: var(--glass-bg-active);
   backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-saturate));
   -webkit-backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-saturate));
@@ -493,6 +495,7 @@ code, pre, kbd, samp {
 }
 
 .glass-popover {
+  contain: paint;
   background:
     radial-gradient(circle at 18% 0%, rgba(255, 255, 255, 0.86), transparent 28%),
     radial-gradient(circle at 95% 20%, rgba(183, 148, 244, 0.34), transparent 32%),
@@ -613,6 +616,7 @@ code, pre, kbd, samp {
 
 /* Floating glass card with glow */
 .glass-float {
+  contain: paint;
   background: var(--glass-bg);
   backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-saturate));
   -webkit-backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-saturate));
@@ -746,13 +750,474 @@ code, pre, kbd, samp {
   45% { background-position: -200% 0; }
 }
 
+html.page-hidden .glass-panel::before,
+html.page-hidden .glass-popover::before,
+html.page-hidden .glass-popover::after,
+html.page-hidden .glass-specular::before,
+html.page-hidden .glass-caustic::after,
+html.page-hidden .glass-prism::after,
+html.page-hidden .glass-shimmer::after {
+  animation-play-state: paused !important;
+}
+
 /* Recessed glass for inputs */
 .glass-input {
+  contain: paint;
   background: var(--glass-input-bg);
   backdrop-filter: blur(8px) saturate(120%);
   -webkit-backdrop-filter: blur(8px) saturate(120%);
   border: 1px solid var(--glass-input-border);
   box-shadow: var(--glass-input-shadow);
+}
+
+/* Time page: separated liquid-glass sheets so stacked panels do not visually merge. */
+.time-dashboard {
+  --time-sheet-bg: var(--time-glass-bg);
+  --time-sheet-border: var(--time-glass-border);
+  --time-sheet-edge: var(--time-glass-edge);
+  --time-sheet-shadow: var(--time-glass-shadow);
+  --time-glass-bg:
+    radial-gradient(circle at 12% 0%, rgba(255, 255, 255, 0.72), transparent 32%),
+    radial-gradient(circle at 92% 18%, rgba(94, 158, 255, 0.2), transparent 34%),
+    radial-gradient(circle at 8% 100%, rgba(78, 205, 196, 0.16), transparent 36%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.58), rgba(255, 255, 255, 0.28) 46%, rgba(255, 255, 255, 0.18));
+  --time-glass-border: rgba(255, 255, 255, 0.76);
+  --time-glass-edge: rgba(255, 255, 255, 0.92);
+  --time-glass-shadow:
+    0 22px 52px rgba(31, 38, 135, 0.2),
+    0 9px 20px rgba(20, 38, 70, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.78),
+    inset 0 -22px 42px rgba(255, 255, 255, 0.12);
+  --time-glass-inset-bg:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.48), rgba(255, 255, 255, 0.2)),
+    rgba(255, 255, 255, 0.2);
+}
+
+[data-theme='dark'] .time-dashboard {
+  --time-glass-bg:
+    radial-gradient(circle at 12% 0%, rgba(255, 255, 255, 0.14), transparent 32%),
+    radial-gradient(circle at 92% 18%, rgba(94, 158, 255, 0.24), transparent 34%),
+    radial-gradient(circle at 8% 100%, rgba(78, 205, 196, 0.1), transparent 36%),
+    linear-gradient(145deg, rgba(42, 42, 76, 0.76), rgba(18, 18, 38, 0.5) 48%, rgba(8, 8, 20, 0.42));
+  --time-glass-border: rgba(255, 255, 255, 0.18);
+  --time-glass-edge: rgba(255, 255, 255, 0.3);
+  --time-glass-shadow:
+    0 24px 60px rgba(0, 0, 0, 0.5),
+    0 9px 26px rgba(0, 0, 0, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 -22px 42px rgba(255, 255, 255, 0.04);
+  --time-glass-inset-bg:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.025)),
+    rgba(0, 0, 0, 0.18);
+}
+
+.time-glass-surface {
+  background:
+    linear-gradient(var(--time-sheet-sheen-angle, 180deg), rgba(255, 255, 255, 0.24), transparent 30%),
+    var(--time-sheet-bg, var(--time-glass-bg));
+  border-color: var(--time-sheet-border, var(--time-glass-border));
+  outline: 1px solid var(--time-sheet-outline, rgba(255, 255, 255, 0.26));
+  outline-offset: -3px;
+  box-shadow: var(--time-sheet-shadow, var(--time-glass-shadow));
+  backdrop-filter: blur(34px) saturate(210%) brightness(1.04);
+  -webkit-backdrop-filter: blur(34px) saturate(210%) brightness(1.04);
+}
+
+[data-theme='dark'] .time-glass-surface {
+  outline-color: rgba(255, 255, 255, 0.06);
+}
+
+.time-glass-surface::before {
+  opacity: 0.42;
+  background: conic-gradient(
+    from var(--border-angle, 0deg),
+    transparent 10%,
+    var(--time-sheet-edge, var(--time-glass-edge)) 18%,
+    var(--time-sheet-chroma, rgba(0, 113, 227, 0.28)) 30%,
+    transparent 45%,
+    rgba(255, 255, 255, 0.5) 62%,
+    transparent 80%
+  );
+}
+
+.time-glass-hero {
+  --time-sheet-bg:
+    radial-gradient(circle at 12% 0%, rgba(255, 255, 255, 0.82), transparent 30%),
+    radial-gradient(circle at 84% 10%, rgba(94, 158, 255, 0.28), transparent 34%),
+    radial-gradient(circle at 22% 106%, rgba(78, 205, 196, 0.18), transparent 38%),
+    linear-gradient(147deg, rgba(255, 255, 255, 0.66), rgba(255, 255, 255, 0.31) 48%, rgba(255, 255, 255, 0.16));
+  --time-sheet-border: rgba(255, 255, 255, 0.82);
+  --time-sheet-edge: rgba(255, 255, 255, 0.96);
+  --time-sheet-chroma: rgba(94, 158, 255, 0.3);
+  box-shadow:
+    0 30px 76px rgba(31, 38, 135, 0.24),
+    0 12px 28px rgba(0, 113, 227, 0.08),
+    0 2px 0 rgba(255, 255, 255, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.82),
+    inset 0 -28px 56px rgba(255, 255, 255, 0.12);
+}
+
+[data-theme='dark'] .time-glass-hero {
+  --time-sheet-bg:
+    radial-gradient(circle at 12% 0%, rgba(255, 255, 255, 0.16), transparent 30%),
+    radial-gradient(circle at 84% 10%, rgba(94, 158, 255, 0.24), transparent 34%),
+    radial-gradient(circle at 22% 106%, rgba(78, 205, 196, 0.1), transparent 38%),
+    linear-gradient(147deg, rgba(44, 46, 82, 0.82), rgba(18, 20, 42, 0.54) 48%, rgba(8, 8, 20, 0.44));
+  --time-sheet-border: rgba(255, 255, 255, 0.2);
+  --time-sheet-edge: rgba(255, 255, 255, 0.34);
+  box-shadow:
+    0 30px 76px rgba(0, 0, 0, 0.54),
+    0 12px 28px rgba(94, 158, 255, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 -28px 56px rgba(255, 255, 255, 0.04);
+}
+
+.time-glass-control,
+.time-glass-card,
+.time-zone-shell {
+  transform: translateZ(0);
+}
+
+.time-glass-progress {
+  --time-sheet-bg:
+    radial-gradient(circle at 86% 0%, rgba(255, 255, 255, 0.68), transparent 30%),
+    radial-gradient(circle at 18% 20%, rgba(0, 113, 227, 0.2), transparent 34%),
+    radial-gradient(circle at 100% 100%, rgba(183, 148, 244, 0.18), transparent 36%),
+    linear-gradient(132deg, rgba(255, 255, 255, 0.52), rgba(255, 255, 255, 0.24) 50%, rgba(235, 244, 255, 0.17));
+  --time-sheet-sheen-angle: 142deg;
+  --time-sheet-chroma: rgba(183, 148, 244, 0.25);
+}
+
+.time-glass-groups {
+  --time-sheet-bg:
+    radial-gradient(circle at 10% 0%, rgba(255, 255, 255, 0.58), transparent 28%),
+    radial-gradient(circle at 88% 34%, rgba(78, 205, 196, 0.2), transparent 34%),
+    radial-gradient(circle at 16% 100%, rgba(94, 158, 255, 0.14), transparent 32%),
+    linear-gradient(154deg, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0.23) 48%, rgba(240, 255, 252, 0.16));
+  --time-sheet-sheen-angle: 216deg;
+  --time-sheet-chroma: rgba(78, 205, 196, 0.26);
+}
+
+.time-glass-card:nth-child(4n + 1) {
+  --time-sheet-bg:
+    radial-gradient(circle at 18% 0%, rgba(255, 255, 255, 0.62), transparent 30%),
+    radial-gradient(circle at 86% 22%, rgba(94, 158, 255, 0.18), transparent 32%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0.2));
+}
+
+.time-glass-card:nth-child(4n + 2) {
+  --time-sheet-bg:
+    radial-gradient(circle at 82% 0%, rgba(255, 255, 255, 0.58), transparent 30%),
+    radial-gradient(circle at 16% 80%, rgba(78, 205, 196, 0.18), transparent 34%),
+    linear-gradient(132deg, rgba(255, 255, 255, 0.48), rgba(245, 255, 252, 0.2));
+  --time-sheet-sheen-angle: 132deg;
+  --time-sheet-chroma: rgba(78, 205, 196, 0.24);
+}
+
+.time-glass-card:nth-child(4n + 3) {
+  --time-sheet-bg:
+    radial-gradient(circle at 16% 18%, rgba(255, 255, 255, 0.56), transparent 30%),
+    radial-gradient(circle at 92% 82%, rgba(183, 148, 244, 0.16), transparent 34%),
+    linear-gradient(160deg, rgba(255, 255, 255, 0.46), rgba(250, 246, 255, 0.2));
+  --time-sheet-sheen-angle: 202deg;
+  --time-sheet-chroma: rgba(183, 148, 244, 0.24);
+}
+
+.time-glass-card:nth-child(4n) {
+  --time-sheet-bg:
+    radial-gradient(circle at 72% 0%, rgba(255, 255, 255, 0.6), transparent 30%),
+    radial-gradient(circle at 12% 88%, rgba(0, 113, 227, 0.14), transparent 34%),
+    linear-gradient(128deg, rgba(255, 255, 255, 0.48), rgba(242, 248, 255, 0.2));
+  --time-sheet-sheen-angle: 118deg;
+}
+
+[data-theme='dark'] .time-glass-card:nth-child(4n + 1) {
+  --time-sheet-bg:
+    radial-gradient(circle at 18% 0%, rgba(255, 255, 255, 0.12), transparent 30%),
+    radial-gradient(circle at 86% 22%, rgba(94, 158, 255, 0.16), transparent 32%),
+    linear-gradient(145deg, rgba(34, 38, 68, 0.74), rgba(12, 14, 30, 0.44));
+}
+
+[data-theme='dark'] .time-glass-card:nth-child(4n + 2) {
+  --time-sheet-bg:
+    radial-gradient(circle at 82% 0%, rgba(255, 255, 255, 0.11), transparent 30%),
+    radial-gradient(circle at 16% 80%, rgba(78, 205, 196, 0.14), transparent 34%),
+    linear-gradient(132deg, rgba(30, 44, 58, 0.72), rgba(10, 18, 28, 0.44));
+}
+
+[data-theme='dark'] .time-glass-card:nth-child(4n + 3) {
+  --time-sheet-bg:
+    radial-gradient(circle at 16% 18%, rgba(255, 255, 255, 0.1), transparent 30%),
+    radial-gradient(circle at 92% 82%, rgba(183, 148, 244, 0.14), transparent 34%),
+    linear-gradient(160deg, rgba(38, 32, 62, 0.72), rgba(16, 12, 30, 0.44));
+}
+
+[data-theme='dark'] .time-glass-card:nth-child(4n) {
+  --time-sheet-bg:
+    radial-gradient(circle at 72% 0%, rgba(255, 255, 255, 0.11), transparent 30%),
+    radial-gradient(circle at 12% 88%, rgba(94, 158, 255, 0.14), transparent 34%),
+    linear-gradient(128deg, rgba(32, 36, 62, 0.72), rgba(12, 14, 28, 0.44));
+}
+
+.time-zone-shell {
+  --time-sheet-bg:
+    radial-gradient(circle at 18% 0%, rgba(255, 255, 255, 0.58), transparent 26%),
+    radial-gradient(circle at 96% 8%, rgba(94, 158, 255, 0.14), transparent 32%),
+    linear-gradient(150deg, rgba(255, 255, 255, 0.42), rgba(255, 255, 255, 0.19) 48%, rgba(255, 255, 255, 0.11));
+  --time-sheet-border: rgba(255, 255, 255, 0.7);
+  --time-sheet-shadow:
+    0 26px 70px rgba(31, 38, 135, 0.18),
+    0 12px 34px rgba(20, 38, 70, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.72),
+    inset 0 -24px 48px rgba(255, 255, 255, 0.08);
+}
+
+[data-theme='dark'] .time-glass-progress {
+  --time-sheet-bg:
+    radial-gradient(circle at 86% 0%, rgba(255, 255, 255, 0.12), transparent 30%),
+    radial-gradient(circle at 18% 20%, rgba(94, 158, 255, 0.22), transparent 34%),
+    radial-gradient(circle at 100% 100%, rgba(183, 148, 244, 0.14), transparent 36%),
+    linear-gradient(132deg, rgba(38, 40, 72, 0.76), rgba(16, 18, 36, 0.48) 50%, rgba(8, 8, 20, 0.4));
+}
+
+[data-theme='dark'] .time-glass-groups {
+  --time-sheet-bg:
+    radial-gradient(circle at 10% 0%, rgba(255, 255, 255, 0.1), transparent 28%),
+    radial-gradient(circle at 88% 34%, rgba(78, 205, 196, 0.16), transparent 34%),
+    radial-gradient(circle at 16% 100%, rgba(94, 158, 255, 0.12), transparent 32%),
+    linear-gradient(154deg, rgba(34, 42, 66, 0.74), rgba(14, 20, 34, 0.48) 48%, rgba(8, 8, 20, 0.38));
+}
+
+[data-theme='dark'] .time-zone-shell {
+  --time-sheet-bg:
+    radial-gradient(circle at 18% 0%, rgba(255, 255, 255, 0.1), transparent 26%),
+    radial-gradient(circle at 96% 8%, rgba(94, 158, 255, 0.16), transparent 32%),
+    linear-gradient(150deg, rgba(28, 30, 58, 0.72), rgba(12, 14, 30, 0.48) 48%, rgba(6, 6, 16, 0.38));
+  --time-sheet-border: rgba(255, 255, 255, 0.14);
+  --time-sheet-shadow:
+    0 26px 70px rgba(0, 0, 0, 0.48),
+    0 12px 34px rgba(0, 0, 0, 0.32),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 -24px 48px rgba(255, 255, 255, 0.03);
+}
+
+.time-glass-control,
+.time-glass-card {
+  box-shadow:
+    0 24px 58px rgba(31, 38, 135, 0.2),
+    0 10px 24px rgba(20, 38, 70, 0.1),
+    0 2px 0 rgba(255, 255, 255, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.78),
+    inset 0 -22px 42px rgba(255, 255, 255, 0.12);
+}
+
+[data-theme='dark'] .time-glass-control,
+[data-theme='dark'] .time-glass-card {
+  box-shadow:
+    0 24px 58px rgba(0, 0, 0, 0.48),
+    0 10px 24px rgba(0, 0, 0, 0.32),
+    0 2px 0 rgba(255, 255, 255, 0.04),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    inset 0 -22px 42px rgba(255, 255, 255, 0.04);
+}
+
+.time-glass-inset,
+.time-zone-card,
+.time-group-chip,
+.time-progress-track {
+  background: var(--time-glass-inset-bg);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.54),
+    inset 0 -10px 22px rgba(255, 255, 255, 0.08),
+    0 8px 18px rgba(31, 38, 135, 0.08);
+}
+
+[data-theme='dark'] .time-glass-inset,
+[data-theme='dark'] .time-zone-card,
+[data-theme='dark'] .time-group-chip,
+[data-theme='dark'] .time-progress-track {
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 -10px 22px rgba(255, 255, 255, 0.03),
+    0 8px 18px rgba(0, 0, 0, 0.24);
+}
+
+.time-zone-card {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  backdrop-filter: blur(22px) saturate(180%);
+  -webkit-backdrop-filter: blur(22px) saturate(180%);
+  box-shadow:
+    0 15px 34px rgba(31, 38, 135, 0.16),
+    0 4px 12px rgba(20, 38, 70, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6),
+    inset 0 -16px 30px rgba(255, 255, 255, 0.08);
+}
+
+.time-zone-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.42), transparent 34%),
+    radial-gradient(circle at 92% 12%, rgba(255, 255, 255, 0.34), transparent 18%);
+  opacity: 0.42;
+  pointer-events: none;
+  z-index: -1;
+}
+
+.time-zone-shell-header {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.34);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.16), transparent);
+}
+
+[data-theme='dark'] .time-zone-shell-header {
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+}
+
+.time-group-chip {
+  backdrop-filter: blur(16px) saturate(170%);
+  -webkit-backdrop-filter: blur(16px) saturate(170%);
+}
+
+.time-group-chip:not(.time-group-chip-active):hover {
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.58), rgba(255, 255, 255, 0.28)),
+    rgba(255, 255, 255, 0.22);
+}
+
+.time-progress-fill {
+  background:
+    linear-gradient(90deg, rgba(0, 113, 227, 0.96), rgba(94, 158, 255, 0.92)),
+    var(--primary);
+  box-shadow:
+    0 0 18px rgba(0, 113, 227, 0.38),
+    inset 0 1px 0 rgba(255, 255, 255, 0.36);
+}
+
+@media (max-width: 640px) {
+  .time-dashboard {
+    gap: 1.25rem;
+    padding-inline: 0;
+    padding-bottom: 1.25rem;
+  }
+
+  .time-dashboard > section,
+  .time-dashboard > section > .grid {
+    gap: 1.25rem;
+  }
+
+  .time-metrics-grid {
+    gap: 0.75rem;
+  }
+
+  .time-glass-surface {
+    outline-offset: -2px;
+  }
+
+  .time-glass-surface {
+    box-shadow:
+      0 10px 24px rgba(31, 38, 135, 0.13),
+      0 3px 10px rgba(20, 38, 70, 0.08),
+      0 2px 0 rgba(255, 255, 255, 0.26),
+      inset 0 1px 0 rgba(255, 255, 255, 0.78),
+      inset 0 -18px 34px rgba(255, 255, 255, 0.1),
+      inset 0 0 28px rgba(255, 255, 255, 0.06);
+  }
+
+  .time-glass-control,
+  .time-glass-card {
+    box-shadow:
+      0 10px 24px rgba(31, 38, 135, 0.13),
+      0 3px 10px rgba(20, 38, 70, 0.08),
+      0 -1px 0 rgba(255, 255, 255, 0.16),
+      0 2px 0 rgba(255, 255, 255, 0.26),
+      inset 0 1px 0 rgba(255, 255, 255, 0.78),
+      inset 0 -18px 34px rgba(255, 255, 255, 0.1),
+      inset 0 0 26px rgba(255, 255, 255, 0.06);
+  }
+
+  .time-glass-hero {
+    box-shadow:
+      0 12px 30px rgba(31, 38, 135, 0.16),
+      0 4px 12px rgba(0, 113, 227, 0.08),
+      0 2px 0 rgba(255, 255, 255, 0.28),
+      inset 0 1px 0 rgba(255, 255, 255, 0.84),
+      inset 0 -20px 38px rgba(255, 255, 255, 0.11),
+      inset 0 0 34px rgba(255, 255, 255, 0.07);
+  }
+
+  .time-glass-progress {
+    box-shadow:
+      0 10px 24px rgba(74, 110, 210, 0.14),
+      0 3px 10px rgba(20, 38, 70, 0.08),
+      0 -1px 0 rgba(255, 255, 255, 0.14),
+      0 2px 0 rgba(255, 255, 255, 0.26),
+      inset 0 1px 0 rgba(255, 255, 255, 0.78),
+      inset 0 -18px 34px rgba(255, 255, 255, 0.1),
+      inset 0 0 26px rgba(255, 255, 255, 0.06);
+  }
+
+  .time-glass-groups {
+    box-shadow:
+      0 10px 24px rgba(42, 150, 150, 0.12),
+      0 3px 10px rgba(20, 38, 70, 0.08),
+      0 -1px 0 rgba(255, 255, 255, 0.14),
+      0 2px 0 rgba(255, 255, 255, 0.26),
+      inset 0 1px 0 rgba(255, 255, 255, 0.78),
+      inset 0 -18px 34px rgba(255, 255, 255, 0.1),
+      inset 0 0 26px rgba(255, 255, 255, 0.06);
+  }
+
+  .time-zone-shell {
+    box-shadow:
+      0 12px 30px rgba(31, 38, 135, 0.13),
+      0 4px 12px rgba(20, 38, 70, 0.08),
+      0 2px 0 rgba(255, 255, 255, 0.24),
+      inset 0 1px 0 rgba(255, 255, 255, 0.74),
+      inset 0 -18px 36px rgba(255, 255, 255, 0.08),
+      inset 0 0 30px rgba(255, 255, 255, 0.05);
+  }
+
+  [data-theme='dark'] .time-glass-surface,
+  [data-theme='dark'] .time-glass-control,
+  [data-theme='dark'] .time-glass-card {
+    box-shadow:
+      0 10px 24px rgba(0, 0, 0, 0.26),
+      0 3px 10px rgba(0, 0, 0, 0.2),
+      0 1px 0 rgba(255, 255, 255, 0.04),
+      inset 0 1px 0 rgba(255, 255, 255, 0.12),
+      inset 0 -18px 34px rgba(255, 255, 255, 0.03),
+      inset 0 0 28px rgba(255, 255, 255, 0.025);
+  }
+
+  [data-theme='dark'] .time-glass-hero {
+    box-shadow:
+      0 12px 30px rgba(0, 0, 0, 0.3),
+      0 4px 12px rgba(94, 158, 255, 0.08),
+      inset 0 1px 0 rgba(255, 255, 255, 0.14),
+      inset 0 -20px 38px rgba(255, 255, 255, 0.03),
+      inset 0 0 34px rgba(255, 255, 255, 0.025);
+  }
+
+  [data-theme='dark'] .time-zone-shell {
+    box-shadow:
+      0 12px 30px rgba(0, 0, 0, 0.26),
+      0 4px 12px rgba(0, 0, 0, 0.2),
+      inset 0 1px 0 rgba(255, 255, 255, 0.1),
+      inset 0 -18px 36px rgba(255, 255, 255, 0.03),
+      inset 0 0 30px rgba(255, 255, 255, 0.02);
+  }
+}
+
+@media (min-width: 520px) and (max-width: 639px) {
+  .time-metrics-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 .glass-select-trigger {

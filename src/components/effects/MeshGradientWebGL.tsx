@@ -1,7 +1,7 @@
 'use client'
 
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 
 import { useTheme } from '@/components/ThemeProvider'
@@ -109,10 +109,83 @@ function prefersReducedMotion(): boolean {
   return window.matchMedia('(prefers-reduced-motion: reduce)').matches
 }
 
-function MeshGradientScene({ isDarkMode }: { isDarkMode: boolean }) {
+function isDocumentVisible(): boolean {
+  if (typeof document === 'undefined') return true
+  return document.visibilityState !== 'hidden'
+}
+
+function getGradientDpr(): [number, number] {
+  if (typeof window === 'undefined') return [1, 1]
+
+  const coarsePointer = window.matchMedia('(pointer: coarse)').matches
+  const smallViewport = window.innerWidth < 768
+  const deviceMemory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? 8
+  const maxDpr = coarsePointer || smallViewport || deviceMemory <= 4 ? 1 : 1.25
+
+  return [1, maxDpr]
+}
+
+function useGradientRuntime() {
+  const [runtime, setRuntime] = useState(() => ({
+    dpr: getGradientDpr(),
+    isVisible: isDocumentVisible(),
+    reducedMotion: prefersReducedMotion()
+  }))
+
+  useEffect(() => {
+    const reducedMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)')
+    let animationFrame = 0
+
+    const updateRuntime = () => {
+      if (animationFrame) {
+        window.cancelAnimationFrame(animationFrame)
+      }
+
+      animationFrame = window.requestAnimationFrame(() => {
+        animationFrame = 0
+        setRuntime({
+          dpr: getGradientDpr(),
+          isVisible: isDocumentVisible(),
+          reducedMotion: reducedMotionQuery.matches
+        })
+      })
+    }
+
+    const updateRuntimeNow = () => {
+      setRuntime({
+        dpr: getGradientDpr(),
+        isVisible: isDocumentVisible(),
+        reducedMotion: reducedMotionQuery.matches
+      })
+    }
+
+    document.addEventListener('visibilitychange', updateRuntimeNow)
+    window.addEventListener('resize', updateRuntime, { passive: true })
+    reducedMotionQuery.addEventListener('change', updateRuntimeNow)
+
+    return () => {
+      document.removeEventListener('visibilitychange', updateRuntimeNow)
+      window.removeEventListener('resize', updateRuntime)
+      reducedMotionQuery.removeEventListener('change', updateRuntimeNow)
+      if (animationFrame) {
+        window.cancelAnimationFrame(animationFrame)
+      }
+    }
+  }, [])
+
+  return runtime
+}
+
+function MeshGradientScene({
+  isDarkMode,
+  reducedMotion
+}: {
+  isDarkMode: boolean
+  reducedMotion: boolean
+}) {
   const matRef = useRef<THREE.ShaderMaterial>(null)
-  const { size } = useThree()
-  const reducedMotionRef = useRef(prefersReducedMotion())
+  const { invalidate, size } = useThree()
+  const reducedMotionRef = useRef(reducedMotion)
   const targetBgRef = useRef(new THREE.Vector3(...(isDarkMode ? DARK_BG : LIGHT_BG)))
   const targetColorsRef = useRef(
     (isDarkMode ? DARK_PALETTE : LIGHT_PALETTE).map(c => new THREE.Vector3(c[0], c[1], c[2]))
@@ -150,18 +223,13 @@ function MeshGradientScene({ isDarkMode }: { isDarkMode: boolean }) {
     })
     targetBgRef.current.set(nextBg[0], nextBg[1], nextBg[2])
     targetDarkMixRef.current = isDarkMode ? 1 : 0
-  }, [isDarkMode])
+    if (reducedMotionRef.current) invalidate()
+  }, [invalidate, isDarkMode])
 
-  // Watch reduced-motion preference changes
   useEffect(() => {
-    if (typeof window === 'undefined') return
-    const mq = window.matchMedia('(prefers-reduced-motion: reduce)')
-    const handler = (e: MediaQueryListEvent) => {
-      reducedMotionRef.current = e.matches
-    }
-    mq.addEventListener('change', handler)
-    return () => mq.removeEventListener('change', handler)
-  }, [])
+    reducedMotionRef.current = reducedMotion
+    if (reducedMotion) invalidate()
+  }, [invalidate, reducedMotion])
 
   useFrame((state, delta) => {
     const mat = matRef.current
@@ -202,6 +270,7 @@ function MeshGradientScene({ isDarkMode }: { isDarkMode: boolean }) {
 
 export function MeshGradientWebGL() {
   const { isDarkMode } = useTheme()
+  const { dpr, isVisible, reducedMotion } = useGradientRuntime()
   const bg = isDarkMode ? DARK_BG : LIGHT_BG
   const bgCss = `rgb(${Math.round(bg[0] * 255)}, ${Math.round(bg[1] * 255)}, ${Math.round(bg[2] * 255)})`
 
@@ -216,7 +285,7 @@ export function MeshGradientWebGL() {
     >
       <Canvas
         orthographic
-        dpr={[1, 1.5]}
+        dpr={dpr}
         gl={{
           antialias: false,
           alpha: false,
@@ -224,10 +293,10 @@ export function MeshGradientWebGL() {
           depth: false,
           stencil: false
         }}
-        frameloop="always"
+        frameloop={isVisible && !reducedMotion ? 'always' : 'demand'}
         style={{ width: '100%', height: '100%' }}
       >
-        <MeshGradientScene isDarkMode={isDarkMode} />
+        <MeshGradientScene isDarkMode={isDarkMode} reducedMotion={reducedMotion} />
       </Canvas>
     </div>
   )

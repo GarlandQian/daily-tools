@@ -32,7 +32,29 @@ Questions to answer:
 
 <!-- Patterns that must always be used -->
 
-(To be filled by the team)
+### Pattern: Guard Expensive Client-Side Text Work
+
+**What**: Client-only tools that parse, diff, format, highlight, hash, or run user-provided expressions must cap synchronous main-thread work and show a graceful partial-result warning when input is large.
+
+**Why**: Deferring state with `useDeferredValue()` keeps typing responsive, but it does not make the underlying calculation interruptible. Large diffs, pathological regex patterns, or huge render outputs can still freeze the page if the work is unbounded.
+
+**Required safeguards**:
+
+- Use `useDeferredValue()` for text inputs that trigger non-trivial derived computation.
+- Add size caps for synchronous operations such as regex evaluation, character diffing, JSON-to-TypeScript generation, Markdown previewing, and statistics over very large strings.
+- Cap rendered result rows/chunks when output can explode in size.
+- Localize warning text in both `src/locales/en.json` and `src/locales/cn.json`.
+- Yield between independent large-file operations with `yieldToMain()` or move the work to a worker when the operation cannot be safely capped.
+
+**Example**:
+
+```tsx
+const deferredText = useDeferredValue(text)
+const result = useMemo(() => {
+  const safeText = deferredText.slice(0, MAX_INPUT_CHARS)
+  return parseExpensiveResult(safeText)
+}, [deferredText])
+```
 
 ---
 
@@ -48,4 +70,7 @@ Questions to answer:
 
 <!-- What reviewers should check -->
 
-(To be filled by the team)
+- Does a user-controlled input feed an unbounded synchronous loop, parser, regex, diff, or renderer?
+- Does a live-updating component create its own interval instead of using the shared visible timer?
+- Does a long list subscribe every row to a high-frequency store?
+- Are large-input warnings translated in both supported locales?

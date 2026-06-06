@@ -7,7 +7,7 @@
     "node": "24.x"
   },
   "scripts": {
-    "dev": "next dev --webpack",
+    "dev": "next dev --turbo",
     "dev:turbo": "next dev --turbo",
     "build": "next build",
     "start": "next start",

@@ -2,12 +2,13 @@
 
 import { jwtDecode } from 'jwt-decode'
 import { ShieldCheck, X } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/textarea'
+import { useVisibleNow } from '@/hooks/useVisibleNow'
 
 interface JwtPayload {
   [key: string]: unknown
@@ -23,13 +24,6 @@ const JwtClient = () => {
   const { t } = useTranslation()
 
   const [token, setToken] = useState('')
-  const [now, setNow] = useState(() => Date.now())
-
-  // Tick every second so expiration status stays current after the user pastes a token
-  useEffect(() => {
-    const interval = setInterval(() => setNow(Date.now()), 1000)
-    return () => clearInterval(interval)
-  }, [])
 
   const { decoded, error, expTimestamp }: DecodedResult = useMemo(() => {
     if (!token.trim()) {
@@ -57,6 +51,8 @@ const JwtClient = () => {
       return { decoded: null, error: err.message, expTimestamp: null }
     }
   }, [token, t])
+
+  const now = useVisibleNow(expTimestamp !== null)
 
   const isExpired = useMemo(() => {
     if (expTimestamp === null) return null

@@ -219,7 +219,7 @@ const buildPalette = (color: RgbValue): Swatch[] => {
 }
 
 const ColorClient = () => {
-  const { t } = useTranslation()
+  const { i18n, t } = useTranslation()
   const { copy } = useCopy()
 
   const [colors, setColors] = useState<ColorValues>(INITIAL_COLOR)
@@ -288,6 +288,7 @@ const ColorClient = () => {
     [background.rgb, colors.rgb]
   )
   const contrastScore = contrastRatio.toFixed(2)
+  const onBackgroundLabel = i18n.language === 'cn' ? '叠加于' : 'on'
   const contrastChecks = [
     {
       label: t('app.converter.color.wcag.normal_aa'),
@@ -373,30 +374,37 @@ const ColorClient = () => {
             </div>
           </div>
 
-          <div
-            className="glass-panel glass-clip rounded-3xl p-5"
-            style={{
-              backgroundColor: background.hex
-            }}
-          >
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-              <div className="min-w-0">
-                <div className="text-2xl font-semibold leading-tight" style={{ color: colors.hex }}>
-                  {t('app.converter.color.preview_text')}
-                </div>
-                <div className="mt-1 font-mono text-sm" style={{ color: colors.hex }}>
-                  {hexStr} on {background.hex.toUpperCase()}
+          <div className="glass-panel glass-clip glass-prism rounded-3xl p-4 sm:p-5">
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.8fr)] lg:items-stretch">
+              <div
+                className="relative min-h-40 overflow-hidden rounded-2xl border border-[var(--glass-border-strong)] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.42),0_16px_42px_rgba(31,38,135,0.14)]"
+                style={{
+                  backgroundColor: background.hex,
+                  color: colors.hex
+                }}
+              >
+                <div className="pointer-events-none absolute inset-0 rounded-[inherit] bg-[radial-gradient(circle_at_16%_0%,rgba(255,255,255,0.45),transparent_34%),linear-gradient(135deg,rgba(255,255,255,0.18),transparent_48%)]" />
+                <div className="relative">
+                  <div className="text-2xl font-semibold leading-tight">
+                    {t('app.converter.color.preview_text')}
+                  </div>
+                  <div className="mt-2 flex min-w-0 flex-wrap items-center gap-2 font-mono text-sm">
+                    <span>{hexStr}</span>
+                    <span className="opacity-70">{onBackgroundLabel}</span>
+                    <span>{background.hex.toUpperCase()}</span>
+                  </div>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:min-w-[420px]">
+
+              <div className="grid grid-cols-2 gap-3 content-center">
                 {contrastChecks.map(item => (
                   <div
                     key={item.label}
                     className={[
-                      'rounded-2xl border px-3 py-2 text-sm',
+                      'rounded-2xl border px-3 py-2.5 text-sm glass-input',
                       item.pass
-                        ? 'border-[var(--success)] bg-[var(--success-subtle)] text-[var(--text-primary)]'
-                        : 'border-[var(--border-subtle)] bg-[var(--glass-input-bg)] text-[var(--text-secondary)]'
+                        ? 'border-[var(--success)] text-[var(--text-primary)]'
+                        : 'border-[var(--border-subtle)] text-[var(--text-secondary)]'
                     ].join(' ')}
                   >
                     <div className="flex items-center gap-2">

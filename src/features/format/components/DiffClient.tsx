@@ -2,7 +2,7 @@
 
 import * as Diff from 'diff'
 import { ArrowLeftRight, Trash2 } from 'lucide-react'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useDeferredValue, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
@@ -15,16 +15,40 @@ interface DiffPart {
   removed?: boolean
 }
 
+const MAX_DIFF_CHARS = 20000
+const MAX_DIFF_PREVIEW_CHARS = 10000
+
 const DiffClient = () => {
   const { t } = useTranslation()
 
   const [oldText, setOldText] = useState('')
   const [newText, setNewText] = useState('')
+  const deferredOldText = useDeferredValue(oldText)
+  const deferredNewText = useDeferredValue(newText)
 
-  const diffResult = useMemo(() => {
-    if (!oldText && !newText) return []
-    return Diff.diffChars(oldText, newText) as DiffPart[]
-  }, [oldText, newText])
+  const { diffResult, warning } = useMemo(() => {
+    if (!deferredOldText && !deferredNewText) {
+      return { diffResult: [] as DiffPart[], warning: null as string | null }
+    }
+
+    const totalChars = deferredOldText.length + deferredNewText.length
+    if (totalChars > MAX_DIFF_CHARS) {
+      return {
+        diffResult: Diff.diffChars(
+          deferredOldText.slice(0, MAX_DIFF_PREVIEW_CHARS),
+          deferredNewText.slice(0, MAX_DIFF_PREVIEW_CHARS)
+        ) as DiffPart[],
+        warning: t('app.format.diff.warning.preview', {
+          count: MAX_DIFF_PREVIEW_CHARS
+        })
+      }
+    }
+
+    return {
+      diffResult: Diff.diffChars(deferredOldText, deferredNewText) as DiffPart[],
+      warning: null
+    }
+  }, [deferredOldText, deferredNewText, t])
 
   const handleSwap = useCallback(() => {
     setOldText(newText)
@@ -89,6 +113,11 @@ const DiffClient = () => {
               />
             </div>
           </div>
+          {warning && (
+            <p className="mt-4 rounded-lg border border-[var(--warning)] bg-[var(--warning-subtle)] px-3 py-2 text-sm text-[var(--warning)]">
+              {warning}
+            </p>
+          )}
         </CardContent>
       </Card>
 

@@ -19,8 +19,8 @@ const RetiresClient = () => {
   const { i18n, t } = useTranslation()
 
   const [birth, setBirth] = useState<Date>()
-  const [gender, setGender] = useState<'male' | 'female'>()
-  const [occupation, setOccupation] = useState<'worker' | 'staff'>()
+  const [gender, setGender] = useState<'' | 'male' | 'female'>('')
+  const [occupation, setOccupation] = useState<'' | 'worker' | 'staff'>('')
 
   const [retirement, setRetirement] = useState<calcRetiresReturnType>()
 
@@ -112,13 +112,13 @@ const RetiresClient = () => {
                   onValueChange={v => setGender(v as 'male' | 'female')}
                   className="gap-3 sm:pt-2"
                 >
-                  <div className="flex items-center space-x-2">
+                  <div className="flex min-h-8 items-center gap-3">
                     <RadioGroupItem value="male" id="male" />
                     <Label htmlFor="male" className="cursor-pointer">
                       {t('app.social.retires.male')}
                     </Label>
                   </div>
-                  <div className="flex items-center space-x-2">
+                  <div className="flex min-h-8 items-center gap-3">
                     <RadioGroupItem value="female" id="female" />
                     <Label htmlFor="female" className="cursor-pointer">
                       {t('app.social.retires.female')}
@@ -135,13 +135,13 @@ const RetiresClient = () => {
                     onValueChange={v => setOccupation(v as 'worker' | 'staff')}
                     className="gap-3 sm:pt-2"
                   >
-                    <div className="flex items-center space-x-2">
+                    <div className="flex min-h-8 items-center gap-3">
                       <RadioGroupItem value="worker" id="worker" />
                       <Label htmlFor="worker" className="cursor-pointer">
                         {t('app.social.retires.occupation.worker')}
                       </Label>
                     </div>
-                    <div className="flex items-center space-x-2">
+                    <div className="flex min-h-8 items-center gap-3">
                       <RadioGroupItem value="staff" id="staff" />
                       <Label htmlFor="staff" className="cursor-pointer">
                         {t('app.social.retires.occupation.staff')}

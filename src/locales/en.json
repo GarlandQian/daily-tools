@@ -155,6 +155,9 @@
   "app.social.time.reset": "Reset",
   "app.social.time.same_as_local": "Same as local",
   "app.social.time.from_local": "{{hours}}h from local",
+  "app.social.time.date.today": "Today",
+  "app.social.time.date.tomorrow": "Tomorrow",
+  "app.social.time.date.yesterday": "Yesterday",
   "app.social.time.group.all": "All",
   "app.social.time.group.asia": "Asia",
   "app.social.time.group.europe": "Europe",
@@ -396,6 +399,7 @@
   "app.format.diff.modified_placeholder": "Enter modified text...",
   "app.format.diff.result": "Diff Result",
   "app.format.diff.swap": "Swap",
+  "app.format.diff.warning.preview": "Large input detected. Showing a character diff preview for the first {{count}} characters from each side.",
 
   "app.format.regex": "Regex Tester",
   "app.format.regex.pattern": "Pattern",
@@ -409,6 +413,10 @@
   "app.format.regex.index": "Index",
   "app.format.regex.match": "Match",
   "app.format.regex.groups": "Groups",
+  "app.format.regex.warning.pattern_too_long": "Pattern is too long to evaluate safely. Limit it to {{count}} characters.",
+  "app.format.regex.warning.input_truncated": "Only the first {{count}} characters were evaluated to keep the UI responsive.",
+  "app.format.regex.warning.backtracking": "This pattern may backtrack heavily, so the evaluated input was reduced.",
+  "app.format.regex.warning.match_cap": "Showing the first {{count}} matches.",
 
   "app.generation.cron": "Cron Generator",
   "app.generation.cron.second": "Second",
