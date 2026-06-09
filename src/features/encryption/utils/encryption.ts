@@ -5,6 +5,7 @@ type AesMode = keyof typeof CryptoJS.mode
 type AesPadding = keyof typeof CryptoJS.pad
 type AesEncoding = keyof typeof CryptoJS.enc
 type AesFormat = keyof typeof CryptoJS.format
+type SymmetricAlgorithm = 'AES' | 'DES' | 'TripleDES'
 
 export interface AesCryptoOptions {
   iv: string // 初始化向量，部分模式必需
@@ -20,18 +21,38 @@ export interface AesCryptoOptions {
  * @param iv 初始化向量
  * @param mode 加密模式
  */
+const KEY_LENGTHS: Record<SymmetricAlgorithm, number[]> = {
+  AES: [16, 24, 32],
+  DES: [8],
+  TripleDES: [16, 24]
+}
+
+const IV_LENGTHS: Record<SymmetricAlgorithm, number> = {
+  AES: 16,
+  DES: 8,
+  TripleDES: 8
+}
+
 function validateKeyAndIvLength(
-  key: string,
+  algorithm: SymmetricAlgorithm,
+  key: CryptoJS.lib.WordArray,
   iv: CryptoJS.lib.WordArray | undefined,
   mode: AesMode
 ) {
-  const keyLength = CryptoJS.enc.Utf8.parse(key).sigBytes
-  if (![16, 24, 32].includes(keyLength)) {
-    throw new Error('app.encryption.aes.key.length')
+  if (!KEY_LENGTHS[algorithm].includes(key.sigBytes)) {
+    throw new Error(
+      algorithm === 'AES'
+        ? 'app.encryption.aes.key.length'
+        : `app.encryption.symmetric.key_length.${algorithm === 'DES' ? 'des' : 'tripledes'}`
+    )
   }
   // ECB 模式不需要 IV，忽略 IV 长度检查
-  if (mode !== 'ECB' && iv && iv.sigBytes !== 16) {
-    throw new Error('app.encryption.aes.iv.length')
+  if (mode !== 'ECB' && iv && iv.sigBytes !== IV_LENGTHS[algorithm]) {
+    throw new Error(
+      algorithm === 'AES'
+        ? 'app.encryption.aes.iv.length'
+        : `app.encryption.symmetric.iv_length.${algorithm === 'DES' ? 'des' : 'tripledes'}`
+    )
   }
 }
 
@@ -51,14 +72,15 @@ export function aesCrypto(
 ): string {
   const { iv, mode, padding, format, encoding } = options
 
-  // 检查密钥和 IV 的长度
-  validateKeyAndIvLength(secret, iv ? CryptoJS.enc.Utf8.parse(iv) : undefined, mode)
-
   const secretKey = CryptoJS.enc[encoding].parse(secret) // 使用指定编码解析密钥
+  const ivWordArray = iv ? CryptoJS.enc.Utf8.parse(iv) : undefined
+
+  // 检查密钥和 IV 的长度
+  validateKeyAndIvLength('AES', secretKey, ivWordArray, mode)
 
   if (isEncrypt) {
     const encrypted = CryptoJS.AES.encrypt(text, secretKey, {
-      iv: iv ? CryptoJS.enc.Utf8.parse(iv) : undefined,
+      iv: ivWordArray,
       mode: CryptoJS.mode[mode],
       padding: CryptoJS.pad[padding],
       format: CryptoJS.format[format]
@@ -66,7 +88,7 @@ export function aesCrypto(
     return encrypted.toString()
   } else {
     const decrypted = CryptoJS.AES.decrypt(text, secretKey, {
-      iv: iv ? CryptoJS.enc.Utf8.parse(iv) : undefined,
+      iv: ivWordArray,
       mode: CryptoJS.mode[mode],
       padding: CryptoJS.pad[padding],
       format: CryptoJS.format[format]
@@ -91,14 +113,15 @@ export function desCrypto(
 ): string {
   const { iv, mode, padding, format, encoding } = options
 
-  // 检查密钥和 IV 的长度
-  validateKeyAndIvLength(secret, iv ? CryptoJS.enc.Utf8.parse(iv) : undefined, mode)
-
   const secretKey = CryptoJS.enc[encoding].parse(secret) // 使用指定编码解析密钥
+  const ivWordArray = iv ? CryptoJS.enc.Utf8.parse(iv) : undefined
+
+  // 检查密钥和 IV 的长度
+  validateKeyAndIvLength('DES', secretKey, ivWordArray, mode)
 
   if (isEncrypt) {
     const encrypted = CryptoJS.DES.encrypt(text, secretKey, {
-      iv: iv ? CryptoJS.enc.Utf8.parse(iv) : undefined,
+      iv: ivWordArray,
       mode: CryptoJS.mode[mode],
       padding: CryptoJS.pad[padding],
       format: CryptoJS.format[format]
@@ -106,7 +129,7 @@ export function desCrypto(
     return encrypted.toString()
   } else {
     const decrypted = CryptoJS.DES.decrypt(text, secretKey, {
-      iv: iv ? CryptoJS.enc.Utf8.parse(iv) : undefined,
+      iv: ivWordArray,
       mode: CryptoJS.mode[mode],
       padding: CryptoJS.pad[padding],
       format: CryptoJS.format[format]
@@ -131,14 +154,15 @@ export function TripleDesCrypto(
 ): string {
   const { iv, mode, padding, format, encoding } = options
 
-  // 检查密钥和 IV 的长度
-  validateKeyAndIvLength(secret, iv ? CryptoJS.enc.Utf8.parse(iv) : undefined, mode)
-
   const secretKey = CryptoJS.enc[encoding].parse(secret) // 使用指定编码解析密钥
+  const ivWordArray = iv ? CryptoJS.enc.Utf8.parse(iv) : undefined
+
+  // 检查密钥和 IV 的长度
+  validateKeyAndIvLength('TripleDES', secretKey, ivWordArray, mode)
 
   if (isEncrypt) {
     const encrypted = CryptoJS.TripleDES.encrypt(text, secretKey, {
-      iv: iv ? CryptoJS.enc.Utf8.parse(iv) : undefined,
+      iv: ivWordArray,
       mode: CryptoJS.mode[mode],
       padding: CryptoJS.pad[padding],
       format: CryptoJS.format[format]
@@ -146,7 +170,7 @@ export function TripleDesCrypto(
     return encrypted.toString()
   } else {
     const decrypted = CryptoJS.TripleDES.decrypt(text, secretKey, {
-      iv: iv ? CryptoJS.enc.Utf8.parse(iv) : undefined,
+      iv: ivWordArray,
       mode: CryptoJS.mode[mode],
       padding: CryptoJS.pad[padding],
       format: CryptoJS.format[format]

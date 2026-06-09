@@ -1,23 +1,29 @@
 'use client'
 
-import { Copy, KeyRound, RotateCcw, ShieldCheck, Sparkles } from 'lucide-react'
+import { Copy, FileJson, KeyRound, RotateCcw, ShieldCheck, Sparkles } from 'lucide-react'
+import type { ReactNode } from 'react'
 import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Slider } from '@/components/ui/slider'
 import { useToast } from '@/components/ui/toast'
+import { useCopy } from '@/hooks/useCopy'
 
-type TokenFormat = 'base64url' | 'base64' | 'hex' | 'alphanumeric' | 'numeric'
+type TokenFormat = 'alphanumeric' | 'base64' | 'base64url' | 'hex' | 'numeric'
+type TokenOutput = 'bearer' | 'curl' | 'env' | 'json' | 'lines'
 
 interface TokenFormData {
-  format: TokenFormat
-  length: number
   count: number
+  expiresDays: number
+  format: TokenFormat
+  includeBearer: boolean
+  length: number
   prefix: string
 }
 
@@ -27,9 +33,11 @@ interface TokenPreset {
 }
 
 const DEFAULT_FORM_DATA: TokenFormData = {
-  format: 'base64url',
-  length: 32,
   count: 5,
+  expiresDays: 90,
+  format: 'base64url',
+  includeBearer: false,
+  length: 32,
   prefix: ''
 }
 
@@ -39,28 +47,45 @@ const TOKEN_PRESETS: TokenPreset[] = [
   {
     key: 'api',
     value: {
-      format: 'base64url',
-      length: 48,
       count: 3,
+      expiresDays: 90,
+      format: 'base64url',
+      includeBearer: true,
+      length: 48,
       prefix: 'sk_'
     }
   },
   {
     key: 'session',
     value: {
-      format: 'hex',
-      length: 64,
       count: 5,
+      expiresDays: 14,
+      format: 'hex',
+      includeBearer: false,
+      length: 64,
       prefix: ''
     }
   },
   {
     key: 'otp',
     value: {
-      format: 'numeric',
-      length: 6,
       count: 10,
+      expiresDays: 1,
+      format: 'numeric',
+      includeBearer: false,
+      length: 6,
       prefix: ''
+    }
+  },
+  {
+    key: 'webhook',
+    value: {
+      count: 5,
+      expiresDays: 365,
+      format: 'base64url',
+      includeBearer: false,
+      length: 40,
+      prefix: 'whsec_'
     }
   }
 ]
@@ -134,19 +159,68 @@ const getEntropyBits = (format: TokenFormat, length: number) => {
   return length * Math.log2(CHARSETS.numeric.length)
 }
 
+const formatTokenOutput = (
+  tokens: string[],
+  output: TokenOutput,
+  expiresAt: string,
+  includeBearer: boolean
+) => {
+  const decorated = tokens.map(token => (includeBearer ? `Bearer ${token}` : token))
+
+  if (output === 'json') {
+    return JSON.stringify(
+      tokens.map((token, index) => ({
+        authorization: `Bearer ${token}`,
+        expiresAt,
+        index: index + 1,
+        token
+      })),
+      null,
+      2
+    )
+  }
+
+  if (output === 'env') {
+    return tokens.map((token, index) => `API_TOKEN_${index + 1}=${token}`).join('\n')
+  }
+
+  if (output === 'curl') {
+    const first = tokens[0] ?? ''
+    return `curl -H "Authorization: Bearer ${first}" https://api.example.com/resource`
+  }
+
+  if (output === 'bearer') {
+    return decorated.join('\n')
+  }
+
+  return tokens.join('\n')
+}
+
 const TokenClient = () => {
   const { t } = useTranslation()
   const toast = useToast()
-  const [tokens, setTokens] = useState<string[]>([])
+  const { copy } = useCopy()
   const [formData, setFormData] = useState<TokenFormData>(DEFAULT_FORM_DATA)
+  const [outputType, setOutputType] = useState<TokenOutput>('lines')
+  const [tokens, setTokens] = useState<string[]>([])
 
   const normalizedLength = clampNumber(formData.length, 6, 256)
   const normalizedCount = clampNumber(formData.count, 1, 100)
+  const normalizedExpiresDays = clampNumber(formData.expiresDays, 1, 3650)
   const entropyBits = useMemo(
     () => Math.floor(getEntropyBits(formData.format, normalizedLength)),
     [formData.format, normalizedLength]
   )
   const outputLength = formData.prefix.length + normalizedLength
+  const expiresAt = useMemo(() => {
+    const date = new Date()
+    date.setDate(date.getDate() + normalizedExpiresDays)
+    return date.toISOString()
+  }, [normalizedExpiresDays])
+  const formattedOutput = useMemo(
+    () => formatTokenOutput(tokens, outputType, expiresAt, formData.includeBearer),
+    [expiresAt, formData.includeBearer, outputType, tokens]
+  )
 
   const handleGenerate = useCallback(() => {
     const nextTokens = Array.from({ length: normalizedCount }, () => {
@@ -163,25 +237,14 @@ const TokenClient = () => {
 
   const handleReset = useCallback(() => {
     setFormData(DEFAULT_FORM_DATA)
+    setOutputType('lines')
     setTokens([])
   }, [])
 
-  const handleCopy = useCallback(
-    async (value: string) => {
-      try {
-        await navigator.clipboard.writeText(value)
-        toast.success(t('public.copy.success'))
-      } catch {
-        toast.error(t('public.error'))
-      }
-    },
-    [toast, t]
-  )
-
   const handleCopyAll = useCallback(() => {
     if (!tokens.length) return
-    void handleCopy(tokens.join('\n'))
-  }, [handleCopy, tokens])
+    void copy(formattedOutput)
+  }, [copy, formattedOutput, tokens.length])
 
   return (
     <div className="flex size-full flex-col gap-5">
@@ -276,36 +339,66 @@ const TokenClient = () => {
                   }
                 />
               </div>
+
+              <div className="space-y-3">
+                <Label htmlFor="token-expires">{t('app.generation.token.expires_days')}</Label>
+                <Input
+                  id="token-expires"
+                  type="number"
+                  min={1}
+                  max={3650}
+                  value={formData.expiresDays}
+                  onChange={event =>
+                    setFormData(prev => ({
+                      ...prev,
+                      expiresDays: Number(event.target.value)
+                    }))
+                  }
+                />
+              </div>
+
+              <div className="space-y-3">
+                <Label htmlFor="token-output">{t('app.generation.token.output_type')}</Label>
+                <Select
+                  id="token-output"
+                  value={outputType}
+                  onChange={event => setOutputType(event.target.value as TokenOutput)}
+                >
+                  {(['lines', 'bearer', 'env', 'curl', 'json'] as const).map(output => (
+                    <option key={output} value={output}>
+                      {t(`app.generation.token.output.${output}`)}
+                    </option>
+                  ))}
+                </Select>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:grid-cols-1">
-              <div className="glass-panel glass-clip rounded-2xl p-4">
-                <div className="flex items-center gap-2 text-xs font-medium text-[var(--text-secondary)]">
-                  <ShieldCheck className="h-4 w-4" />
-                  {t('app.generation.token.entropy')}
-                </div>
-                <div className="mt-2 font-mono text-2xl font-semibold text-[var(--text-primary)]">
-                  {entropyBits}
-                </div>
-              </div>
-              <div className="glass-panel glass-clip rounded-2xl p-4">
-                <div className="flex items-center gap-2 text-xs font-medium text-[var(--text-secondary)]">
-                  <KeyRound className="h-4 w-4" />
-                  {t('app.generation.token.output_length')}
-                </div>
-                <div className="mt-2 font-mono text-2xl font-semibold text-[var(--text-primary)]">
-                  {outputLength}
-                </div>
-              </div>
-              <div className="glass-panel glass-clip rounded-2xl p-4">
-                <div className="text-xs font-medium text-[var(--text-secondary)]">
-                  {t('app.generation.token.amount')}
-                </div>
-                <div className="mt-2 font-mono text-2xl font-semibold text-[var(--text-primary)]">
-                  {normalizedCount}
-                </div>
-              </div>
+              <Metric
+                icon={<ShieldCheck className="h-4 w-4" />}
+                label={t('app.generation.token.entropy')}
+                value={entropyBits}
+              />
+              <Metric
+                icon={<KeyRound className="h-4 w-4" />}
+                label={t('app.generation.token.output_length')}
+                value={outputLength}
+              />
+              <Metric label={t('app.generation.token.expires_at')} value={expiresAt.slice(0, 10)} />
             </div>
+          </div>
+
+          <div className="flex flex-wrap gap-3">
+            <Checkbox
+              checked={formData.includeBearer}
+              onChange={event =>
+                setFormData(prev => ({
+                  ...prev,
+                  includeBearer: event.target.checked
+                }))
+              }
+              label={t('app.generation.token.include_bearer')}
+            />
           </div>
 
           <div className="flex flex-wrap gap-2">
@@ -339,38 +432,50 @@ const TokenClient = () => {
               disabled={!tokens.length}
               onClick={handleCopyAll}
             >
-              {t('app.generation.uuid.copy')}
+              {t('app.generation.token.copy_all')}
             </Button>
           </div>
         </CardContent>
       </Card>
 
-      <Card className="flex min-h-[280px] flex-1 flex-col overflow-hidden">
+      <Card className="flex min-h-[320px] flex-1 flex-col overflow-hidden">
         <CardHeader>
           <CardTitle>{t('app.generation.token.result')}</CardTitle>
         </CardHeader>
         <CardContent className="flex-1 overflow-auto">
           {tokens.length ? (
-            <div className="flex flex-col gap-3">
-              {tokens.map((token, index) => (
-                <div
-                  key={`${token}-${index}`}
-                  className="flex items-center gap-3 rounded-2xl border border-[var(--glass-border)] bg-[var(--glass-input-bg)] px-4 py-3"
-                >
-                  <code className="min-w-0 flex-1 break-all font-mono text-sm text-[var(--text-primary)]">
-                    {token}
-                  </code>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-9 w-9 shrink-0 rounded-xl"
-                    icon={<Copy className="h-4 w-4" />}
-                    onClick={() => void handleCopy(token)}
-                    aria-label={t('public.copy')}
-                  />
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
+              <div className="flex flex-col gap-3">
+                {tokens.map((token, index) => (
+                  <div
+                    key={`${token}-${index}`}
+                    className="flex items-center gap-3 rounded-2xl border border-[var(--glass-border)] bg-[var(--glass-input-bg)] px-4 py-3"
+                  >
+                    <code className="min-w-0 flex-1 break-all font-mono text-sm text-[var(--text-primary)]">
+                      {token}
+                    </code>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-9 w-9 shrink-0 rounded-xl"
+                      icon={<Copy className="h-4 w-4" />}
+                      onClick={() => void copy(token)}
+                      aria-label={t('public.copy')}
+                    />
+                  </div>
+                ))}
+              </div>
+
+              <div className="glass-input rounded-2xl p-4">
+                <div className="mb-2 flex items-center gap-2 text-xs font-medium text-[var(--text-tertiary)]">
+                  <FileJson className="h-4 w-4" />
+                  {t('app.generation.token.export_preview')}
                 </div>
-              ))}
+                <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-all font-mono text-xs text-[var(--text-primary)]">
+                  {formattedOutput}
+                </pre>
+              </div>
             </div>
           ) : (
             <div className="flex h-full min-h-48 items-center justify-center text-center">
@@ -389,5 +494,23 @@ const TokenClient = () => {
     </div>
   )
 }
+
+const Metric = ({
+  icon,
+  label,
+  value
+}: {
+  icon?: ReactNode
+  label: string
+  value: number | string
+}) => (
+  <div className="glass-panel glass-clip rounded-2xl p-4">
+    <div className="flex items-center gap-2 text-xs font-medium text-[var(--text-secondary)]">
+      {icon}
+      {label}
+    </div>
+    <div className="mt-2 font-mono text-2xl font-semibold text-[var(--text-primary)]">{value}</div>
+  </div>
+)
 
 export default TokenClient

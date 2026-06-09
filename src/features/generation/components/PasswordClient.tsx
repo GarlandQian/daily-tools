@@ -1,6 +1,16 @@
 'use client'
 
-import { Copy, KeyRound, RotateCcw, ShieldCheck, Sparkles } from 'lucide-react'
+import {
+  Copy,
+  Eye,
+  EyeOff,
+  FileJson,
+  KeyRound,
+  RotateCcw,
+  ShieldCheck,
+  Sparkles
+} from 'lucide-react'
+import type { ReactNode } from 'react'
 import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -9,19 +19,27 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Select } from '@/components/ui/select'
 import { Slider } from '@/components/ui/slider'
 import { useToast } from '@/components/ui/toast'
+import { useCopy } from '@/hooks/useCopy'
+
+type PasswordMode = 'passphrase' | 'password'
+type PasswordOutput = 'csv' | 'json' | 'lines'
 
 interface PasswordFormData {
-  length: number
   count: number
-  uppercase: boolean
-  lowercase: boolean
-  numbers: boolean
-  symbols: boolean
-  requireEachType: boolean
-  excludeAmbiguous: boolean
   customSymbols: string
+  excludeAmbiguous: boolean
+  length: number
+  lowercase: boolean
+  mode: PasswordMode
+  numbers: boolean
+  passphraseSeparator: string
+  passphraseWords: number
+  requireEachType: boolean
+  symbols: boolean
+  uppercase: boolean
 }
 
 interface PasswordPreset {
@@ -30,15 +48,18 @@ interface PasswordPreset {
 }
 
 const DEFAULT_FORM_DATA: PasswordFormData = {
-  length: 18,
   count: 5,
-  uppercase: true,
-  lowercase: true,
-  numbers: true,
-  symbols: true,
-  requireEachType: true,
+  customSymbols: '!@#$%^&*_-+=?',
   excludeAmbiguous: true,
-  customSymbols: '!@#$%^&*_-+=?'
+  length: 18,
+  lowercase: true,
+  mode: 'password',
+  numbers: true,
+  passphraseSeparator: '-',
+  passphraseWords: 4,
+  requireEachType: true,
+  symbols: true,
+  uppercase: true
 }
 
 const PASSWORD_PRESETS: PasswordPreset[] = [
@@ -50,33 +71,82 @@ const PASSWORD_PRESETS: PasswordPreset[] = [
     key: 'memorable',
     value: {
       ...DEFAULT_FORM_DATA,
+      excludeAmbiguous: true,
       length: 16,
-      symbols: false,
-      excludeAmbiguous: true
+      symbols: false
     }
   },
   {
     key: 'pin',
     value: {
       ...DEFAULT_FORM_DATA,
-      length: 6,
       count: 10,
-      uppercase: false,
+      length: 6,
       lowercase: false,
       numbers: true,
+      requireEachType: false,
       symbols: false,
-      requireEachType: false
+      uppercase: false
+    }
+  },
+  {
+    key: 'passphrase',
+    value: {
+      ...DEFAULT_FORM_DATA,
+      count: 6,
+      mode: 'passphrase',
+      passphraseSeparator: '-',
+      passphraseWords: 4,
+      requireEachType: false,
+      symbols: false
+    }
+  },
+  {
+    key: 'wifi',
+    value: {
+      ...DEFAULT_FORM_DATA,
+      count: 4,
+      customSymbols: '!@#$%+=?',
+      length: 24
     }
   }
 ]
 
 const BASE_CHAR_SETS = {
-  uppercase: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
   lowercase: 'abcdefghijklmnopqrstuvwxyz',
-  numbers: '0123456789'
+  numbers: '0123456789',
+  uppercase: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 }
 
 const AMBIGUOUS_CHARS = new Set(['0', 'O', 'o', '1', 'I', 'l', '|'])
+const PASSPHRASE_WORDS = [
+  'anchor',
+  'amber',
+  'binary',
+  'breeze',
+  'carbon',
+  'cobalt',
+  'delta',
+  'ember',
+  'forest',
+  'galaxy',
+  'harbor',
+  'indigo',
+  'jupiter',
+  'kernel',
+  'lantern',
+  'matrix',
+  'nebula',
+  'orbit',
+  'pixel',
+  'quartz',
+  'rocket',
+  'silver',
+  'tidal',
+  'vector',
+  'willow',
+  'zenith'
+]
 const UINT32_RANGE = 0x100000000
 
 const clampNumber = (value: number, min: number, max: number) => {
@@ -152,65 +222,137 @@ const generatePassword = (length: number, groups: string[], requireEachType: boo
   return shuffleChars(chars).join('')
 }
 
+const generatePassphrase = (wordCount: number, separator: string) =>
+  Array.from(
+    { length: wordCount },
+    () => PASSPHRASE_WORDS[getRandomIndex(PASSPHRASE_WORDS.length)]
+  ).join(separator || '-')
+
+const formatPasswordOutput = (
+  passwords: string[],
+  outputType: PasswordOutput,
+  entropyBits: number,
+  strengthLevel: string
+) => {
+  if (outputType === 'json') {
+    return JSON.stringify(
+      passwords.map((password, index) => ({
+        entropyBits,
+        index: index + 1,
+        password,
+        strength: strengthLevel
+      })),
+      null,
+      2
+    )
+  }
+
+  if (outputType === 'csv') {
+    return [
+      'index,password,entropyBits,strength',
+      ...passwords.map(
+        (password, index) =>
+          `${index + 1},"${password.replaceAll('"', '""')}",${entropyBits},${strengthLevel}`
+      )
+    ].join('\n')
+  }
+
+  return passwords.join('\n')
+}
+
 const PasswordClient = () => {
   const { t } = useTranslation()
   const toast = useToast()
-  const [passwords, setPasswords] = useState<string[]>([])
+  const { copy } = useCopy()
   const [formData, setFormData] = useState<PasswordFormData>(DEFAULT_FORM_DATA)
+  const [outputType, setOutputType] = useState<PasswordOutput>('lines')
+  const [passwords, setPasswords] = useState<string[]>([])
+  const [showSecrets, setShowSecrets] = useState(false)
 
   const normalizedLength = clampNumber(formData.length, 4, 128)
   const normalizedCount = clampNumber(formData.count, 1, 100)
+  const normalizedPassphraseWords = clampNumber(formData.passphraseWords, 3, 10)
   const selectedGroups = useMemo(() => buildSelectedGroups(formData), [formData])
   const charset = useMemo(() => uniqueChars(selectedGroups.join('')), [selectedGroups])
   const entropyBits = useMemo(() => {
+    if (formData.mode === 'passphrase') {
+      return Math.floor(normalizedPassphraseWords * Math.log2(PASSPHRASE_WORDS.length))
+    }
     if (!charset.length) return 0
     return Math.floor(normalizedLength * Math.log2(charset.length))
-  }, [charset.length, normalizedLength])
+  }, [charset.length, formData.mode, normalizedLength, normalizedPassphraseWords])
   const strengthLevel = getStrengthLevel(entropyBits)
+  const formattedOutput = useMemo(
+    () => formatPasswordOutput(passwords, outputType, entropyBits, strengthLevel),
+    [entropyBits, outputType, passwords, strengthLevel]
+  )
+  const policyHints = useMemo(() => {
+    const hints: string[] = []
+
+    if (entropyBits < 90) hints.push(t('app.generation.password.hint.entropy'))
+    if (formData.mode === 'password' && !formData.excludeAmbiguous) {
+      hints.push(t('app.generation.password.hint.ambiguous'))
+    }
+    if (formData.mode === 'password' && formData.symbols && !formData.customSymbols.trim()) {
+      hints.push(t('app.generation.password.hint.symbols'))
+    }
+    if (formData.mode === 'passphrase' && normalizedPassphraseWords < 4) {
+      hints.push(t('app.generation.password.hint.words'))
+    }
+
+    return hints
+  }, [
+    entropyBits,
+    formData.customSymbols,
+    formData.excludeAmbiguous,
+    formData.mode,
+    formData.symbols,
+    normalizedPassphraseWords,
+    t
+  ])
 
   const handleGenerate = useCallback(() => {
-    if (!charset.length) {
+    if (formData.mode === 'password' && !charset.length) {
       toast.warning(t('app.generation.password.no_charset'))
       return
     }
 
-    if (formData.requireEachType && normalizedLength < selectedGroups.length) {
+    if (
+      formData.mode === 'password' &&
+      formData.requireEachType &&
+      normalizedLength < selectedGroups.length
+    ) {
       toast.warning(t('app.generation.password.too_short'))
       return
     }
 
-    const nextPasswords = Array.from({ length: normalizedCount }, () =>
-      generatePassword(normalizedLength, selectedGroups, formData.requireEachType)
-    )
+    const nextPasswords = Array.from({ length: normalizedCount }, () => {
+      if (formData.mode === 'passphrase') {
+        return generatePassphrase(normalizedPassphraseWords, formData.passphraseSeparator)
+      }
+      return generatePassword(normalizedLength, selectedGroups, formData.requireEachType)
+    })
 
     setPasswords(nextPasswords)
+    setShowSecrets(true)
     toast.success(t('public.success'))
   }, [
     charset.length,
+    formData.mode,
+    formData.passphraseSeparator,
     formData.requireEachType,
     normalizedCount,
     normalizedLength,
+    normalizedPassphraseWords,
     selectedGroups,
     toast,
     t
   ])
 
-  const handleCopy = useCallback(
-    async (value: string) => {
-      try {
-        await navigator.clipboard.writeText(value)
-        toast.success(t('public.copy.success'))
-      } catch {
-        toast.error(t('public.error'))
-      }
-    },
-    [toast, t]
-  )
-
   const handleCopyAll = useCallback(() => {
     if (!passwords.length) return
-    void handleCopy(passwords.join('\n'))
-  }, [handleCopy, passwords])
+    void copy(formattedOutput)
+  }, [copy, formattedOutput, passwords.length])
 
   return (
     <div className="flex size-full flex-col gap-5">
@@ -225,16 +367,47 @@ const PasswordClient = () => {
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div className="space-y-3">
-                <Label>
-                  {t('app.generation.password.length')}: {normalizedLength}
-                </Label>
-                <Slider
-                  value={normalizedLength}
-                  min={4}
-                  max={128}
-                  onChange={value => setFormData(prev => ({ ...prev, length: value }))}
-                />
+                <Label htmlFor="password-mode">{t('app.generation.password.mode')}</Label>
+                <Select
+                  id="password-mode"
+                  value={formData.mode}
+                  onChange={event =>
+                    setFormData(prev => ({ ...prev, mode: event.target.value as PasswordMode }))
+                  }
+                >
+                  <option value="password">{t('app.generation.password.mode.password')}</option>
+                  <option value="passphrase">{t('app.generation.password.mode.passphrase')}</option>
+                </Select>
               </div>
+
+              <div className="space-y-3">
+                {formData.mode === 'password' ? (
+                  <>
+                    <Label>
+                      {t('app.generation.password.length')}: {normalizedLength}
+                    </Label>
+                    <Slider
+                      value={normalizedLength}
+                      min={4}
+                      max={128}
+                      onChange={value => setFormData(prev => ({ ...prev, length: value }))}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <Label>
+                      {t('app.generation.password.words')}: {normalizedPassphraseWords}
+                    </Label>
+                    <Slider
+                      value={normalizedPassphraseWords}
+                      min={3}
+                      max={10}
+                      onChange={value => setFormData(prev => ({ ...prev, passphraseWords: value }))}
+                    />
+                  </>
+                )}
+              </div>
+
               <div className="space-y-3">
                 <Label htmlFor="count">{t('app.generation.password.count')}</Label>
                 <Input
@@ -248,15 +421,26 @@ const PasswordClient = () => {
                   }
                 />
               </div>
-              <div className="space-y-3 md:col-span-2">
+
+              <div className="space-y-3">
                 <Label htmlFor="custom-symbols">
-                  {t('app.generation.password.custom_symbols')}
+                  {formData.mode === 'password'
+                    ? t('app.generation.password.custom_symbols')
+                    : t('app.generation.password.separator')}
                 </Label>
                 <Input
                   id="custom-symbols"
-                  value={formData.customSymbols}
+                  value={
+                    formData.mode === 'password'
+                      ? formData.customSymbols
+                      : formData.passphraseSeparator
+                  }
                   onChange={event =>
-                    setFormData(prev => ({ ...prev, customSymbols: event.target.value }))
+                    setFormData(prev =>
+                      formData.mode === 'password'
+                        ? { ...prev, customSymbols: event.target.value }
+                        : { ...prev, passphraseSeparator: event.target.value.slice(0, 3) }
+                    )
                   }
                   className="font-mono"
                 />
@@ -264,85 +448,74 @@ const PasswordClient = () => {
             </div>
 
             <div className="grid grid-cols-3 gap-3 lg:grid-cols-1">
-              <div className="glass-panel glass-clip rounded-2xl p-4">
-                <div className="flex items-center gap-2 text-xs font-medium text-[var(--text-secondary)]">
-                  <ShieldCheck className="h-4 w-4" />
-                  {t('app.generation.password.entropy')}
-                </div>
-                <div className="mt-2 font-mono text-2xl font-semibold text-[var(--text-primary)]">
-                  {entropyBits}
-                </div>
-              </div>
-              <div className="glass-panel glass-clip rounded-2xl p-4">
-                <div className="text-xs font-medium text-[var(--text-secondary)]">
-                  {t('app.generation.password.charset_size')}
-                </div>
-                <div className="mt-2 font-mono text-2xl font-semibold text-[var(--text-primary)]">
-                  {charset.length}
-                </div>
-              </div>
-              <div className="glass-panel glass-clip rounded-2xl p-4">
-                <div className="flex items-center gap-2 text-xs font-medium text-[var(--text-secondary)]">
-                  <KeyRound className="h-4 w-4" />
-                  {t('app.generation.password.strength')}
-                </div>
-                <div className="mt-2 text-sm font-semibold text-[var(--text-primary)]">
-                  {t(`app.generation.password.strength.${strengthLevel}`)}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="space-y-3">
-            <Label>{t('app.generation.password.charset')}</Label>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <Checkbox
-                checked={formData.uppercase}
-                onChange={event =>
-                  setFormData(prev => ({ ...prev, uppercase: event.target.checked }))
-                }
-                label={t('app.generation.password.uppercase')}
+              <Metric
+                icon={<ShieldCheck className="h-4 w-4" />}
+                label={t('app.generation.password.entropy')}
+                value={entropyBits}
               />
-              <Checkbox
-                checked={formData.lowercase}
-                onChange={event =>
-                  setFormData(prev => ({ ...prev, lowercase: event.target.checked }))
-                }
-                label={t('app.generation.password.lowercase')}
-              />
-              <Checkbox
-                checked={formData.numbers}
-                onChange={event =>
-                  setFormData(prev => ({ ...prev, numbers: event.target.checked }))
-                }
-                label={t('app.generation.password.numbers')}
-              />
-              <Checkbox
-                checked={formData.symbols}
-                onChange={event =>
-                  setFormData(prev => ({ ...prev, symbols: event.target.checked }))
-                }
-                label={t('app.generation.password.symbols')}
+              <Metric label={t('app.generation.password.charset_size')} value={charset.length} />
+              <Metric
+                icon={<KeyRound className="h-4 w-4" />}
+                label={t('app.generation.password.strength')}
+                value={t(`app.generation.password.strength.${strengthLevel}`)}
               />
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            <Checkbox
-              checked={formData.requireEachType}
-              onChange={event =>
-                setFormData(prev => ({ ...prev, requireEachType: event.target.checked }))
-              }
-              label={t('app.generation.password.require_each')}
-            />
-            <Checkbox
-              checked={formData.excludeAmbiguous}
-              onChange={event =>
-                setFormData(prev => ({ ...prev, excludeAmbiguous: event.target.checked }))
-              }
-              label={t('app.generation.password.exclude_ambiguous')}
-            />
-          </div>
+          {formData.mode === 'password' && (
+            <>
+              <div className="space-y-3">
+                <Label>{t('app.generation.password.charset')}</Label>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  <Checkbox
+                    checked={formData.uppercase}
+                    onChange={event =>
+                      setFormData(prev => ({ ...prev, uppercase: event.target.checked }))
+                    }
+                    label={t('app.generation.password.uppercase')}
+                  />
+                  <Checkbox
+                    checked={formData.lowercase}
+                    onChange={event =>
+                      setFormData(prev => ({ ...prev, lowercase: event.target.checked }))
+                    }
+                    label={t('app.generation.password.lowercase')}
+                  />
+                  <Checkbox
+                    checked={formData.numbers}
+                    onChange={event =>
+                      setFormData(prev => ({ ...prev, numbers: event.target.checked }))
+                    }
+                    label={t('app.generation.password.numbers')}
+                  />
+                  <Checkbox
+                    checked={formData.symbols}
+                    onChange={event =>
+                      setFormData(prev => ({ ...prev, symbols: event.target.checked }))
+                    }
+                    label={t('app.generation.password.symbols')}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <Checkbox
+                  checked={formData.requireEachType}
+                  onChange={event =>
+                    setFormData(prev => ({ ...prev, requireEachType: event.target.checked }))
+                  }
+                  label={t('app.generation.password.require_each')}
+                />
+                <Checkbox
+                  checked={formData.excludeAmbiguous}
+                  onChange={event =>
+                    setFormData(prev => ({ ...prev, excludeAmbiguous: event.target.checked }))
+                  }
+                  label={t('app.generation.password.exclude_ambiguous')}
+                />
+              </div>
+            </>
+          )}
 
           <div className="flex flex-wrap gap-2">
             {PASSWORD_PRESETS.map(preset => (
@@ -372,17 +545,57 @@ const PasswordClient = () => {
               onClick={handleCopyAll}
               disabled={!passwords.length}
             >
-              {t('app.generation.uuid.copy')}
+              {t('app.generation.password.copy_all')}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              icon={showSecrets ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              onClick={() => setShowSecrets(prev => !prev)}
+            >
+              {showSecrets
+                ? t('app.generation.password.hide')
+                : t('app.generation.password.reveal')}
             </Button>
           </div>
         </CardContent>
       </Card>
 
-      <Card className="flex min-h-[260px] flex-1 flex-col overflow-hidden">
+      <Card className="flex min-h-[320px] flex-1 flex-col overflow-hidden">
         <CardHeader>
-          <CardTitle>{t('app.generation.password.result')}</CardTitle>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <CardTitle>{t('app.generation.password.result')}</CardTitle>
+            <div className="flex items-center gap-2">
+              <Label htmlFor="password-output" className="text-xs">
+                {t('app.generation.password.output')}
+              </Label>
+              <Select
+                id="password-output"
+                value={outputType}
+                onChange={event => setOutputType(event.target.value as PasswordOutput)}
+                className="w-36"
+              >
+                <option value="lines">{t('app.generation.password.output.lines')}</option>
+                <option value="json">{t('app.generation.password.output.json')}</option>
+                <option value="csv">{t('app.generation.password.output.csv')}</option>
+              </Select>
+            </div>
+          </div>
         </CardHeader>
         <CardContent className="flex-1 overflow-auto">
+          {policyHints.length > 0 && (
+            <div className="mb-4 grid gap-2">
+              {policyHints.map(hint => (
+                <div
+                  key={hint}
+                  className="rounded-xl border border-[var(--warning)] bg-[var(--warning-subtle)] px-3 py-2 text-sm text-[var(--text-primary)]"
+                >
+                  {hint}
+                </div>
+              ))}
+            </div>
+          )}
+
           {passwords.length ? (
             <div className="flex flex-col gap-3">
               {passwords.map((password, index) => (
@@ -391,18 +604,28 @@ const PasswordClient = () => {
                   className="flex items-center gap-3 rounded-2xl border border-[var(--glass-border)] bg-[var(--glass-input-bg)] px-4 py-3"
                 >
                   <code className="min-w-0 flex-1 break-all font-mono text-sm text-[var(--text-primary)]">
-                    {password}
+                    {showSecrets ? password : '*'.repeat(Math.min(password.length, 32))}
                   </code>
                   <Button
                     variant="ghost"
                     size="icon"
                     className="h-9 w-9 shrink-0 rounded-xl"
                     icon={<Copy className="h-4 w-4" />}
-                    onClick={() => void handleCopy(password)}
+                    onClick={() => void copy(password)}
                     aria-label={t('public.copy')}
                   />
                 </div>
               ))}
+
+              <div className="glass-input rounded-2xl p-4">
+                <div className="mb-2 flex items-center gap-2 text-xs font-medium text-[var(--text-tertiary)]">
+                  <FileJson className="h-4 w-4" />
+                  {t('app.generation.password.export_preview')}
+                </div>
+                <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-all font-mono text-xs text-[var(--text-primary)]">
+                  {formattedOutput}
+                </pre>
+              </div>
             </div>
           ) : (
             <div className="flex h-full min-h-44 items-center justify-center text-center">
@@ -416,5 +639,23 @@ const PasswordClient = () => {
     </div>
   )
 }
+
+const Metric = ({
+  icon,
+  label,
+  value
+}: {
+  icon?: ReactNode
+  label: string
+  value: number | string
+}) => (
+  <div className="glass-panel glass-clip rounded-2xl p-4">
+    <div className="flex items-center gap-2 text-xs font-medium text-[var(--text-secondary)]">
+      {icon}
+      {label}
+    </div>
+    <div className="mt-2 font-mono text-2xl font-semibold text-[var(--text-primary)]">{value}</div>
+  </div>
+)
 
 export default PasswordClient

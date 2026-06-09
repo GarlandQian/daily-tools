@@ -4,10 +4,12 @@ import CryptoJS from 'crypto-js'
 import {
   CheckCircle2,
   Copy,
+  Download,
   FileCheck2,
   FileText,
   Hash,
   Loader2,
+  Search,
   Trash2,
   Upload
 } from 'lucide-react'
@@ -16,7 +18,10 @@ import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Checkbox } from '@/components/ui/checkbox'
 import { FileUploadZone } from '@/components/ui/file-upload'
+import { Input } from '@/components/ui/input'
+import { Select } from '@/components/ui/select'
 import { useToast } from '@/components/ui/toast'
 import { useCopy } from '@/hooks/useCopy'
 import { yieldToMain } from '@/utils/scheduler'
@@ -32,7 +37,11 @@ interface FileHashResult {
   sha512: string
 }
 
+type HashAlgorithm = 'md5' | 'sha1' | 'sha256' | 'sha512'
+type ExportFormat = 'txt' | 'csv' | 'json'
+
 const MAX_FILE_SIZE = 50 * 1024 * 1024
+const HASH_ALGORITHMS: HashAlgorithm[] = ['md5', 'sha1', 'sha256', 'sha512']
 const HEX_TABLE = Array.from({ length: 256 }, (_, value) => value.toString(16).padStart(2, '0'))
 
 const formatSize = (bytes: number) => {
@@ -97,14 +106,90 @@ const hashFile = async (file: File): Promise<FileHashResult> => {
   }
 }
 
+const csvEscape = (value: string | number) => {
+  const text = String(value)
+  return /[",\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text
+}
+
+const buildExport = (
+  results: FileHashResult[],
+  algorithms: HashAlgorithm[],
+  format: ExportFormat
+) => {
+  if (format === 'json') {
+    return JSON.stringify(
+      results.map(item => ({
+        name: item.name,
+        size: item.size,
+        type: item.type,
+        hashes: Object.fromEntries(algorithms.map(algorithm => [algorithm, item[algorithm]]))
+      })),
+      null,
+      2
+    )
+  }
+
+  if (format === 'csv') {
+    const header = ['name', 'size', 'type', ...algorithms]
+    const rows = results.map(item =>
+      [item.name, item.size, item.type, ...algorithms.map(algorithm => item[algorithm])]
+        .map(csvEscape)
+        .join(',')
+    )
+    return [header.join(','), ...rows].join('\n')
+  }
+
+  return results
+    .map(item =>
+      [
+        `${item.name} (${formatSize(item.size)})`,
+        ...algorithms.map(algorithm => `${algorithm.toUpperCase()}: ${item[algorithm]}`)
+      ].join('\n')
+    )
+    .join('\n\n')
+}
+
+const downloadText = (content: string, filename: string, type: string) => {
+  const blob = new Blob([content], { type })
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  anchor.click()
+  URL.revokeObjectURL(url)
+}
+
 const FileHashClient = () => {
   const { t } = useTranslation()
   const toast = useToast()
   const { copy } = useCopy()
   const [results, setResults] = useState<FileHashResult[]>([])
   const [processing, setProcessing] = useState(false)
+  const [query, setQuery] = useState('')
+  const [exportFormat, setExportFormat] = useState<ExportFormat>('txt')
+  const [enabledAlgorithms, setEnabledAlgorithms] = useState<HashAlgorithm[]>(HASH_ALGORITHMS)
 
   const totalBytes = useMemo(() => results.reduce((total, item) => total + item.size, 0), [results])
+  const filteredResults = useMemo(() => {
+    const normalized = query.trim().toLowerCase()
+    if (!normalized) return results
+    return results.filter(
+      item =>
+        item.name.toLowerCase().includes(normalized) ||
+        item.type.toLowerCase().includes(normalized) ||
+        HASH_ALGORITHMS.some(algorithm => item[algorithm].includes(normalized))
+    )
+  }, [query, results])
+  const selectedAlgorithms = enabledAlgorithms.length ? enabledAlgorithms : HASH_ALGORITHMS
+  const exportOutput = useMemo(
+    () => buildExport(filteredResults, selectedAlgorithms, exportFormat),
+    [exportFormat, filteredResults, selectedAlgorithms]
+  )
+  const exportMeta = {
+    csv: { filename: 'file-hashes.csv', type: 'text/csv;charset=utf-8' },
+    json: { filename: 'file-hashes.json', type: 'application/json;charset=utf-8' },
+    txt: { filename: 'file-hashes.txt', type: 'text/plain;charset=utf-8' }
+  }[exportFormat]
 
   const handleFiles = useCallback(
     async (files: File[]) => {
@@ -125,7 +210,14 @@ const FileHashClient = () => {
           await yieldToMain()
           nextResults.push(await hashFile(file))
         }
-        setResults(prev => [...nextResults, ...prev])
+        setResults(prev => {
+          const existingIds = new Set(prev.map(item => item.id))
+          const uniqueResults = nextResults.filter(item => !existingIds.has(item.id))
+          if (uniqueResults.length !== nextResults.length) {
+            toast.warning(t('app.hash.file.duplicate_skipped'))
+          }
+          return [...uniqueResults, ...prev]
+        })
         toast.success(t('public.success'))
       } catch {
         toast.error(t('public.error'))
@@ -136,20 +228,12 @@ const FileHashClient = () => {
     [toast, t]
   )
 
-  const copyAll = () => {
-    const output = results
-      .map(item =>
-        [
-          `${item.name} (${formatSize(item.size)})`,
-          `MD5: ${item.md5}`,
-          `SHA1: ${item.sha1}`,
-          `SHA256: ${item.sha256}`,
-          `SHA512: ${item.sha512}`
-        ].join('\n')
-      )
-      .join('\n\n')
+  const copyAll = () => copy(exportOutput)
 
-    void copy(output)
+  const toggleAlgorithm = (algorithm: HashAlgorithm, checked: boolean) => {
+    setEnabledAlgorithms(prev =>
+      checked ? [...new Set([...prev, algorithm])] : prev.filter(item => item !== algorithm)
+    )
   }
 
   return (
@@ -168,14 +252,24 @@ const FileHashClient = () => {
               <Button
                 icon={<Copy className="h-4 w-4" />}
                 onClick={copyAll}
-                disabled={!results.length}
+                disabled={!filteredResults.length}
               >
                 {t('app.generation.uuid.copy')}
               </Button>
               <Button
+                icon={<Download className="h-4 w-4" />}
+                onClick={() => downloadText(exportOutput, exportMeta.filename, exportMeta.type)}
+                disabled={!filteredResults.length}
+              >
+                {t('app.hash.file.download')}
+              </Button>
+              <Button
                 variant="ghost"
                 icon={<Trash2 className="h-4 w-4" />}
-                onClick={() => setResults([])}
+                onClick={() => {
+                  setResults([])
+                  setQuery('')
+                }}
                 disabled={!results.length}
               >
                 {t('public.clear')}
@@ -199,7 +293,51 @@ const FileHashClient = () => {
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <Metric label={t('app.hash.file.files')} value={String(results.length)} />
             <Metric label={t('app.hash.file.total_size')} value={formatSize(totalBytes)} />
-            <Metric label={t('app.hash.file.algorithms')} value="MD5 / SHA1 / SHA256 / SHA512" />
+            <Metric
+              label={t('app.hash.file.algorithms')}
+              value={selectedAlgorithms.map(algorithm => algorithm.toUpperCase()).join(' / ')}
+            />
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_220px]">
+            <div className="space-y-3">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-tertiary)]" />
+                <Input
+                  value={query}
+                  onChange={event => setQuery(event.target.value)}
+                  placeholder={t('app.hash.file.search')}
+                  className="pl-9"
+                />
+              </div>
+              <div className="flex flex-wrap gap-3">
+                {HASH_ALGORITHMS.map(algorithm => (
+                  <div key={algorithm} className="glass-input rounded-xl px-3 py-2">
+                    <Checkbox
+                      checked={enabledAlgorithms.includes(algorithm)}
+                      onChange={event => toggleAlgorithm(algorithm, event.target.checked)}
+                      label={algorithm.toUpperCase()}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-3">
+              <Select
+                value={exportFormat}
+                onChange={event => setExportFormat(event.target.value as ExportFormat)}
+              >
+                <option value="txt">{t('app.hash.file.export.txt')}</option>
+                <option value="csv">{t('app.hash.file.export.csv')}</option>
+                <option value="json">{t('app.hash.file.export.json')}</option>
+              </Select>
+              <p className="text-xs leading-5 text-[var(--text-secondary)]">
+                {t('app.hash.file.filtered', {
+                  count: filteredResults.length,
+                  total: results.length
+                })}
+              </p>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -212,9 +350,9 @@ const FileHashClient = () => {
           </CardTitle>
         </CardHeader>
         <CardContent className="flex-1 overflow-auto">
-          {results.length ? (
+          {filteredResults.length ? (
             <div className="flex flex-col gap-4">
-              {results.map(item => (
+              {filteredResults.map(item => (
                 <div
                   key={item.id}
                   className="glass-panel glass-clip rounded-2xl border border-[var(--glass-border)] p-4"
@@ -238,10 +376,9 @@ const FileHashClient = () => {
                         copy(
                           [
                             `${item.name} (${formatSize(item.size)})`,
-                            `MD5: ${item.md5}`,
-                            `SHA1: ${item.sha1}`,
-                            `SHA256: ${item.sha256}`,
-                            `SHA512: ${item.sha512}`
+                            ...selectedAlgorithms.map(
+                              algorithm => `${algorithm.toUpperCase()}: ${item[algorithm]}`
+                            )
                           ].join('\n')
                         )
                       }
@@ -251,7 +388,7 @@ const FileHashClient = () => {
                   </div>
 
                   <div className="mt-4 grid gap-3">
-                    {(['md5', 'sha1', 'sha256', 'sha512'] as const).map(algorithm => (
+                    {selectedAlgorithms.map(algorithm => (
                       <HashRow
                         key={algorithm}
                         label={algorithm.toUpperCase()}

@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend spec index for relevant component and quality guidance."}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "Tool page, Liquid Glass component, copy action, and UI composition conventions."}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Frontend quality checks and large-input safeguards relevant to client tools."}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Menu config and shared social utility changes should search and reuse existing patterns."}

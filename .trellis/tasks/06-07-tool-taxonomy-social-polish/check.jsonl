@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend spec index for quality verification."}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "Verify tool pages, Liquid Glass UI conventions, and localization touchpoints."}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Verify client-side quality rules and project checks."}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Check taxonomy and feature changes for missed duplicated patterns."}

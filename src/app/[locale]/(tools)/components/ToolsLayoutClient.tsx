@@ -10,6 +10,7 @@ import {
   Moon,
   PanelLeftClose,
   PanelLeftOpen,
+  Search,
   Sun
 } from 'lucide-react'
 import { usePathname } from 'next/navigation'
@@ -21,8 +22,18 @@ import { useTranslation } from 'react-i18next'
 import { MeshGradient } from '@/components/effects/MeshGradient'
 import { type ThemeMode, useTheme } from '@/components/ThemeProvider'
 import TransitionLayout from '@/components/TransitionLayout'
+import {
+  buildMenuLabelMap,
+  buildToolSearchItems,
+  findMenuMatch,
+  getMenuLabel,
+  isPathMatch,
+  resolveNavigableMenuPath
+} from '@/config/menu-utils'
 import { type MenuConfig, menus } from '@/config/menus'
 import { cn } from '@/lib/utils'
+
+import { ToolCommandPalette } from './ToolCommandPalette'
 
 type ViewTransitionDocument = Document & {
   startViewTransition?: (callback: () => void) => { finished: Promise<void> }
@@ -33,6 +44,8 @@ type DirectionMode = 'ltr' | 'rtl'
 const UI_LANGUAGE_STORAGE_KEY = 'ui-language'
 const UI_DIRECTION_STORAGE_KEY = 'ui-direction'
 const UI_SIDEBAR_COLLAPSED_STORAGE_KEY = 'ui-sidebar-collapsed'
+const UI_RECENT_TOOLS_STORAGE_KEY = 'ui-recent-tools'
+const MAX_RECENT_TOOLS = 6
 const RANDOM_EFFECT_MARKER = 'glassRandomized'
 const RANDOM_EFFECT_SELECTOR =
   '.glass-panel, .glass-panel-strong, .glass-float, .glass-specular, .glass-caustic, .glass-prism, .glass-shimmer'
@@ -83,23 +96,25 @@ const isDirectionMode = (value: string | null): value is DirectionMode =>
 const isSupportedLanguage = (value: string | null): value is 'cn' | 'en' =>
   value === 'cn' || value === 'en'
 
-const resolveNavigableMenuPath = (path: string) => {
-  const visit = (items: MenuConfig[]): string | null => {
-    for (const item of items) {
-      if (item.path === path) {
-        return item.children?.[0]?.path ?? item.path
-      }
+const parseRecentToolPaths = (value: string | null) => {
+  if (!value) return []
 
-      if (item.children) {
-        const childPath = visit(item.children)
-        if (childPath) return childPath
-      }
-    }
-
-    return null
+  try {
+    const parsed = JSON.parse(value)
+    return Array.isArray(parsed)
+      ? parsed.filter((path): path is string => typeof path === 'string')
+      : []
+  } catch {
+    return []
   }
+}
 
-  return visit(menus)
+const isCommandShortcutIgnored = (target: EventTarget | null) => {
+  if (!(target instanceof HTMLElement)) return false
+
+  return Boolean(
+    target.closest('input, textarea, select, [contenteditable="true"], [role="textbox"]')
+  )
 }
 
 const useRandomizedGlassEffects = () => {
@@ -215,6 +230,8 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null)
   const [direction, setDirection] = useState<DirectionMode>('ltr')
+  const [commandOpen, setCommandOpen] = useState(false)
+  const [recentToolPaths, setRecentToolPaths] = useState<string[]>([])
 
   useRandomizedGlassEffects()
   usePageVisibilityClass()
@@ -262,7 +279,34 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
     document.documentElement.setAttribute('lang', language === 'cn' ? 'zh-CN' : 'en')
   }, [language])
 
+  const menuLabelByPath = useMemo(() => buildMenuLabelMap(t), [t])
+  const toolSearchItems = useMemo(() => buildToolSearchItems(t), [t])
+  const searchableToolPaths = useMemo(
+    () => new Set(toolSearchItems.filter(item => !item.isCategory).map(item => item.path)),
+    [toolSearchItems]
+  )
+
   const { currentCategory, breadcrumbs } = useMemo(() => {
+    const menuMatch = findMenuMatch(pathname)
+
+    if (menuMatch) {
+      const categoryCrumb = {
+        path: menuMatch.category.path,
+        label: menuLabelByPath.get(menuMatch.category.path) ?? getMenuLabel(menuMatch.category, t)
+      }
+      const crumbs = menuMatch.child
+        ? [
+            categoryCrumb,
+            {
+              path: menuMatch.child.path,
+              label: menuLabelByPath.get(menuMatch.child.path) ?? getMenuLabel(menuMatch.child, t)
+            }
+          ]
+        : [categoryCrumb]
+
+      return { currentCategory: menuMatch.category.path, breadcrumbs: crumbs }
+    }
+
     const pathParts = pathname.split('/').filter(Boolean)
     const category = pathParts.length > 0 ? `/${pathParts[0]}` : null
     const crumbs = pathParts.map((_part, index) => {
@@ -271,21 +315,83 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
       return { path, label: t(key) }
     })
     return { currentCategory: category, breadcrumbs: crumbs }
-  }, [pathname, t])
+  }, [menuLabelByPath, pathname, t])
 
   React.useEffect(() => {
-    if (currentCategory && !expandedCategory) {
+    if (currentCategory) {
       setExpandedCategory(currentCategory)
     }
-  }, [currentCategory, expandedCategory])
+  }, [currentCategory])
+
+  React.useEffect(() => {
+    setRecentToolPaths(
+      parseRecentToolPaths(window.localStorage.getItem(UI_RECENT_TOOLS_STORAGE_KEY)).filter(path =>
+        searchableToolPaths.has(path)
+      )
+    )
+  }, [searchableToolPaths])
+
+  const rememberToolPath = React.useCallback(
+    (path: string) => {
+      if (!searchableToolPaths.has(path)) return
+
+      setRecentToolPaths(current => {
+        const next = [path, ...current.filter(item => item !== path)].slice(0, MAX_RECENT_TOOLS)
+        window.localStorage.setItem(UI_RECENT_TOOLS_STORAGE_KEY, JSON.stringify(next))
+        return next
+      })
+    },
+    [searchableToolPaths]
+  )
 
   const handleNavigate = (path: string) => {
+    rememberToolPath(path)
     router.push(path)
     setSidebarOpen(false)
+    setCommandOpen(false)
   }
 
+  const openCommandPalette = React.useCallback(() => {
+    setSidebarOpen(false)
+    setCommandOpen(true)
+  }, [])
+
+  React.useEffect(() => {
+    const handleShortcut = (event: KeyboardEvent) => {
+      const key = event.key.toLowerCase()
+
+      if ((event.metaKey || event.ctrlKey) && key === 'k') {
+        if (isCommandShortcutIgnored(event.target) && !commandOpen) return
+
+        event.preventDefault()
+        event.stopPropagation()
+        setSidebarOpen(false)
+        setCommandOpen(current => !current)
+        return
+      }
+
+      if (
+        event.key === '/' &&
+        !event.altKey &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.shiftKey &&
+        !isCommandShortcutIgnored(event.target)
+      ) {
+        event.preventDefault()
+        event.stopPropagation()
+        openCommandPalette()
+      }
+    }
+
+    window.addEventListener('keydown', handleShortcut, true)
+    return () => {
+      window.removeEventListener('keydown', handleShortcut, true)
+    }
+  }, [commandOpen, openCommandPalette])
+
   const toggleCategory = (path: string) => {
-    setExpandedCategory(expandedCategory === path ? null : path)
+    setExpandedCategory(current => (current === path ? null : path))
   }
 
   const handleCategoryAction = (category: MenuConfig, collapsedView: boolean) => {
@@ -355,11 +461,14 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
     icon: React.ReactNode
     label: string
     mode: ThemeMode
-  }> = [
-    { mode: 'light', label: t('app.theme.light'), icon: <Sun className="h-4 w-4" /> },
-    { mode: 'dark', label: t('app.theme.dark'), icon: <Moon className="h-4 w-4" /> },
-    { mode: 'system', label: t('app.theme.system'), icon: <Laptop className="h-4 w-4" /> }
-  ]
+  }> = useMemo(
+    () => [
+      { mode: 'light', label: t('app.theme.light'), icon: <Sun className="h-4 w-4" /> },
+      { mode: 'dark', label: t('app.theme.dark'), icon: <Moon className="h-4 w-4" /> },
+      { mode: 'system', label: t('app.theme.system'), icon: <Laptop className="h-4 w-4" /> }
+    ],
+    [t]
+  )
 
   const currentTitle = breadcrumbs[breadcrumbs.length - 1]?.label ?? 'Daily Tools'
   const collapseLabel = sidebarCollapsed ? t('public.expand_sidebar') : t('public.collapse_sidebar')
@@ -371,31 +480,35 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
     >
       <div className={cn('flex flex-col', collapsedView ? 'gap-2.5' : 'gap-4')}>
         {menus.map(category => {
-          const isExpanded = expandedCategory === category.path
-          const isActive = currentCategory === category.path
-          const categoryLabel = t(`app${category.path.replaceAll('/', '.')}`)
+          const hasChildren = Boolean(category.children?.length)
+          const isActiveCategory = currentCategory === category.path
+          const isActiveLeaf = isActiveCategory && !hasChildren
+          const isExpanded = !collapsedView && hasChildren && expandedCategory === category.path
+          const categoryLabel = menuLabelByPath.get(category.path) ?? getMenuLabel(category, t)
 
           return (
             <div key={category.path} className="min-w-0">
               <button
                 type="button"
                 onClick={() => handleCategoryAction(category, collapsedView)}
-                aria-expanded={!collapsedView && category.children ? isExpanded : undefined}
-                aria-current={isActive ? 'page' : undefined}
+                aria-expanded={!collapsedView && hasChildren ? isExpanded : undefined}
+                aria-current={isActiveLeaf ? 'page' : undefined}
                 aria-label={categoryLabel}
                 title={categoryLabel}
                 className={cn(
                   'group relative flex min-h-11 w-full items-center rounded-2xl text-sm font-medium transition-[background-color,color,box-shadow,transform] duration-200',
                   collapsedView ? 'justify-center px-0' : 'gap-3 px-3.5',
-                  isActive
+                  isActiveLeaf
                     ? 'bg-[var(--glass-bg-active)] text-[var(--primary)] shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_10px_28px_rgba(0,113,227,0.12)]'
-                    : 'text-[var(--text-secondary)] hover:bg-[var(--glass-bg-hover)] hover:text-[var(--text-primary)]'
+                    : isActiveCategory
+                      ? 'text-[var(--primary)] hover:bg-[var(--glass-bg-hover)]'
+                      : 'text-[var(--text-secondary)] hover:bg-[var(--glass-bg-hover)] hover:text-[var(--text-primary)]'
                 )}
               >
                 <span
                   className={cn(
                     'grid h-8 w-8 shrink-0 place-items-center rounded-xl transition-colors',
-                    isActive
+                    isActiveCategory
                       ? 'bg-[var(--primary-subtle)] text-[var(--primary)]'
                       : 'bg-[var(--glass-input-bg)] text-[var(--text-tertiary)] group-hover:text-[var(--text-primary)]'
                   )}
@@ -406,7 +519,7 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
                 {!collapsedView && (
                   <>
                     <span className="min-w-0 flex-1 truncate text-left">{categoryLabel}</span>
-                    {category.children && (
+                    {hasChildren && (
                       <ChevronRight
                         className={cn(
                           'h-4 w-4 shrink-0 text-[var(--text-tertiary)] transition-transform',
@@ -430,8 +543,8 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
                   >
                     <div className="ml-6 mt-2 space-y-1 border-l border-[var(--border-subtle)] pl-3">
                       {category.children.map(child => {
-                        const isChildActive = pathname === child.path
-                        const childLabel = t(`app${child.path.replaceAll('/', '.')}`)
+                        const isChildActive = isPathMatch(pathname, child.path)
+                        const childLabel = menuLabelByPath.get(child.path) ?? getMenuLabel(child, t)
 
                         return (
                           <button
@@ -465,6 +578,14 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
   return (
     <div className="relative isolate flex h-screen w-full overflow-hidden">
       <MeshGradient />
+      <ToolCommandPalette
+        currentPath={pathname}
+        items={toolSearchItems}
+        open={commandOpen}
+        recentPaths={recentToolPaths}
+        onOpenChange={setCommandOpen}
+        onSelect={handleNavigate}
+      />
 
       <aside
         className="relative z-10 hidden h-full shrink-0 flex-col overflow-hidden border-r border-[var(--glass-border-strong)] glass-panel-strong transition-[width] duration-300 ease-out lg:flex"
@@ -622,6 +743,17 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
             </div>
 
             <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+              <button
+                type="button"
+                onClick={openCommandPalette}
+                className="grid h-9 w-9 place-items-center rounded-2xl text-[var(--text-secondary)] transition-[background-color,color] hover:bg-[var(--glass-bg-hover)] hover:text-[var(--text-primary)] glass-input"
+                aria-label={t('public.tool_search.open')}
+                aria-keyshortcuts="Meta+K Control+K /"
+                title={t('public.tool_search.open')}
+              >
+                <Search className="h-4 w-4" aria-hidden="true" />
+              </button>
+
               <a
                 href={process.env.NEXT_PUBLIC_GITHUB_URL}
                 target="_blank"

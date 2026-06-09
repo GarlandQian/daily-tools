@@ -1,6 +1,7 @@
 'use client'
 
-import { Copy, RefreshCw, Ruler, Sparkles } from 'lucide-react'
+import { Copy, FileCode2, RefreshCw, Ruler, Sparkles } from 'lucide-react'
+import type { ReactNode } from 'react'
 import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -8,14 +9,21 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { useToast } from '@/components/ui/toast'
+import { Select } from '@/components/ui/select'
+import { useCopy } from '@/hooks/useCopy'
+
+type ClampProperty = 'font-size' | 'gap' | 'margin' | 'padding' | 'width'
+type ClampUnit = 'px' | 'rem'
 
 interface ClampFormData {
-  minSize: number
   maxSize: number
-  minViewport: number
   maxViewport: number
+  minSize: number
+  minViewport: number
+  property: ClampProperty
   rootSize: number
+  tokenName: string
+  unit: ClampUnit
 }
 
 interface ClampPreset {
@@ -24,53 +32,87 @@ interface ClampPreset {
 }
 
 const DEFAULT_FORM_DATA: ClampFormData = {
-  minSize: 16,
   maxSize: 32,
-  minViewport: 375,
   maxViewport: 1440,
-  rootSize: 16
+  minSize: 16,
+  minViewport: 375,
+  property: 'font-size',
+  rootSize: 16,
+  tokenName: 'fluid-type',
+  unit: 'rem'
 }
 
 const CLAMP_PRESETS: ClampPreset[] = [
   {
     key: 'body',
     value: {
-      minSize: 15,
+      ...DEFAULT_FORM_DATA,
       maxSize: 18,
-      minViewport: 375,
-      maxViewport: 1440,
-      rootSize: 16
+      minSize: 15,
+      property: 'font-size',
+      tokenName: 'body-size'
     }
   },
   {
     key: 'heading',
     value: {
-      minSize: 28,
+      ...DEFAULT_FORM_DATA,
       maxSize: 56,
-      minViewport: 375,
-      maxViewport: 1440,
-      rootSize: 16
+      minSize: 28,
+      property: 'font-size',
+      tokenName: 'heading-size'
     }
   },
   {
     key: 'space',
     value: {
-      minSize: 16,
+      ...DEFAULT_FORM_DATA,
       maxSize: 48,
-      minViewport: 375,
       maxViewport: 1280,
-      rootSize: 16
+      minSize: 16,
+      property: 'gap',
+      tokenName: 'fluid-space'
+    }
+  },
+  {
+    key: 'container',
+    value: {
+      ...DEFAULT_FORM_DATA,
+      maxSize: 960,
+      maxViewport: 1440,
+      minSize: 320,
+      property: 'width',
+      tokenName: 'content-width',
+      unit: 'px'
     }
   }
 ]
 
+const SAMPLE_VIEWPORTS = [320, 375, 768, 1024, 1280, 1440]
+
 const round = (value: number) => Number(value.toFixed(4))
 
-const toRem = (px: number, rootSize: number) => `${round(px / rootSize)}rem`
+const formatValue = (px: number, rootSize: number, unit: ClampUnit) => {
+  if (unit === 'px') return `${round(px)}px`
+  return `${round(px / rootSize)}rem`
+}
+
+const getFluidPx = (
+  viewport: number,
+  minViewport: number,
+  maxViewport: number,
+  minSize: number,
+  maxSize: number
+) => {
+  if (viewport <= minViewport) return minSize
+  if (viewport >= maxViewport) return maxSize
+  const progress = (viewport - minViewport) / (maxViewport - minViewport)
+  return minSize + (maxSize - minSize) * progress
+}
 
 const ClampClient = () => {
   const { t } = useTranslation()
-  const toast = useToast()
+  const { copy } = useCopy()
   const [formData, setFormData] = useState<ClampFormData>(DEFAULT_FORM_DATA)
 
   const result = useMemo(() => {
@@ -87,18 +129,38 @@ const ClampClient = () => {
 
     const slope = (formData.maxSize - formData.minSize) / viewportRange
     const intercept = formData.minSize - slope * formData.minViewport
-    const preferred = `${round(intercept / formData.rootSize)}rem + ${round(slope * 100)}vw`
-    const css = `clamp(${toRem(formData.minSize, formData.rootSize)}, ${preferred}, ${toRem(
+    const preferred = `${formatValue(intercept, formData.rootSize, formData.unit)} + ${round(slope * 100)}vw`
+    const css = `clamp(${formatValue(formData.minSize, formData.rootSize, formData.unit)}, ${preferred}, ${formatValue(
       formData.maxSize,
-      formData.rootSize
+      formData.rootSize,
+      formData.unit
     )})`
-    const tailwind = `text-[${css.replaceAll(' ', '_')}]`
+    const tailwind = `${formData.property === 'font-size' ? 'text' : formData.property}-[${css.replaceAll(' ', '_')}]`
+    const declaration = `${formData.property}: ${css};`
+    const variable = `--${formData.tokenName || 'fluid-value'}: ${css};\n${formData.property}: var(--${formData.tokenName || 'fluid-value'});`
+    const samples = SAMPLE_VIEWPORTS.map(viewport => ({
+      viewport,
+      value: formatValue(
+        getFluidPx(
+          viewport,
+          formData.minViewport,
+          formData.maxViewport,
+          formData.minSize,
+          formData.maxSize
+        ),
+        formData.rootSize,
+        formData.unit
+      )
+    }))
 
     return {
       css,
-      tailwind,
+      declaration,
+      intercept: round(intercept),
+      samples,
       slope: round(slope),
-      intercept: round(intercept)
+      tailwind,
+      variable
     }
   }, [formData])
 
@@ -113,17 +175,9 @@ const ClampClient = () => {
     setFormData(DEFAULT_FORM_DATA)
   }, [])
 
-  const handleCopy = useCallback(
-    async (value: string) => {
-      try {
-        await navigator.clipboard.writeText(value)
-        toast.success(t('public.copy.success'))
-      } catch {
-        toast.error(t('public.error'))
-      }
-    },
-    [toast, t]
-  )
+  const fullOutput = result
+    ? `${result.declaration}\n\n${result.variable}\n\n${result.tailwind}`
+    : t('app.generation.clamp.invalid')
 
   return (
     <div className="flex size-full flex-col gap-5">
@@ -134,57 +188,75 @@ const ClampClient = () => {
               <CardTitle>{t('app.generation.clamp')}</CardTitle>
               <CardDescription>{t('app.generation.clamp.description')}</CardDescription>
             </div>
-            <Button
-              type="button"
-              variant="default"
-              icon={<RefreshCw className="h-4 w-4" />}
-              onClick={handleReset}
-              className="w-full sm:w-auto"
-            >
-              {t('public.reset')}
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                icon={<RefreshCw className="h-4 w-4" />}
+                onClick={handleReset}
+              >
+                {t('public.reset')}
+              </Button>
+              <Button
+                type="button"
+                icon={<Copy className="h-4 w-4" />}
+                onClick={() => copy(fullOutput)}
+                disabled={!result}
+              >
+                {t('app.generation.clamp.copy_all')}
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-5">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <div className="space-y-3">
-              <Label htmlFor="clamp-min-size">{t('app.generation.clamp.min_size')}</Label>
-              <Input
-                id="clamp-min-size"
-                type="number"
-                min={0}
-                value={formData.minSize}
-                onChange={event => updateNumber('minSize', event.target.value)}
-              />
+              <Label htmlFor="clamp-property">{t('app.generation.clamp.property')}</Label>
+              <Select
+                id="clamp-property"
+                value={formData.property}
+                onChange={event =>
+                  setFormData(prev => ({
+                    ...prev,
+                    property: event.target.value as ClampProperty
+                  }))
+                }
+              >
+                {(['font-size', 'gap', 'padding', 'margin', 'width'] as const).map(property => (
+                  <option key={property} value={property}>
+                    {t(`app.generation.clamp.property.${property}`)}
+                  </option>
+                ))}
+              </Select>
             </div>
             <div className="space-y-3">
-              <Label htmlFor="clamp-max-size">{t('app.generation.clamp.max_size')}</Label>
-              <Input
-                id="clamp-max-size"
-                type="number"
-                min={0}
-                value={formData.maxSize}
-                onChange={event => updateNumber('maxSize', event.target.value)}
-              />
+              <Label htmlFor="clamp-unit">{t('app.generation.clamp.output_unit')}</Label>
+              <Select
+                id="clamp-unit"
+                value={formData.unit}
+                onChange={event =>
+                  setFormData(prev => ({
+                    ...prev,
+                    unit: event.target.value as ClampUnit
+                  }))
+                }
+              >
+                <option value="rem">rem</option>
+                <option value="px">px</option>
+              </Select>
             </div>
             <div className="space-y-3">
-              <Label htmlFor="clamp-min-vw">{t('app.generation.clamp.min_viewport')}</Label>
+              <Label htmlFor="clamp-token">{t('app.generation.clamp.token_name')}</Label>
               <Input
-                id="clamp-min-vw"
-                type="number"
-                min={1}
-                value={formData.minViewport}
-                onChange={event => updateNumber('minViewport', event.target.value)}
-              />
-            </div>
-            <div className="space-y-3">
-              <Label htmlFor="clamp-max-vw">{t('app.generation.clamp.max_viewport')}</Label>
-              <Input
-                id="clamp-max-vw"
-                type="number"
-                min={1}
-                value={formData.maxViewport}
-                onChange={event => updateNumber('maxViewport', event.target.value)}
+                id="clamp-token"
+                value={formData.tokenName}
+                onChange={event =>
+                  setFormData(prev => ({
+                    ...prev,
+                    tokenName: event.target.value.replace(/[^\w-]/g, '')
+                  }))
+                }
+                className="font-mono"
               />
             </div>
             <div className="space-y-3">
@@ -195,8 +267,36 @@ const ClampClient = () => {
                 min={1}
                 value={formData.rootSize}
                 onChange={event => updateNumber('rootSize', event.target.value)}
+                className="font-mono"
               />
             </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <NumberField
+              id="clamp-min-size"
+              label={t('app.generation.clamp.min_size')}
+              value={formData.minSize}
+              onChange={value => updateNumber('minSize', value)}
+            />
+            <NumberField
+              id="clamp-max-size"
+              label={t('app.generation.clamp.max_size')}
+              value={formData.maxSize}
+              onChange={value => updateNumber('maxSize', value)}
+            />
+            <NumberField
+              id="clamp-min-vw"
+              label={t('app.generation.clamp.min_viewport')}
+              value={formData.minViewport}
+              onChange={value => updateNumber('minViewport', value)}
+            />
+            <NumberField
+              id="clamp-max-vw"
+              label={t('app.generation.clamp.max_viewport')}
+              value={formData.maxViewport}
+              onChange={value => updateNumber('maxViewport', value)}
+            />
           </div>
 
           <div className="flex flex-wrap gap-2">
@@ -216,49 +316,41 @@ const ClampClient = () => {
         </CardContent>
       </Card>
 
-      <div className="grid flex-1 grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <Card className="flex min-h-[360px] flex-col overflow-hidden">
+      <div className="grid flex-1 grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
+        <Card className="flex min-h-[420px] flex-col overflow-hidden">
           <CardHeader>
-            <CardTitle>{t('app.generation.clamp.result')}</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <FileCode2 className="h-5 w-5 text-[var(--primary)]" />
+              {t('app.generation.clamp.result')}
+            </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             {result ? (
               <>
-                <div className="space-y-3">
-                  <Label>{t('app.generation.clamp.css_value')}</Label>
-                  <div className="flex items-center gap-3 rounded-2xl border border-[var(--glass-border)] bg-[var(--glass-input-bg)] px-4 py-3">
-                    <code className="min-w-0 flex-1 break-all font-mono text-sm text-[var(--text-primary)]">
-                      {result.css}
-                    </code>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-9 w-9 shrink-0 rounded-xl"
-                      icon={<Copy className="h-4 w-4" />}
-                      onClick={() => void handleCopy(result.css)}
-                      aria-label={t('public.copy')}
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  <Label>{t('app.generation.clamp.tailwind_value')}</Label>
-                  <div className="flex items-center gap-3 rounded-2xl border border-[var(--glass-border)] bg-[var(--glass-input-bg)] px-4 py-3">
-                    <code className="min-w-0 flex-1 break-all font-mono text-sm text-[var(--text-primary)]">
-                      {result.tailwind}
-                    </code>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-9 w-9 shrink-0 rounded-xl"
-                      icon={<Copy className="h-4 w-4" />}
-                      onClick={() => void handleCopy(result.tailwind)}
-                      aria-label={t('public.copy')}
-                    />
-                  </div>
-                </div>
+                <CopyRow
+                  copyLabel={t('public.copy')}
+                  label={t('app.generation.clamp.css_value')}
+                  value={result.css}
+                  onCopy={() => copy(result.css)}
+                />
+                <CopyRow
+                  copyLabel={t('public.copy')}
+                  label={t('app.generation.clamp.declaration')}
+                  value={result.declaration}
+                  onCopy={() => copy(result.declaration)}
+                />
+                <CopyRow
+                  copyLabel={t('public.copy')}
+                  label={t('app.generation.clamp.variable')}
+                  value={result.variable}
+                  onCopy={() => copy(result.variable)}
+                />
+                <CopyRow
+                  copyLabel={t('public.copy')}
+                  label={t('app.generation.clamp.tailwind_value')}
+                  value={result.tailwind}
+                  onCopy={() => copy(result.tailwind)}
+                />
               </>
             ) : (
               <div className="flex min-h-48 items-center justify-center rounded-2xl border border-[var(--error)] bg-[var(--error-subtle)] p-6 text-center text-sm text-[var(--text-primary)]">
@@ -276,7 +368,13 @@ const ClampClient = () => {
             <div className="glass-panel glass-clip rounded-3xl p-5">
               <div
                 className="font-semibold leading-tight text-[var(--text-primary)]"
-                style={{ fontSize: result?.css ?? undefined }}
+                style={
+                  result
+                    ? formData.property === 'font-size'
+                      ? { fontSize: result.css }
+                      : { [formData.property]: result.css }
+                    : undefined
+                }
               >
                 Daily Tools
               </div>
@@ -286,29 +384,114 @@ const ClampClient = () => {
             </div>
 
             <div className="grid grid-cols-2 gap-3">
-              <div className="glass-panel glass-clip rounded-2xl p-4">
-                <div className="flex items-center gap-2 text-xs text-[var(--text-secondary)]">
-                  <Ruler className="h-4 w-4" />
-                  {t('app.generation.clamp.slope')}
-                </div>
-                <div className="mt-2 font-mono text-xl font-semibold text-[var(--text-primary)]">
-                  {result?.slope ?? '-'}
-                </div>
-              </div>
-              <div className="glass-panel glass-clip rounded-2xl p-4">
-                <div className="text-xs text-[var(--text-secondary)]">
-                  {t('app.generation.clamp.intercept')}
-                </div>
-                <div className="mt-2 font-mono text-xl font-semibold text-[var(--text-primary)]">
-                  {result?.intercept ?? '-'}
-                </div>
-              </div>
+              <Metric
+                icon={<Ruler className="h-4 w-4" />}
+                label={t('app.generation.clamp.slope')}
+                value={result?.slope ?? '-'}
+              />
+              <Metric
+                label={t('app.generation.clamp.intercept')}
+                value={result?.intercept ?? '-'}
+              />
             </div>
+
+            {result && (
+              <div className="glass-clip overflow-hidden rounded-xl border border-[var(--border-base)]">
+                <table className="min-w-full text-left text-xs">
+                  <thead className="bg-[var(--glass-panel-bg)]">
+                    <tr>
+                      <th className="px-3 py-2">{t('app.generation.clamp.viewport')}</th>
+                      <th className="px-3 py-2">{t('app.generation.clamp.sample_value')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {result.samples.map(sample => (
+                      <tr key={sample.viewport} className="border-t border-[var(--border-base)]">
+                        <td className="px-3 py-2 font-mono">{sample.viewport}px</td>
+                        <td className="px-3 py-2 font-mono">{sample.value}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
     </div>
   )
 }
+
+const NumberField = ({
+  id,
+  label,
+  onChange,
+  value
+}: {
+  id: string
+  label: string
+  onChange: (value: string) => void
+  value: number
+}) => (
+  <div className="space-y-3">
+    <Label htmlFor={id}>{label}</Label>
+    <Input
+      id={id}
+      type="number"
+      min={0}
+      value={value}
+      onChange={event => onChange(event.target.value)}
+      className="font-mono"
+    />
+  </div>
+)
+
+const CopyRow = ({
+  label,
+  copyLabel,
+  onCopy,
+  value
+}: {
+  copyLabel: string
+  label: string
+  onCopy: () => void
+  value: string
+}) => (
+  <div className="space-y-3">
+    <Label>{label}</Label>
+    <div className="flex items-center gap-3 rounded-2xl border border-[var(--glass-border)] bg-[var(--glass-input-bg)] px-4 py-3">
+      <code className="min-w-0 flex-1 whitespace-pre-wrap break-all font-mono text-sm text-[var(--text-primary)]">
+        {value}
+      </code>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="h-9 w-9 shrink-0 rounded-xl"
+        icon={<Copy className="h-4 w-4" />}
+        onClick={onCopy}
+        aria-label={copyLabel}
+      />
+    </div>
+  </div>
+)
+
+const Metric = ({
+  icon,
+  label,
+  value
+}: {
+  icon?: ReactNode
+  label: string
+  value: number | string
+}) => (
+  <div className="glass-panel glass-clip rounded-2xl p-4">
+    <div className="flex items-center gap-2 text-xs text-[var(--text-secondary)]">
+      {icon}
+      {label}
+    </div>
+    <div className="mt-2 font-mono text-xl font-semibold text-[var(--text-primary)]">{value}</div>
+  </div>
+)
 
 export default ClampClient

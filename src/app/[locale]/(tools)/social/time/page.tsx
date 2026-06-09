@@ -1,7 +1,12 @@
+import type { Metadata } from 'next'
+
 import TimeClient from '@/features/social/components/TimeClient'
 
-const Time = () => {
-  return <TimeClient />
+export const metadata: Metadata = {
+  title: 'World Time - Daily Tools',
+  description: 'Compare local time, UTC, Unix time, and world time zones'
 }
 
-export default Time
+export default function Time() {
+  return <TimeClient />
+}

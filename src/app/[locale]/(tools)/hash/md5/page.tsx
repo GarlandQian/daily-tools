@@ -1,9 +1,10 @@
+import type { Metadata } from 'next'
+
 import MD5Form from '@/features/hash/components/MD5Form'
 
-export const metadata = {
-  title: 'MD5', // 页面标题
-  description: 'Generate MD5 hashes easily with this simple tool.', // 页面描述
-  keywords: ['MD5', 'Hash', 'Generator', 'Online Tool'] // 关键词（部分搜索引擎支持）
+export const metadata: Metadata = {
+  title: 'MD5 Hash - Daily Tools',
+  description: 'Generate, batch export, and look up MD5 digests locally'
 }
 
 export default function MD5Page() {

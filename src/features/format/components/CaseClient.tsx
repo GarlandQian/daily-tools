@@ -4,67 +4,250 @@ import {
   camelCase,
   kebabCase,
   lowerCase,
+  lowerFirst,
   snakeCase,
   startCase,
   toLower,
   toUpper,
   upperFirst
 } from 'lodash-es'
-import { Copy, Sparkles, Trash2, Type } from 'lucide-react'
+import { Copy, Download, Filter, Sparkles, Trash2, Type, Wand2 } from 'lucide-react'
 import { useDeferredValue, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
 
 interface Conversion {
   label: string
   value: string
-  hint: string
+  hintKey: string
 }
 
-const toSentenceCase = (value: string) => upperFirst(lowerCase(value))
+type ExportFormat = 'text' | 'json' | 'csv' | 'typescript'
+type SeparatorMode = 'auto' | 'space' | 'underscore' | 'dash' | 'dot' | 'slash'
+
+const MAX_CASE_INPUT_CHARS = 50000
+const MAX_BATCH_LINES = 160
+const caseNumberFormatter = new Intl.NumberFormat()
+
+const formatCaseNumber = (value: number) => caseNumberFormatter.format(value)
+const toSentenceCase = (value: string) => upperFirst(lowerCase(value)).replace(/\s+([.!?])/g, '$1')
 const toHeaderCase = (value: string) => startCase(camelCase(value)).replaceAll(' ', '-')
 const toPathCase = (value: string) => lowerCase(value).replaceAll(' ', '/')
 const toDotCase = (value: string) => lowerCase(value).replaceAll(' ', '.')
+const toNoCase = (value: string) => lowerCase(value).replaceAll(' ', '')
+const toCobolCase = (value: string) => toUpper(kebabCase(value))
+const toAdaCase = (value: string) => startCase(camelCase(value)).replaceAll(' ', '_')
+const toEnvKey = (value: string, prefix: string) =>
+  [prefix, toUpper(snakeCase(value))].filter(Boolean).join('_')
+
+const applySeparatorMode = (value: string, mode: SeparatorMode) => {
+  if (mode === 'auto') return value
+  const separatorByMode: Record<Exclude<SeparatorMode, 'auto'>, string> = {
+    dash: '-',
+    dot: '.',
+    slash: '/',
+    space: ' ',
+    underscore: '_'
+  }
+  const separator = separatorByMode[mode]
+  return value
+    .trim()
+    .split(/[\s._/-]+/)
+    .filter(Boolean)
+    .join(separator)
+}
+
+const buildConversions = (
+  rawValue: string,
+  prefix: string,
+  suffix: string,
+  separatorMode: SeparatorMode
+) => {
+  const text = applySeparatorMode(rawValue.trim(), separatorMode)
+  const titleCase = startCase(camelCase(text))
+  const kebab = kebabCase(text)
+  const snake = snakeCase(text)
+  const withAffix = (value: string) => `${prefix}${value}${suffix}`
+
+  return [
+    {
+      label: 'camelCase',
+      value: withAffix(camelCase(text)),
+      hintKey: 'app.format.case.hint.camel'
+    },
+    {
+      label: 'PascalCase',
+      value: withAffix(upperFirst(camelCase(text))),
+      hintKey: 'app.format.case.hint.pascal'
+    },
+    {
+      label: 'lowerFirst',
+      value: withAffix(lowerFirst(titleCase.replaceAll(' ', ''))),
+      hintKey: 'app.format.case.hint.lower_first'
+    },
+    { label: 'snake_case', value: withAffix(snake), hintKey: 'app.format.case.hint.snake' },
+    { label: 'kebab-case', value: withAffix(kebab), hintKey: 'app.format.case.hint.kebab' },
+    {
+      label: 'CONSTANT_CASE',
+      value: withAffix(toUpper(snake)),
+      hintKey: 'app.format.case.hint.constant'
+    },
+    {
+      label: 'SCREAMING-KEBAB',
+      value: withAffix(toUpper(kebab)),
+      hintKey: 'app.format.case.hint.screaming_kebab'
+    },
+    {
+      label: 'Train-Case',
+      value: withAffix(toHeaderCase(text)),
+      hintKey: 'app.format.case.hint.train'
+    },
+    { label: 'dot.case', value: withAffix(toDotCase(text)), hintKey: 'app.format.case.hint.dot' },
+    {
+      label: 'path/case',
+      value: withAffix(toPathCase(text)),
+      hintKey: 'app.format.case.hint.path'
+    },
+    { label: 'no case', value: withAffix(toNoCase(text)), hintKey: 'app.format.case.hint.no' },
+    {
+      label: 'COBOL-CASE',
+      value: withAffix(toCobolCase(text)),
+      hintKey: 'app.format.case.hint.cobol'
+    },
+    { label: 'Ada_Case', value: withAffix(toAdaCase(text)), hintKey: 'app.format.case.hint.ada' },
+    { label: 'Title Case', value: withAffix(titleCase), hintKey: 'app.format.case.hint.title' },
+    {
+      label: 'Sentence case',
+      value: withAffix(toSentenceCase(text)),
+      hintKey: 'app.format.case.hint.sentence'
+    },
+    { label: 'UPPER CASE', value: withAffix(toUpper(text)), hintKey: 'app.format.case.hint.upper' },
+    { label: 'lower case', value: withAffix(toLower(text)), hintKey: 'app.format.case.hint.lower' },
+    { label: 'slug', value: withAffix(kebab), hintKey: 'app.format.case.hint.slug' },
+    { label: 'ENV_KEY', value: toEnvKey(text, prefix), hintKey: 'app.format.case.hint.env' }
+  ]
+}
+
+const csvEscape = (value: string) =>
+  /[",\n]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value
+
+const downloadText = (content: string, filename: string, type: string) => {
+  const blob = new Blob([content], { type })
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  anchor.click()
+  URL.revokeObjectURL(url)
+}
 
 const CaseClient = () => {
   const { t } = useTranslation()
   const { copy } = useCopy()
 
   const [input, setInput] = useState('')
+  const [prefix, setPrefix] = useState('')
+  const [suffix, setSuffix] = useState('')
+  const [search, setSearch] = useState('')
+  const [separatorMode, setSeparatorMode] = useState<SeparatorMode>('auto')
+  const [exportFormat, setExportFormat] = useState<ExportFormat>('text')
   const deferredInput = useDeferredValue(input)
+  const deferredSearch = useDeferredValue(search)
+  const isInputTruncated = deferredInput.length > MAX_CASE_INPUT_CHARS
+  const safeInput = useMemo(
+    () =>
+      deferredInput.length > MAX_CASE_INPUT_CHARS
+        ? deferredInput.slice(0, MAX_CASE_INPUT_CHARS)
+        : deferredInput,
+    [deferredInput]
+  )
 
   const conversions = useMemo<Conversion[]>(() => {
-    if (!deferredInput.trim()) return []
+    if (!safeInput.trim()) return []
+    return buildConversions(safeInput, prefix, suffix, separatorMode)
+  }, [prefix, safeInput, separatorMode, suffix])
 
-    const text = deferredInput.trim()
-    const titleCase = startCase(camelCase(text))
-    const kebab = kebabCase(text)
-    const snake = snakeCase(text)
+  const visibleConversions = useMemo(() => {
+    const keyword = deferredSearch.trim().toLowerCase()
+    if (!keyword) return conversions
+    return conversions.filter(
+      item =>
+        item.label.toLowerCase().includes(keyword) ||
+        item.value.toLowerCase().includes(keyword) ||
+        t(item.hintKey).toLowerCase().includes(keyword)
+    )
+  }, [conversions, deferredSearch, t])
 
-    return [
-      { label: 'camelCase', value: camelCase(text), hint: 'JavaScript variables' },
-      { label: 'PascalCase', value: upperFirst(camelCase(text)), hint: 'React components' },
-      { label: 'snake_case', value: snake, hint: 'Database fields' },
-      { label: 'kebab-case', value: kebab, hint: 'URLs and CSS classes' },
-      { label: 'CONSTANT_CASE', value: toUpper(snake), hint: 'Environment constants' },
-      { label: 'SCREAMING-KEBAB', value: toUpper(kebab), hint: 'Legacy config keys' },
-      { label: 'Train-Case', value: toHeaderCase(text), hint: 'Headers and labels' },
-      { label: 'dot.case', value: toDotCase(text), hint: 'Config paths' },
-      { label: 'path/case', value: toPathCase(text), hint: 'Route fragments' },
-      { label: 'Title Case', value: titleCase, hint: 'Headings' },
-      { label: 'Sentence case', value: toSentenceCase(text), hint: 'Human copy' },
-      { label: 'UPPER CASE', value: toUpper(text), hint: 'Shouting text' },
-      { label: 'lower case', value: toLower(text), hint: 'Normalized text' },
-      { label: 'slug', value: kebab, hint: 'SEO-friendly slug' }
-    ]
-  }, [deferredInput])
+  const batchRows = useMemo(() => {
+    const lines = safeInput
+      .split(/\r?\n/)
+      .map(line => line.trim())
+      .filter(Boolean)
+      .slice(0, MAX_BATCH_LINES)
+
+    return lines.map(line => ({
+      input: line,
+      values: buildConversions(line, prefix, suffix, separatorMode)
+    }))
+  }, [prefix, safeInput, separatorMode, suffix])
+
+  const stats = useMemo(() => {
+    const words = lowerCase(safeInput).split(/\s+/).filter(Boolean)
+    return {
+      characters: safeInput.length,
+      lines: safeInput ? safeInput.split(/\r?\n/).length : 0,
+      outputs: conversions.length,
+      words: words.length
+    }
+  }, [conversions.length, safeInput])
+
+  const exportText = useMemo(() => {
+    if (exportFormat === 'json') {
+      return JSON.stringify(
+        {
+          conversions,
+          input: safeInput,
+          options: { prefix, separatorMode, suffix }
+        },
+        null,
+        2
+      )
+    }
+
+    if (exportFormat === 'csv') {
+      return [
+        'label,value',
+        ...conversions.map(item => [item.label, item.value].map(csvEscape).join(','))
+      ].join('\n')
+    }
+
+    if (exportFormat === 'typescript') {
+      return `export const names = {\n${conversions
+        .map(item => `  ${camelCase(item.label)}: ${JSON.stringify(item.value)},`)
+        .join('\n')}\n} as const`
+    }
+
+    return conversions.map(item => `${item.label}: ${item.value}`).join('\n')
+  }, [conversions, exportFormat, prefix, safeInput, separatorMode, suffix])
 
   const copyAll = () => {
-    void copy(conversions.map(item => `${item.label}: ${item.value}`).join('\n'))
+    void copy(exportText)
+  }
+
+  const handleClear = () => {
+    setInput('')
+    setSearch('')
+    setPrefix('')
+    setSuffix('')
+    setSeparatorMode('auto')
+    setExportFormat('text')
   }
 
   return (
@@ -87,13 +270,46 @@ const CaseClient = () => {
               >
                 {t('app.format.case.copy_all')}
               </Button>
-              <Button icon={<Trash2 className="h-4 w-4" />} onClick={() => setInput('')}>
+              <Button
+                icon={<Download className="h-4 w-4" />}
+                disabled={!conversions.length}
+                onClick={() =>
+                  downloadText(
+                    exportText,
+                    `case-conversions.${exportFormat === 'json' ? 'json' : exportFormat === 'csv' ? 'csv' : exportFormat === 'typescript' ? 'ts' : 'txt'}`,
+                    exportFormat === 'json'
+                      ? 'application/json;charset=utf-8'
+                      : 'text/plain;charset=utf-8'
+                  )
+                }
+              >
+                {t('app.format.case.download')}
+              </Button>
+              <Button icon={<Trash2 className="h-4 w-4" />} onClick={handleClear}>
                 {t('public.clear')}
               </Button>
             </div>
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-3">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            <CaseMetric
+              label={t('app.format.case.metric.characters')}
+              value={formatCaseNumber(stats.characters)}
+            />
+            <CaseMetric
+              label={t('app.format.case.metric.words')}
+              value={formatCaseNumber(stats.words)}
+            />
+            <CaseMetric
+              label={t('app.format.case.metric.lines')}
+              value={formatCaseNumber(stats.lines)}
+            />
+            <CaseMetric
+              label={t('app.format.case.metric.outputs')}
+              value={formatCaseNumber(stats.outputs)}
+            />
+          </div>
           <Textarea
             value={input}
             onChange={event => setInput(event.target.value)}
@@ -101,12 +317,83 @@ const CaseClient = () => {
             rows={4}
             className="font-mono"
           />
+          <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_160px_160px]">
+            <div className="space-y-2">
+              <Label htmlFor="case-search" className="flex items-center gap-2">
+                <Filter className="h-4 w-4" />
+                {t('app.format.case.search')}
+              </Label>
+              <Input
+                id="case-search"
+                value={search}
+                onChange={event => setSearch(event.target.value)}
+                placeholder={t('app.format.case.search_placeholder')}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="case-export">{t('app.format.case.export')}</Label>
+              <Select
+                id="case-export"
+                value={exportFormat}
+                onChange={event => setExportFormat(event.target.value as ExportFormat)}
+              >
+                <option value="text">{t('app.format.case.export.text')}</option>
+                <option value="json">{t('app.format.case.export.json')}</option>
+                <option value="csv">{t('app.format.case.export.csv')}</option>
+                <option value="typescript">{t('app.format.case.export.typescript')}</option>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="case-separator">{t('app.format.case.separator')}</Label>
+              <Select
+                id="case-separator"
+                value={separatorMode}
+                onChange={event => setSeparatorMode(event.target.value as SeparatorMode)}
+              >
+                <option value="auto">{t('app.format.case.separator.auto')}</option>
+                <option value="space">{t('app.format.case.separator.space')}</option>
+                <option value="underscore">{t('app.format.case.separator.underscore')}</option>
+                <option value="dash">{t('app.format.case.separator.dash')}</option>
+                <option value="dot">{t('app.format.case.separator.dot')}</option>
+                <option value="slash">{t('app.format.case.separator.slash')}</option>
+              </Select>
+            </div>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="case-prefix">{t('app.format.case.prefix')}</Label>
+              <Input
+                id="case-prefix"
+                value={prefix}
+                onChange={event => setPrefix(event.target.value)}
+                placeholder="APP_"
+                className="font-mono"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="case-suffix">{t('app.format.case.suffix')}</Label>
+              <Input
+                id="case-suffix"
+                value={suffix}
+                onChange={event => setSuffix(event.target.value)}
+                placeholder="_ID"
+                className="font-mono"
+              />
+            </div>
+          </div>
+          {isInputTruncated && (
+            <p className="rounded-lg border border-[var(--warning)] bg-[var(--warning-subtle)] px-3 py-2 text-sm text-[var(--warning)]">
+              {t('app.format.case.warning.truncated', {
+                limit: formatCaseNumber(MAX_CASE_INPUT_CHARS)
+              })}
+            </p>
+          )}
         </CardContent>
       </Card>
 
       {conversions.length > 0 ? (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-          {conversions.map(item => (
+          {visibleConversions.map(item => (
             <button
               key={item.label}
               type="button"
@@ -118,7 +405,7 @@ const CaseClient = () => {
                   <span className="inline-flex rounded-full bg-[var(--primary-subtle)] px-2.5 py-1 text-xs font-semibold text-[var(--primary)]">
                     {item.label}
                   </span>
-                  <p className="mt-2 text-xs text-[var(--text-tertiary)]">{item.hint}</p>
+                  <p className="mt-2 text-xs text-[var(--text-tertiary)]">{t(item.hintKey)}</p>
                 </div>
                 <Copy className="h-4 w-4 shrink-0 text-[var(--text-tertiary)] opacity-0 transition-opacity group-hover:opacity-100" />
               </div>
@@ -127,6 +414,13 @@ const CaseClient = () => {
               </p>
             </button>
           ))}
+          {!visibleConversions.length && (
+            <Card className="glass-panel-static sm:col-span-2 xl:col-span-3 2xl:col-span-4">
+              <CardContent className="flex min-h-32 items-center justify-center p-6 text-sm text-[var(--text-secondary)]">
+                {t('app.format.case.no_match')}
+              </CardContent>
+            </Card>
+          )}
         </div>
       ) : (
         <Card className="glass-panel-static">
@@ -140,8 +434,60 @@ const CaseClient = () => {
           </CardContent>
         </Card>
       )}
+
+      {batchRows.length > 1 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Wand2 className="h-4 w-4 text-[var(--primary)]" />
+              {t('app.format.case.batch')}
+            </CardTitle>
+            <CardDescription>
+              {t('app.format.case.batch_hint', { limit: formatCaseNumber(MAX_BATCH_LINES) })}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="max-h-[420px] space-y-2 overflow-auto pr-1">
+              {batchRows.map(row => (
+                <div
+                  key={row.input}
+                  className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--glass-input-bg)] p-3"
+                >
+                  <p className="truncate font-mono text-sm font-semibold text-[var(--text-primary)]">
+                    {row.input}
+                  </p>
+                  <div className="mt-2 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                    {row.values.slice(0, 6).map(item => (
+                      <button
+                        key={`${row.input}-${item.label}`}
+                        type="button"
+                        onClick={() => copy(item.value)}
+                        className="min-w-0 rounded-xl bg-[var(--glass-input-bg)] px-3 py-2 text-left"
+                      >
+                        <span className="text-xs text-[var(--text-tertiary)]">{item.label}</span>
+                        <span className="mt-1 block truncate font-mono text-xs text-[var(--text-primary)]">
+                          {item.value}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }
+
+const CaseMetric = ({ label, value }: { label: string; value: string }) => (
+  <div className="glass-input rounded-2xl p-3">
+    <div className="text-xs text-[var(--text-tertiary)]">{label}</div>
+    <div className="mt-1 truncate font-mono text-sm font-semibold text-[var(--text-primary)]">
+      {value}
+    </div>
+  </div>
+)
 
 export default CaseClient

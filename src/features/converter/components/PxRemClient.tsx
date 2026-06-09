@@ -1,6 +1,6 @@
 'use client'
 
-import { Calculator, Copy, RotateCcw, Type } from 'lucide-react'
+import { Calculator, Copy, FileCode2, RotateCcw, Type } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -12,7 +12,16 @@ import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
 
-type Unit = 'px' | 'rem' | 'em' | 'percent'
+type PxRemOutput = 'css' | 'json' | 'tailwind'
+type SpacingPreset = 'compact' | 'default' | 'fluid' | 'tailwind'
+type Unit = 'em' | 'percent' | 'px' | 'rem'
+
+const SPACING_PRESETS: Record<SpacingPreset, string> = {
+  compact: '2, 4, 6, 8, 10, 12, 16, 20, 24, 32',
+  default: '4, 8, 12, 16, 20, 24, 32, 40, 48, 64',
+  fluid: '8, 12, 16, 24, 32, 48, 64, 80, 96, 128',
+  tailwind: '0, 1, 2, 4, 8, 12, 16, 20, 24, 32, 40, 48, 64, 80, 96'
+}
 
 const toPx = (value: number, unit: Unit, base: number) => {
   if (unit === 'px') return value
@@ -31,13 +40,47 @@ const formatNumber = (value: number) => {
   return Number(value.toFixed(4)).toString()
 }
 
+const parseScale = (input: string) =>
+  input
+    .split(/[,\s]+/)
+    .map(item => Number(item))
+    .filter(item => Number.isFinite(item))
+    .slice(0, 80)
+
+const formatCssVars = (rows: ScaleRow[], prefix: string) =>
+  `:root {\n${rows.map(row => `  --${prefix}-${row.name}: ${row.rem}rem;`).join('\n')}\n}`
+
+const formatTailwind = (rows: ScaleRow[], prefix: string) =>
+  `spacing: {\n${rows.map(row => `  '${prefix}-${row.name}': '${row.rem}rem',`).join('\n')}\n}`
+
+const formatJson = (rows: ScaleRow[]) =>
+  JSON.stringify(
+    rows.map(row => ({
+      name: row.name,
+      px: row.px,
+      rem: Number(row.rem),
+      percent: Number(row.percent)
+    })),
+    null,
+    2
+  )
+
+interface ScaleRow {
+  name: string
+  percent: string
+  px: number
+  rem: string
+}
+
 const PxRemClient = () => {
   const { t } = useTranslation()
   const { copy } = useCopy()
   const [value, setValue] = useState(24)
   const [fromUnit, setFromUnit] = useState<Unit>('px')
   const [base, setBase] = useState(16)
-  const [scaleInput, setScaleInput] = useState('4, 8, 12, 16, 20, 24, 32, 40, 48, 64')
+  const [scaleInput, setScaleInput] = useState(SPACING_PRESETS.default)
+  const [tokenPrefix, setTokenPrefix] = useState('space')
+  const [outputType, setOutputType] = useState<PxRemOutput>('css')
 
   const pxValue = useMemo(() => toPx(value, fromUnit, base), [base, fromUnit, value])
   const conversions = useMemo(
@@ -50,24 +93,31 @@ const PxRemClient = () => {
   )
   const scaleRows = useMemo(
     () =>
-      scaleInput
-        .split(/[,\s]+/)
-        .map(item => Number(item))
-        .filter(item => Number.isFinite(item))
-        .map(px => ({
-          px,
-          rem: formatNumber(px / base),
-          percent: formatNumber((px / base) * 100)
-        })),
+      parseScale(scaleInput).map((px, index) => ({
+        name: String(index + 1).padStart(2, '0'),
+        percent: formatNumber((px / base) * 100),
+        px,
+        rem: formatNumber(px / base)
+      })),
     [base, scaleInput]
   )
-  const cssVars = scaleRows.map((row, index) => `  --space-${index + 1}: ${row.rem}rem;`).join('\n')
+  const output = useMemo(() => {
+    if (outputType === 'json') return formatJson(scaleRows)
+    if (outputType === 'tailwind') return formatTailwind(scaleRows, tokenPrefix || 'space')
+    return formatCssVars(scaleRows, tokenPrefix || 'space')
+  }, [outputType, scaleRows, tokenPrefix])
+
+  const conversionSummary = conversions
+    .map(item => `${item.value}${item.unit === 'percent' ? '%' : item.unit}`)
+    .join('\n')
 
   const reset = () => {
     setValue(24)
     setFromUnit('px')
     setBase(16)
-    setScaleInput('4, 8, 12, 16, 20, 24, 32, 40, 48, 64')
+    setScaleInput(SPACING_PRESETS.default)
+    setTokenPrefix('space')
+    setOutputType('css')
   }
 
   return (
@@ -82,15 +132,13 @@ const PxRemClient = () => {
               </CardTitle>
               <CardDescription>{t('app.converter.px_rem.description')}</CardDescription>
             </div>
-            <div className="flex flex-wrap gap-3">
+            <div className="flex flex-wrap gap-2">
               <Button
                 size="sm"
                 icon={<Copy className="h-4 w-4" />}
-                onClick={() =>
-                  copy(conversions.map(item => `${item.value}${item.unit}`).join('\n'))
-                }
+                onClick={() => copy(conversionSummary)}
               >
-                {t('public.copy')}
+                {t('app.converter.px_rem.copy_results')}
               </Button>
               <Button
                 size="sm"
@@ -141,6 +189,19 @@ const PxRemClient = () => {
               />
             </div>
           </div>
+
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            {conversions.map(item => (
+              <div key={item.unit} className="glass-input rounded-xl p-4">
+                <p className="text-xs uppercase text-[var(--text-tertiary)]">
+                  {item.unit === 'percent' ? '%' : item.unit}
+                </p>
+                <p className="mt-2 font-mono text-lg font-semibold text-[var(--text-primary)]">
+                  {item.value}
+                </p>
+              </div>
+            ))}
+          </div>
         </CardContent>
       </Card>
 
@@ -149,25 +210,42 @@ const PxRemClient = () => {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               <Calculator className="h-4 w-4 text-[var(--primary)]" />
-              {t('app.converter.px_rem.results')}
+              {t('app.converter.px_rem.scale')}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-              {conversions.map(item => (
-                <div key={item.unit} className="glass-input rounded-xl p-4">
-                  <p className="text-xs uppercase text-[var(--text-tertiary)]">
-                    {item.unit === 'percent' ? '%' : item.unit}
-                  </p>
-                  <p className="mt-2 font-mono text-lg font-semibold text-[var(--text-primary)]">
-                    {item.value}
-                  </p>
-                </div>
-              ))}
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-3">
+                <Label htmlFor="pxrem-preset">{t('app.converter.px_rem.preset')}</Label>
+                <Select
+                  id="pxrem-preset"
+                  value="custom"
+                  onChange={event => {
+                    const preset = event.target.value as SpacingPreset | 'custom'
+                    if (preset !== 'custom') setScaleInput(SPACING_PRESETS[preset])
+                  }}
+                >
+                  <option value="custom">{t('app.converter.px_rem.preset.custom')}</option>
+                  {(['default', 'compact', 'fluid', 'tailwind'] as const).map(preset => (
+                    <option key={preset} value={preset}>
+                      {t(`app.converter.px_rem.preset.${preset}`)}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              <div className="space-y-3">
+                <Label htmlFor="pxrem-prefix">{t('app.converter.px_rem.token_prefix')}</Label>
+                <Input
+                  id="pxrem-prefix"
+                  value={tokenPrefix}
+                  onChange={event => setTokenPrefix(event.target.value.replace(/[^\w-]/g, ''))}
+                  className="font-mono"
+                />
+              </div>
             </div>
 
             <div className="space-y-3">
-              <Label htmlFor="pxrem-scale">{t('app.converter.px_rem.scale')}</Label>
+              <Label htmlFor="pxrem-scale">{t('app.converter.px_rem.scale_input')}</Label>
               <Textarea
                 id="pxrem-scale"
                 value={scaleInput}
@@ -175,12 +253,16 @@ const PxRemClient = () => {
                 rows={3}
                 className="resize-none font-mono"
               />
+              <p className="text-xs text-[var(--text-secondary)]">
+                {t('app.converter.px_rem.scale_hint', { count: scaleRows.length })}
+              </p>
             </div>
 
             <div className="glass-clip overflow-auto rounded-xl border border-[var(--border-base)]">
               <table className="min-w-full text-left text-sm">
                 <thead className="bg-[var(--glass-panel-bg)]">
                   <tr>
+                    <th className="px-3 py-2">{t('app.converter.px_rem.token')}</th>
                     <th className="px-3 py-2">px</th>
                     <th className="px-3 py-2">rem</th>
                     <th className="px-3 py-2">%</th>
@@ -192,6 +274,9 @@ const PxRemClient = () => {
                       key={`${row.px}-${row.rem}`}
                       className="border-t border-[var(--border-base)]"
                     >
+                      <td className="px-3 py-2 font-mono">
+                        --{tokenPrefix || 'space'}-{row.name}
+                      </td>
                       <td className="px-3 py-2 font-mono">{row.px}</td>
                       <td className="px-3 py-2 font-mono">{row.rem}</td>
                       <td className="px-3 py-2 font-mono">{row.percent}</td>
@@ -206,18 +291,33 @@ const PxRemClient = () => {
         <Card className="flex min-h-[420px] flex-col">
           <CardHeader>
             <div className="flex items-center justify-between gap-3">
-              <CardTitle className="text-base">{t('app.converter.px_rem.css_vars')}</CardTitle>
-              <Button size="sm" variant="ghost" onClick={() => copy(`:root {\n${cssVars}\n}`)}>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <FileCode2 className="h-4 w-4 text-[var(--primary)]" />
+                {t('app.converter.px_rem.output')}
+              </CardTitle>
+              <Button size="sm" variant="ghost" onClick={() => copy(output)}>
                 {t('public.copy')}
               </Button>
             </div>
           </CardHeader>
-          <CardContent className="flex min-h-0 flex-1 flex-col">
+          <CardContent className="flex min-h-0 flex-1 flex-col gap-4">
+            <div className="space-y-3">
+              <Label htmlFor="pxrem-output">{t('app.converter.px_rem.output_type')}</Label>
+              <Select
+                id="pxrem-output"
+                value={outputType}
+                onChange={event => setOutputType(event.target.value as PxRemOutput)}
+              >
+                <option value="css">{t('app.converter.px_rem.output.css')}</option>
+                <option value="tailwind">{t('app.converter.px_rem.output.tailwind')}</option>
+                <option value="json">{t('app.converter.px_rem.output.json')}</option>
+              </Select>
+            </div>
             <Textarea
-              value={`:root {\n${cssVars}\n}`}
+              value={output}
               readOnly
               rows={16}
-              className="min-h-[320px] flex-1 resize-none font-mono"
+              className="min-h-[280px] flex-1 resize-none font-mono"
             />
           </CardContent>
         </Card>
