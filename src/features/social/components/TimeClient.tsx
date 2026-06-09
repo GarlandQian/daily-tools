@@ -13,6 +13,8 @@ import { tzListMap, type tzMap } from '@/const/timezone'
 import { useVisibleNow } from '@/hooks/useVisibleNow'
 import { cn } from '@/lib/utils'
 
+import { formatInteger } from '../utils/formatters'
+
 dayjs.extend(utc)
 dayjs.extend(timezone)
 
@@ -71,6 +73,50 @@ const fallbackTimezoneIds = Array.from(
   new Set(Object.values(tzListMap).map(timezone => timezone.value))
 ).sort((a, b) => a.localeCompare(b))
 
+const regionLabels: Record<Exclude<ZoneGroup, 'all'>, { cn: string; en: string }> = {
+  africa: { cn: '非洲', en: 'Africa' },
+  america: { cn: '美洲', en: 'Americas' },
+  antarctica: { cn: '南极洲', en: 'Antarctica' },
+  asia: { cn: '亚洲', en: 'Asia' },
+  atlantic: { cn: '大西洋', en: 'Atlantic' },
+  australia: { cn: '澳大利亚', en: 'Australia' },
+  europe: { cn: '欧洲', en: 'Europe' },
+  indian: { cn: '印度洋', en: 'Indian Ocean' },
+  other: { cn: '其他', en: 'Other' },
+  pacific: { cn: '太平洋', en: 'Pacific' }
+}
+
+const dateFormatterCache = new Map<string, Intl.DateTimeFormat>()
+
+const getLocale = (language: string) => (language === 'cn' ? 'zh-CN' : 'en-US')
+
+const getDateFormatter = (
+  language: string,
+  mode: 'fullDate' | 'zoneCalendarDate' | 'zhWeekday'
+) => {
+  const locale = mode === 'zhWeekday' ? 'zh-CN' : getLocale(language)
+  const key = `${locale}:${mode}`
+  const cached = dateFormatterCache.get(key)
+
+  if (cached) return cached
+
+  const formatter = new Intl.DateTimeFormat(
+    locale,
+    mode === 'fullDate'
+      ? { dateStyle: 'full' }
+      : mode === 'zhWeekday'
+        ? { weekday: 'short' }
+        : {
+            day: 'numeric',
+            month: 'short',
+            weekday: 'short'
+          }
+  )
+
+  dateFormatterCache.set(key, formatter)
+  return formatter
+}
+
 const getZoneGroup = (zoneId: string): Exclude<ZoneGroup, 'all'> => {
   const region = zoneId.split('/')[0]?.toLowerCase()
 
@@ -105,24 +151,14 @@ const getSupportedTimezoneIds = () => {
 }
 
 const getRegionLabel = (group: Exclude<ZoneGroup, 'all'>, language: string) => {
-  const labels: Record<Exclude<ZoneGroup, 'all'>, { cn: string; en: string }> = {
-    africa: { cn: '非洲', en: 'Africa' },
-    america: { cn: '美洲', en: 'Americas' },
-    antarctica: { cn: '南极洲', en: 'Antarctica' },
-    asia: { cn: '亚洲', en: 'Asia' },
-    atlantic: { cn: '大西洋', en: 'Atlantic' },
-    australia: { cn: '澳大利亚', en: 'Australia' },
-    europe: { cn: '欧洲', en: 'Europe' },
-    indian: { cn: '印度洋', en: 'Indian Ocean' },
-    other: { cn: '其他', en: 'Other' },
-    pacific: { cn: '太平洋', en: 'Pacific' }
-  }
-
-  return language === 'cn' ? labels[group].cn : labels[group].en
+  return language === 'cn' ? regionLabels[group].cn : regionLabels[group].en
 }
 
-const formatWorldTimezoneLabel = (zoneId: string, language: string) => {
-  const group = getZoneGroup(zoneId)
+const formatWorldTimezoneLabel = (
+  zoneId: string,
+  group: Exclude<ZoneGroup, 'all'>,
+  language: string
+) => {
   const region = getRegionLabel(group, language)
   const city = zoneId.split('/').slice(1).join(' / ').replaceAll('_', ' ')
 
@@ -147,21 +183,15 @@ const formatDiff = (
 }
 
 const formatLongDate = (date: Dayjs, language: string) =>
-  new Intl.DateTimeFormat(language === 'cn' ? 'zh-CN' : 'en-US', {
-    dateStyle: 'full'
-  }).format(date.toDate())
+  getDateFormatter(language, 'fullDate').format(date.toDate())
 
 const formatZoneCalendarDate = (date: Dayjs, language: string) => {
   if (language === 'cn') {
-    const weekday = new Intl.DateTimeFormat('zh-CN', { weekday: 'short' }).format(date.toDate())
+    const weekday = getDateFormatter(language, 'zhWeekday').format(date.toDate())
     return `${date.format('M月D日')} ${weekday}`
   }
 
-  return new Intl.DateTimeFormat('en-US', {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric'
-  }).format(date.toDate())
+  return getDateFormatter(language, 'zoneCalendarDate').format(date.toDate())
 }
 
 const formatRelativeDay = (
@@ -181,6 +211,7 @@ const TimeClient = () => {
   const [localZone, setLocalZone] = useState('')
   const [query, setQuery] = useState('')
   const [activeGroup, setActiveGroup] = useState<ZoneGroup>('all')
+  const language = i18n.language
 
   React.useEffect(() => {
     setLocalZone(Intl.DateTimeFormat().resolvedOptions().timeZone)
@@ -208,10 +239,11 @@ const TimeClient = () => {
 
   const zoneEntries = useMemo(() => {
     const entries: WorldZone[] = timezoneIds.map(zoneId => {
-      const label = formatWorldTimezoneLabel(zoneId, i18n.language)
+      const group = getZoneGroup(zoneId)
+      const label = formatWorldTimezoneLabel(zoneId, group, language)
 
       return {
-        group: getZoneGroup(zoneId),
+        group,
         key: zoneId,
         label,
         searchable: `${label} ${zoneId}`.toLowerCase(),
@@ -220,7 +252,7 @@ const TimeClient = () => {
     })
 
     return entries.sort((a, b) => a.label.localeCompare(b.label))
-  }, [i18n.language, timezoneIds])
+  }, [language, timezoneIds])
 
   const groupOptions = useMemo(
     () =>
@@ -245,14 +277,28 @@ const TimeClient = () => {
 
   const localTime = isReady ? localNow.format('HH:mm:ss') : '--:--:--'
   const localDate = isReady
-    ? formatLongDate(localNow, i18n.language)
+    ? formatLongDate(localNow, language)
     : t('app.social.time.loading_local')
   const utcTime = isReady ? localNow.utc().format('HH:mm:ss') : '--:--:--'
-  const unixTime = isReady ? localNow.unix().toLocaleString() : '--'
+  const unixTime = isReady ? formatInteger(localNow.unix(), language) : '--'
+
+  const visibleZoneCards = useMemo(
+    () =>
+      visibleZones.map(zone => (
+        <WorldZoneCard
+          key={zone.key}
+          fromLocalLabel={fromLocalLabel}
+          language={language}
+          sameAsLocalLabel={sameAsLocalLabel}
+          zone={zone}
+        />
+      )),
+    [fromLocalLabel, language, sameAsLocalLabel, visibleZones]
+  )
 
   return (
     <div className="time-dashboard flex w-full min-w-0 max-w-full flex-col gap-5 overflow-x-hidden pb-5 sm:gap-7 sm:pb-6">
-      <section className="grid min-w-0 grid-cols-1 gap-5 sm:gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)] xl:gap-7">
+      <section className="time-overview-grid grid min-w-0 grid-cols-1 gap-6 sm:gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)] xl:gap-7">
         <div className="time-glass-surface time-glass-hero glass-panel glass-accent-border glass-glow-primary glass-prism min-w-0 rounded-2xl p-5 sm:p-6">
           <div className="relative z-10 flex min-h-[290px] flex-col justify-between gap-8">
             <div className="flex flex-wrap items-start justify-between gap-4">
@@ -290,7 +336,7 @@ const TimeClient = () => {
           </div>
         </div>
 
-        <div className="grid min-w-0 grid-cols-1 gap-5 sm:gap-6">
+        <div className="time-side-stack grid min-w-0 grid-cols-1 gap-6 sm:gap-6">
           <div className="time-glass-surface time-glass-control time-glass-progress glass-panel glass-prism min-w-0 rounded-2xl p-5">
             <div className="mb-4 flex items-center justify-between gap-3">
               <div>
@@ -342,7 +388,7 @@ const TimeClient = () => {
         </div>
       </section>
 
-      <section className="grid min-w-0 grid-cols-1 gap-5 md:grid-cols-2 md:gap-6 xl:grid-cols-4">
+      <section className="time-featured-grid grid min-w-0 grid-cols-1 gap-5 md:grid-cols-2 md:gap-6 xl:grid-cols-4">
         {featuredZones.map(zone => {
           const zoneData = tzListMap[zone.key]
           const zoneNow = localNow.tz(zoneData.value)
@@ -351,14 +397,14 @@ const TimeClient = () => {
           return (
             <div
               key={zone.key}
-              className="time-glass-surface time-glass-card glass-panel glass-prism min-w-0 rounded-2xl p-4"
+              className="time-glass-surface time-glass-card glass-panel glass-panel-static glass-prism min-w-0 rounded-2xl p-4"
             >
               <div className="flex min-w-0 items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <div className="truncate text-sm font-semibold text-[var(--text-primary)]">
+                  <div className="truncate text-sm font-semibold leading-5 text-[var(--text-primary)]">
                     {t(`app.social.time.city.${zone.key}`)}
                   </div>
-                  <div className="mt-1 truncate text-xs text-[var(--text-tertiary)]">
+                  <div className="mt-1 truncate text-xs font-medium text-[var(--text-secondary)]">
                     {formatOffset(localNow, zoneData.value)}
                   </div>
                 </div>
@@ -373,9 +419,7 @@ const TimeClient = () => {
                     <span className="rounded-full border border-[var(--border-base)] bg-[var(--surface-subtle)] px-2 py-0.5 font-medium text-[var(--text-primary)]">
                       {relativeDay}
                     </span>
-                    <span className="truncate">
-                      {formatZoneCalendarDate(zoneNow, i18n.language)}
-                    </span>
+                    <span className="truncate">{formatZoneCalendarDate(zoneNow, language)}</span>
                   </>
                 ) : (
                   t('app.social.time.loading')
@@ -421,15 +465,7 @@ const TimeClient = () => {
 
         <div className="p-3 sm:p-4">
           <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {visibleZones.map(zone => (
-              <WorldZoneCard
-                key={zone.key}
-                fromLocalLabel={fromLocalLabel}
-                language={i18n.language}
-                sameAsLocalLabel={sameAsLocalLabel}
-                zone={zone}
-              />
-            ))}
+            {visibleZoneCards}
           </div>
         </div>
       </section>
@@ -496,22 +532,26 @@ const WorldZoneCard = React.memo(
       >
         <div className="flex min-w-0 items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="truncate text-sm font-medium text-[var(--text-primary)]">
+            <div className="truncate text-base font-semibold leading-6 text-[var(--text-primary)]">
               {zone.label}
             </div>
-            <div className="mt-1 truncate text-xs text-[var(--text-tertiary)]">{zone.value}</div>
+            <div className="mt-1 truncate text-[13px] font-medium text-[var(--text-secondary)]">
+              {zone.value}
+            </div>
           </div>
-          <span className="shrink-0 rounded-full bg-[var(--primary-subtle)] px-2 py-0.5 text-xs font-medium text-[var(--primary)]">
+          <span className="shrink-0 rounded-full border border-[var(--border-base)] bg-[var(--primary-subtle)] px-2.5 py-0.5 text-xs font-semibold text-[var(--primary)]">
             {displayNow ? formatOffset(displayNow, zone.value) : 'UTC--:--'}
           </span>
         </div>
         <div className="mt-4 flex min-w-0 items-end justify-between gap-3">
-          <div className="min-w-0 overflow-hidden font-mono text-2xl font-semibold tabular-nums text-[var(--text-primary)]">
+          <div className="min-w-0 overflow-hidden font-mono text-3xl font-semibold leading-none tabular-nums text-[var(--text-primary)]">
             {zoneNow ? zoneNow.format('HH:mm:ss') : '--:--:--'}
           </div>
-          <div className="min-w-0 shrink text-right text-xs text-[var(--text-secondary)]">
-            <div>{zoneNow ? zoneNow.format('YYYY-MM-DD') : '---- -- --'}</div>
-            <div className="mt-1">
+          <div className="min-w-0 shrink text-right text-[13px] font-medium leading-5">
+            <div className="text-[var(--text-primary)]">
+              {zoneNow ? zoneNow.format('YYYY-MM-DD') : '---- -- --'}
+            </div>
+            <div className="mt-0.5 text-[var(--text-secondary)]">
               {zoneNow && displayNow
                 ? formatDiff(displayNow, zone.value, {
                     fromLocal: fromLocalLabel,

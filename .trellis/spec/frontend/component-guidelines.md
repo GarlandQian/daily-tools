@@ -54,6 +54,24 @@ export default function YamlPage() {
 }
 ```
 
+### Convention: Tool Menu Labels and Matching
+
+**What**: Menu entries in `src/config/menus.tsx` can be route-backed tools or virtual categories. Virtual categories such as `/life` and `/inspect` must set an explicit `labelKey`, and the sidebar must prefer matching child paths before parent paths.
+
+**Why**: Some visible categories intentionally group routes from a different namespace, such as income tools under `/social/*`. Child-first matching preserves complete breadcrumbs like `Hash Checks > MD5` for route-backed categories while still allowing virtual parents like `Personal Finance > Net Salary`.
+
+**Example**:
+
+```tsx
+{
+  path: '/life',
+  labelKey: 'app.menu.life',
+  children: [{ path: '/social/salary' }]
+}
+```
+
+**Related**: Add locale keys for both visible category labels and route slugs. If a route slug contains a hyphen, prefer a direct key such as `app.converter.http-status`; legacy underscored keys can remain for compatibility.
+
 ---
 
 ## Props Conventions

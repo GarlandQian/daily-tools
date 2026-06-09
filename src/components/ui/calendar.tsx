@@ -10,6 +10,26 @@ import { cn } from '@/lib/utils'
 
 export type CalendarProps = React.ComponentProps<typeof DayPicker>
 
+const CHINESE_WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
+const EN_CAPTION_FORMATTER = new Intl.DateTimeFormat('en-US', {
+  month: 'long',
+  year: 'numeric'
+})
+const EN_WEEKDAY_FORMATTER = new Intl.DateTimeFormat('en-US', { weekday: 'short' })
+const calendarGhostButtonClass = cn(
+  buttonVariants({ variant: 'ghost' }),
+  'h-7 w-7 bg-transparent p-0 opacity-70 hover:opacity-100'
+)
+
+const calendarComponents: CalendarProps['components'] = {
+  Chevron: ({ orientation, className }) =>
+    orientation === 'left' ? (
+      <ChevronLeft className={cn('h-4 w-4', className)} />
+    ) : (
+      <ChevronRight className={cn('h-4 w-4', className)} />
+    )
+}
+
 function Calendar({
   className,
   classNames,
@@ -19,22 +39,25 @@ function Calendar({
 }: CalendarProps) {
   const { i18n } = useTranslation()
   const isChinese = i18n.language === 'cn'
-  const weekdays = ['日', '一', '二', '三', '四', '五', '六']
+  const dayPickerFormatters = React.useMemo(
+    () => ({
+      formatCaption: (month: Date) =>
+        isChinese
+          ? `${month.getFullYear()}年${month.getMonth() + 1}月`
+          : EN_CAPTION_FORMATTER.format(month),
+      formatWeekdayName: (weekday: Date) =>
+        isChinese
+          ? `周${CHINESE_WEEKDAYS[weekday.getDay()]}`
+          : EN_WEEKDAY_FORMATTER.format(weekday),
+      ...formatters
+    }),
+    [formatters, isChinese]
+  )
 
   return (
     <DayPicker
       showOutsideDays={showOutsideDays}
-      formatters={{
-        formatCaption: month =>
-          isChinese
-            ? `${month.getFullYear()}年${month.getMonth() + 1}月`
-            : month.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
-        formatWeekdayName: weekday =>
-          isChinese
-            ? `周${weekdays[weekday.getDay()]}`
-            : weekday.toLocaleDateString('en-US', { weekday: 'short' }),
-        ...formatters
-      }}
+      formatters={dayPickerFormatters}
       className={cn(
         'glass-panel glass-panel-strong glass-popover glass-clip w-[min(20rem,calc(100vw-2rem))] rounded-2xl p-3.5 text-[var(--text-primary)]',
         className
@@ -46,14 +69,8 @@ function Calendar({
         month_caption: 'flex h-8 items-center justify-center px-10',
         caption_label: 'text-sm font-medium text-[var(--text-primary)]',
         nav: 'absolute inset-x-3 top-3 flex items-center justify-between',
-        button_previous: cn(
-          buttonVariants({ variant: 'ghost' }),
-          'h-7 w-7 bg-transparent p-0 opacity-70 hover:opacity-100'
-        ),
-        button_next: cn(
-          buttonVariants({ variant: 'ghost' }),
-          'h-7 w-7 bg-transparent p-0 opacity-70 hover:opacity-100'
-        ),
+        button_previous: calendarGhostButtonClass,
+        button_next: calendarGhostButtonClass,
         chevron: 'h-4 w-4',
         month_grid: 'w-full table-fixed border-collapse',
         weekdays: 'border-0',
@@ -75,14 +92,7 @@ function Calendar({
         range_middle: '[&>button]:bg-[var(--primary-subtle)] [&>button]:text-[var(--text-primary)]',
         ...classNames
       }}
-      components={{
-        Chevron: ({ orientation, className }) =>
-          orientation === 'left' ? (
-            <ChevronLeft className={cn('h-4 w-4', className)} />
-          ) : (
-            <ChevronRight className={cn('h-4 w-4', className)} />
-          )
-      }}
+      components={calendarComponents}
       {...props}
     />
   )

@@ -4,7 +4,8 @@ import ColorClient from '@/features/converter/components/ColorClient'
 
 export const metadata: Metadata = {
   title: 'Color Converter - Daily Tools',
-  description: 'Convert colors between HEX, RGB, and HSL formats'
+  description:
+    'Convert HEX, RGB, HSL, HSV, CMYK, OKLCH, alpha colors, contrast checks, palettes, and design token exports'
 }
 
 export default function ColorPage() {

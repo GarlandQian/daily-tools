@@ -857,6 +857,15 @@ html.page-hidden .glass-shimmer::after {
     inset 0 -28px 56px rgba(255, 255, 255, 0.12);
 }
 
+.time-dashboard .time-glass-hero.glass-panel:hover {
+  box-shadow:
+    0 30px 76px rgba(31, 38, 135, 0.24),
+    0 12px 28px rgba(0, 113, 227, 0.08),
+    0 2px 0 rgba(255, 255, 255, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.82),
+    inset 0 -28px 56px rgba(255, 255, 255, 0.12);
+}
+
 [data-theme='dark'] .time-glass-hero {
   --time-sheet-bg:
     radial-gradient(circle at 12% 0%, rgba(255, 255, 255, 0.16), transparent 30%),
@@ -872,10 +881,41 @@ html.page-hidden .glass-shimmer::after {
     inset 0 -28px 56px rgba(255, 255, 255, 0.04);
 }
 
+[data-theme='dark'] .time-dashboard .time-glass-hero.glass-panel:hover {
+  box-shadow:
+    0 30px 76px rgba(0, 0, 0, 0.54),
+    0 12px 28px rgba(94, 158, 255, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 -28px 56px rgba(255, 255, 255, 0.04);
+}
+
 .time-glass-control,
 .time-glass-card,
 .time-zone-shell {
   transform: translateZ(0);
+}
+
+.time-dashboard .time-glass-surface.glass-panel:hover {
+  border-color: var(--time-sheet-border, var(--time-glass-border));
+  transform: translateZ(0);
+  filter: none;
+}
+
+.time-dashboard > .time-featured-grid > .time-glass-card {
+  overflow: hidden;
+  clip-path: inset(0 round 1rem);
+}
+
+.time-dashboard > .time-featured-grid > .time-glass-card::before {
+  background: transparent;
+  animation: none;
+  opacity: 0;
+}
+
+.time-dashboard > .time-featured-grid > .time-glass-card.glass-prism::after {
+  inset: 0;
+  animation: none;
+  transform: none;
 }
 
 .time-glass-progress {
@@ -1011,8 +1051,28 @@ html.page-hidden .glass-shimmer::after {
     inset 0 -22px 42px rgba(255, 255, 255, 0.12);
 }
 
+.time-dashboard .time-glass-control.glass-panel:hover,
+.time-dashboard .time-glass-card.glass-panel:hover {
+  box-shadow:
+    0 24px 58px rgba(31, 38, 135, 0.2),
+    0 10px 24px rgba(20, 38, 70, 0.1),
+    0 2px 0 rgba(255, 255, 255, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.78),
+    inset 0 -22px 42px rgba(255, 255, 255, 0.12);
+}
+
 [data-theme='dark'] .time-glass-control,
 [data-theme='dark'] .time-glass-card {
+  box-shadow:
+    0 24px 58px rgba(0, 0, 0, 0.48),
+    0 10px 24px rgba(0, 0, 0, 0.32),
+    0 2px 0 rgba(255, 255, 255, 0.04),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    inset 0 -22px 42px rgba(255, 255, 255, 0.04);
+}
+
+[data-theme='dark'] .time-dashboard .time-glass-control.glass-panel:hover,
+[data-theme='dark'] .time-dashboard .time-glass-card.glass-panel:hover {
   box-shadow:
     0 24px 58px rgba(0, 0, 0, 0.48),
     0 10px 24px rgba(0, 0, 0, 0.32),
@@ -1111,12 +1171,41 @@ html.page-hidden .glass-shimmer::after {
     gap: 1.25rem;
   }
 
+  .time-dashboard > .time-overview-grid,
+  .time-dashboard > .time-overview-grid > .time-side-stack {
+    gap: 2rem;
+  }
+
   .time-metrics-grid {
-    gap: 0.75rem;
+    gap: 1rem;
   }
 
   .time-glass-surface {
     outline-offset: -2px;
+  }
+
+  .time-dashboard > .time-overview-grid > .time-glass-surface,
+  .time-dashboard > .time-overview-grid > .time-side-stack > .time-glass-surface,
+  .time-dashboard > .time-featured-grid > .time-glass-card {
+    overflow: hidden;
+    outline: 0;
+    clip-path: inset(0 round 1rem);
+  }
+
+  .time-dashboard > .time-overview-grid > .time-glass-surface::before,
+  .time-dashboard > .time-overview-grid > .time-side-stack > .time-glass-surface::before,
+  .time-dashboard > .time-featured-grid > .time-glass-card::before {
+    background: transparent;
+    animation: none;
+    opacity: 0;
+  }
+
+  .time-dashboard > .time-overview-grid > .time-glass-surface.glass-prism::after,
+  .time-dashboard > .time-overview-grid > .time-side-stack > .time-glass-surface.glass-prism::after,
+  .time-dashboard > .time-featured-grid > .time-glass-card.glass-prism::after {
+    inset: 0;
+    animation: none;
+    transform: none;
   }
 
   .time-glass-surface {
@@ -1141,7 +1230,29 @@ html.page-hidden .glass-shimmer::after {
       inset 0 0 26px rgba(255, 255, 255, 0.06);
   }
 
+  .time-dashboard .time-glass-control.glass-panel:hover,
+  .time-dashboard .time-glass-card.glass-panel:hover {
+    box-shadow:
+      0 10px 24px rgba(31, 38, 135, 0.13),
+      0 3px 10px rgba(20, 38, 70, 0.08),
+      0 -1px 0 rgba(255, 255, 255, 0.16),
+      0 2px 0 rgba(255, 255, 255, 0.26),
+      inset 0 1px 0 rgba(255, 255, 255, 0.78),
+      inset 0 -18px 34px rgba(255, 255, 255, 0.1),
+      inset 0 0 26px rgba(255, 255, 255, 0.06);
+  }
+
   .time-glass-hero {
+    box-shadow:
+      0 12px 30px rgba(31, 38, 135, 0.16),
+      0 4px 12px rgba(0, 113, 227, 0.08),
+      0 2px 0 rgba(255, 255, 255, 0.28),
+      inset 0 1px 0 rgba(255, 255, 255, 0.84),
+      inset 0 -20px 38px rgba(255, 255, 255, 0.11),
+      inset 0 0 34px rgba(255, 255, 255, 0.07);
+  }
+
+  .time-dashboard .time-glass-hero.glass-panel:hover {
     box-shadow:
       0 12px 30px rgba(31, 38, 135, 0.16),
       0 4px 12px rgba(0, 113, 227, 0.08),
@@ -1162,7 +1273,29 @@ html.page-hidden .glass-shimmer::after {
       inset 0 0 26px rgba(255, 255, 255, 0.06);
   }
 
+  .time-dashboard .time-glass-progress.glass-panel:hover {
+    box-shadow:
+      0 10px 24px rgba(74, 110, 210, 0.14),
+      0 3px 10px rgba(20, 38, 70, 0.08),
+      0 -1px 0 rgba(255, 255, 255, 0.14),
+      0 2px 0 rgba(255, 255, 255, 0.26),
+      inset 0 1px 0 rgba(255, 255, 255, 0.78),
+      inset 0 -18px 34px rgba(255, 255, 255, 0.1),
+      inset 0 0 26px rgba(255, 255, 255, 0.06);
+  }
+
   .time-glass-groups {
+    box-shadow:
+      0 10px 24px rgba(42, 150, 150, 0.12),
+      0 3px 10px rgba(20, 38, 70, 0.08),
+      0 -1px 0 rgba(255, 255, 255, 0.14),
+      0 2px 0 rgba(255, 255, 255, 0.26),
+      inset 0 1px 0 rgba(255, 255, 255, 0.78),
+      inset 0 -18px 34px rgba(255, 255, 255, 0.1),
+      inset 0 0 26px rgba(255, 255, 255, 0.06);
+  }
+
+  .time-dashboard .time-glass-groups.glass-panel:hover {
     box-shadow:
       0 10px 24px rgba(42, 150, 150, 0.12),
       0 3px 10px rgba(20, 38, 70, 0.08),
@@ -1195,7 +1328,27 @@ html.page-hidden .glass-shimmer::after {
       inset 0 0 28px rgba(255, 255, 255, 0.025);
   }
 
+  [data-theme='dark'] .time-dashboard .time-glass-control.glass-panel:hover,
+  [data-theme='dark'] .time-dashboard .time-glass-card.glass-panel:hover {
+    box-shadow:
+      0 10px 24px rgba(0, 0, 0, 0.26),
+      0 3px 10px rgba(0, 0, 0, 0.2),
+      0 1px 0 rgba(255, 255, 255, 0.04),
+      inset 0 1px 0 rgba(255, 255, 255, 0.12),
+      inset 0 -18px 34px rgba(255, 255, 255, 0.03),
+      inset 0 0 28px rgba(255, 255, 255, 0.025);
+  }
+
   [data-theme='dark'] .time-glass-hero {
+    box-shadow:
+      0 12px 30px rgba(0, 0, 0, 0.3),
+      0 4px 12px rgba(94, 158, 255, 0.08),
+      inset 0 1px 0 rgba(255, 255, 255, 0.14),
+      inset 0 -20px 38px rgba(255, 255, 255, 0.03),
+      inset 0 0 34px rgba(255, 255, 255, 0.025);
+  }
+
+  [data-theme='dark'] .time-dashboard .time-glass-hero.glass-panel:hover {
     box-shadow:
       0 12px 30px rgba(0, 0, 0, 0.3),
       0 4px 12px rgba(94, 158, 255, 0.08),

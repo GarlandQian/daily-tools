@@ -4,7 +4,7 @@ import UtmBuilderClient from '@/features/generation/components/UtmBuilderClient'
 
 export const metadata: Metadata = {
   title: 'UTM Builder - Daily Tools',
-  description: 'Build campaign URLs with UTM source, medium, campaign, term, and content parameters'
+  description: 'Build normalized campaign URLs, UTM variants, and JSON tracking summaries'
 }
 
 export default function UtmBuilderPage() {

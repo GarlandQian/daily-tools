@@ -1,9 +1,10 @@
+import type { Metadata } from 'next'
+
 import SHAForm from '@/features/hash/components/SHAForm'
 
-export const metadata = {
-  title: 'SHA', // 页面标题
-  description: 'Generate SHA hashes easily with this simple tool.', // 页面描述
-  keywords: ['SHA', 'Hash', 'Generator', 'Online Tool'] // 关键词（部分搜索引擎支持）
+export const metadata: Metadata = {
+  title: 'SHA Hash - Daily Tools',
+  description: 'Generate SHA1, SHA224, SHA256, SHA3, SHA384, and SHA512 digests locally'
 }
 
 export default function SHAPage() {

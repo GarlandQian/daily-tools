@@ -20,18 +20,26 @@ const ThemeContext = createContext<ThemeContextType>({
 
 export const useTheme = () => useContext(ThemeContext)
 
+const getSavedThemeMode = (): ThemeMode => {
+  if (typeof window === 'undefined') return 'system'
+
+  const saved = localStorage.getItem('theme-preference') as ThemeMode | null
+  return saved && ['light', 'dark', 'system'].includes(saved) ? saved : 'system'
+}
+
 export default function ThemeProvider({ children }: { children: React.ReactNode }) {
+  // Start from deterministic defaults so the first client render matches the
+  // server-rendered HTML (no hydration mismatch). The real preference is read
+  // after mount; the inline boot script in the root layout already applies the
+  // correct `data-theme` before hydration, so there is no visual flash.
   const [themeMode, setThemeMode] = useState<ThemeMode>('system')
   const [mounted, setMounted] = useState(false)
   const [systemTheme, setSystemTheme] = useState<'light' | 'dark'>('light')
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
+    setThemeMode(getSavedThemeMode())
     setMounted(true)
-    const saved = localStorage.getItem('theme-preference') as ThemeMode
-    if (saved && ['light', 'dark', 'system'].includes(saved)) {
-      setThemeMode(saved)
-    }
   }, [])
 
   useEffect(() => {
@@ -64,9 +72,7 @@ export default function ThemeProvider({ children }: { children: React.ReactNode 
 
   return (
     <ThemeContext.Provider value={{ themeMode, setThemeMode, isDarkMode }}>
-      <ToastProvider>
-        {mounted ? children : <div style={{ visibility: 'hidden' }}>{children}</div>}
-      </ToastProvider>
+      <ToastProvider>{children}</ToastProvider>
     </ThemeContext.Provider>
   )
 }

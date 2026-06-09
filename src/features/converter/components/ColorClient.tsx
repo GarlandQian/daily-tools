@@ -1,6 +1,18 @@
 'use client'
 
-import { ArrowLeftRight, CheckCircle2, Copy, Palette, RotateCcw, ShieldCheck } from 'lucide-react'
+import {
+  ArrowLeftRight,
+  CheckCircle2,
+  Copy,
+  Download,
+  Eye,
+  Palette,
+  RotateCcw,
+  ShieldCheck,
+  Sparkles,
+  Star,
+  Wand2
+} from 'lucide-react'
 import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -9,6 +21,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { ColorPicker } from '@/components/ui/color-picker'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Select } from '@/components/ui/select'
+import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
 
 interface RgbValue {
@@ -23,11 +37,33 @@ interface HslValue {
   l: number
 }
 
+interface HsvValue {
+  h: number
+  s: number
+  v: number
+}
+
+interface CmykValue {
+  c: number
+  m: number
+  y: number
+  k: number
+}
+
+interface OklchValue {
+  l: number
+  c: number
+  h: number
+}
+
 interface ColorValues {
   hex: string
   rgb: RgbValue
   hsl: HslValue
 }
+
+type ExportFormat = 'css' | 'tailwind' | 'scss' | 'json'
+type HarmonyMode = 'analogous' | 'complementary' | 'triadic' | 'tetradic' | 'monochrome'
 
 interface Swatch {
   label: string
@@ -36,10 +72,19 @@ interface Swatch {
 
 const DEFAULT_COLOR = '#1677ff'
 const DEFAULT_BACKGROUND = '#ffffff'
+const MAX_EXTRACTED_COLORS = 32
+const MAX_CSS_INPUT_LENGTH = 12000
+const COLOR_PATTERN =
+  /#(?:[a-f\d]{3,8})\b|rgba?\(\s*[\d.]+%?\s*,\s*[\d.]+%?\s*,\s*[\d.]+%?(?:\s*,\s*(?:[\d.]+%?))?\s*\)|hsla?\(\s*[\d.]+(?:deg)?\s*,\s*[\d.]+%\s*,\s*[\d.]+%(?:\s*,\s*(?:[\d.]+%?))?\s*\)/gi
 
 const clampNumber = (value: number, min: number, max: number) => {
   if (!Number.isFinite(value)) return min
   return Math.min(max, Math.max(min, Math.round(value)))
+}
+
+const clampFloat = (value: number, min: number, max: number) => {
+  if (!Number.isFinite(value)) return min
+  return Math.min(max, Math.max(min, value))
 }
 
 const normalizeHex = (value: string) => {
@@ -59,6 +104,23 @@ const normalizeHex = (value: string) => {
   return null
 }
 
+const normalizeHex8 = (value: string) => {
+  const compact = value.trim().replace(/^#/, '')
+
+  if (/^[a-f\d]{4}$/i.test(compact)) {
+    return `#${compact
+      .split('')
+      .map(char => `${char}${char}`)
+      .join('')}`.toLowerCase()
+  }
+
+  if (/^[a-f\d]{8}$/i.test(compact)) {
+    return `#${compact}`.toLowerCase()
+  }
+
+  return null
+}
+
 const hexToRgb = (hex: string): RgbValue | null => {
   const normalized = normalizeHex(hex)
   if (!normalized) return null
@@ -72,6 +134,13 @@ const hexToRgb = (hex: string): RgbValue | null => {
 
 const rgbToHex = ({ r, g, b }: RgbValue): string =>
   `#${[r, g, b].map(x => clampNumber(x, 0, 255).toString(16).padStart(2, '0')).join('')}`
+
+const rgbToHex8 = (rgb: RgbValue, alpha: number): string => {
+  const alphaHex = clampNumber(alpha * 255, 0, 255)
+    .toString(16)
+    .padStart(2, '0')
+  return `${rgbToHex(rgb)}${alphaHex}`
+}
 
 const rgbToHsl = ({ r, g, b }: RgbValue): HslValue => {
   const red = r / 255
@@ -146,6 +215,119 @@ const hslToRgb = ({ h, s, l }: HslValue): RgbValue => {
   }
 }
 
+const rgbToHsv = ({ r, g, b }: RgbValue): HsvValue => {
+  const red = r / 255
+  const green = g / 255
+  const blue = b / 255
+  const max = Math.max(red, green, blue)
+  const min = Math.min(red, green, blue)
+  const delta = max - min
+  let h = 0
+
+  if (delta !== 0) {
+    if (max === red) h = ((green - blue) / delta + (green < blue ? 6 : 0)) * 60
+    if (max === green) h = ((blue - red) / delta + 2) * 60
+    if (max === blue) h = ((red - green) / delta + 4) * 60
+  }
+
+  return {
+    h: Math.round(h),
+    s: max === 0 ? 0 : Math.round((delta / max) * 100),
+    v: Math.round(max * 100)
+  }
+}
+
+const hsvToRgb = ({ h, s, v }: HsvValue): RgbValue => {
+  const hue = ((clampNumber(h, 0, 360) % 360) + 360) % 360
+  const saturation = clampNumber(s, 0, 100) / 100
+  const value = clampNumber(v, 0, 100) / 100
+  const chroma = value * saturation
+  const x = chroma * (1 - Math.abs(((hue / 60) % 2) - 1))
+  const m = value - chroma
+  let red = 0
+  let green = 0
+  let blue = 0
+
+  if (hue < 60) {
+    red = chroma
+    green = x
+  } else if (hue < 120) {
+    red = x
+    green = chroma
+  } else if (hue < 180) {
+    green = chroma
+    blue = x
+  } else if (hue < 240) {
+    green = x
+    blue = chroma
+  } else if (hue < 300) {
+    red = x
+    blue = chroma
+  } else {
+    red = chroma
+    blue = x
+  }
+
+  return {
+    r: Math.round((red + m) * 255),
+    g: Math.round((green + m) * 255),
+    b: Math.round((blue + m) * 255)
+  }
+}
+
+const rgbToCmyk = ({ r, g, b }: RgbValue): CmykValue => {
+  const red = r / 255
+  const green = g / 255
+  const blue = b / 255
+  const k = 1 - Math.max(red, green, blue)
+
+  if (k === 1) return { c: 0, m: 0, y: 0, k: 100 }
+
+  return {
+    c: Math.round(((1 - red - k) / (1 - k)) * 100),
+    m: Math.round(((1 - green - k) / (1 - k)) * 100),
+    y: Math.round(((1 - blue - k) / (1 - k)) * 100),
+    k: Math.round(k * 100)
+  }
+}
+
+const cmykToRgb = ({ c, m, y, k }: CmykValue): RgbValue => {
+  const cyan = clampNumber(c, 0, 100) / 100
+  const magenta = clampNumber(m, 0, 100) / 100
+  const yellow = clampNumber(y, 0, 100) / 100
+  const black = clampNumber(k, 0, 100) / 100
+
+  return {
+    r: Math.round(255 * (1 - cyan) * (1 - black)),
+    g: Math.round(255 * (1 - magenta) * (1 - black)),
+    b: Math.round(255 * (1 - yellow) * (1 - black))
+  }
+}
+
+const rgbToOklch = ({ r, g, b }: RgbValue): OklchValue => {
+  const toLinear = (channel: number) => {
+    const value = channel / 255
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
+  }
+  const red = toLinear(r)
+  const green = toLinear(g)
+  const blue = toLinear(b)
+  const l = Math.cbrt(0.4122214708 * red + 0.5363325363 * green + 0.0514459929 * blue)
+  const m = Math.cbrt(0.2119034982 * red + 0.6806995451 * green + 0.1073969566 * blue)
+  const s = Math.cbrt(0.0883024619 * red + 0.2817188376 * green + 0.6299787005 * blue)
+  const labL = 0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s
+  const labA = 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s
+  const labB = 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s
+  const chroma = Math.sqrt(labA ** 2 + labB ** 2)
+  const hue = (Math.atan2(labB, labA) * 180) / Math.PI
+
+  return {
+    l: Math.round(labL * 1000) / 10,
+    c: Math.round(chroma * 1000) / 1000,
+    h: Math.round((hue + 360) % 360)
+  }
+}
+
 const colorFromHex = (value: string): ColorValues | null => {
   const normalized = normalizeHex(value)
   if (!normalized) return null
@@ -158,6 +340,76 @@ const colorFromHex = (value: string): ColorValues | null => {
     rgb,
     hsl: rgbToHsl(rgb)
   }
+}
+
+const colorFromRgb = (rgb: RgbValue): ColorValues => ({
+  hex: rgbToHex(rgb),
+  rgb,
+  hsl: rgbToHsl(rgb)
+})
+
+const parseCssNumber = (value: string, max: number) => {
+  if (value.trim().endsWith('%')) return clampNumber((Number.parseFloat(value) / 100) * max, 0, max)
+  return clampNumber(Number.parseFloat(value), 0, max)
+}
+
+const parseAlpha = (value: string | undefined) => {
+  if (!value) return 1
+  const trimmed = value.trim()
+  if (trimmed.endsWith('%')) return clampFloat(Number.parseFloat(trimmed) / 100, 0, 1)
+  return clampFloat(Number.parseFloat(trimmed), 0, 1)
+}
+
+const parseCssColor = (value: string): { alpha: number; color: ColorValues } | null => {
+  const trimmed = value.trim()
+  const hex8 = normalizeHex8(trimmed)
+
+  if (hex8) {
+    const rgb = hexToRgb(hex8.slice(0, 7))
+    if (!rgb) return null
+    return {
+      alpha: Math.round((Number.parseInt(hex8.slice(7, 9), 16) / 255) * 100) / 100,
+      color: colorFromRgb(rgb)
+    }
+  }
+
+  const hex = normalizeHex(trimmed)
+  if (hex) {
+    const color = colorFromHex(hex)
+    return color ? { alpha: 1, color } : null
+  }
+
+  const rgbMatch = trimmed.match(
+    /^rgba?\(\s*([\d.]+%?)\s*,\s*([\d.]+%?)\s*,\s*([\d.]+%?)(?:\s*,\s*([\d.]+%?))?\s*\)$/i
+  )
+  if (rgbMatch) {
+    return {
+      alpha: parseAlpha(rgbMatch[4]),
+      color: colorFromRgb({
+        r: parseCssNumber(rgbMatch[1] ?? '0', 255),
+        g: parseCssNumber(rgbMatch[2] ?? '0', 255),
+        b: parseCssNumber(rgbMatch[3] ?? '0', 255)
+      })
+    }
+  }
+
+  const hslMatch = trimmed.match(
+    /^hsla?\(\s*([\d.]+)(?:deg)?\s*,\s*([\d.]+)%\s*,\s*([\d.]+)%(?:\s*,\s*([\d.]+%?))?\s*\)$/i
+  )
+  if (hslMatch) {
+    const hsl = {
+      h: clampNumber(Number(hslMatch[1]), 0, 360),
+      s: clampNumber(Number(hslMatch[2]), 0, 100),
+      l: clampNumber(Number(hslMatch[3]), 0, 100)
+    }
+    const rgb = hslToRgb(hsl)
+    return {
+      alpha: parseAlpha(hslMatch[4]),
+      color: { hex: rgbToHex(rgb), rgb, hsl }
+    }
+  }
+
+  return null
 }
 
 const INITIAL_COLOR = colorFromHex(DEFAULT_COLOR) ?? {
@@ -198,6 +450,13 @@ const mixColor = (from: RgbValue, to: RgbValue, weight: number) => ({
 
 const formatRgb = ({ r, g, b }: RgbValue) => `rgb(${r}, ${g}, ${b})`
 const formatHsl = ({ h, s, l }: HslValue) => `hsl(${h}, ${s}%, ${l}%)`
+const formatRgba = ({ r, g, b }: RgbValue, alpha: number) =>
+  `rgba(${r}, ${g}, ${b}, ${alpha.toFixed(2)})`
+const formatHsla = ({ h, s, l }: HslValue, alpha: number) =>
+  `hsla(${h}, ${s}%, ${l}%, ${alpha.toFixed(2)})`
+const formatHsv = ({ h, s, v }: HsvValue) => `hsv(${h}, ${s}%, ${v}%)`
+const formatCmyk = ({ c, m, y, k }: CmykValue) => `cmyk(${c}%, ${m}%, ${y}%, ${k}%)`
+const formatOklch = ({ l, c, h }: OklchValue) => `oklch(${l}% ${c} ${h})`
 
 const buildPalette = (color: RgbValue): Swatch[] => {
   const white = { r: 255, g: 255, b: 255 }
@@ -218,6 +477,116 @@ const buildPalette = (color: RgbValue): Swatch[] => {
   ]
 }
 
+const rotateHue = (hsl: HslValue, offset: number) => ({
+  ...hsl,
+  h: (hsl.h + offset + 360) % 360
+})
+
+const buildHarmony = (hsl: HslValue, mode: HarmonyMode): Swatch[] => {
+  const offsetsByMode: Record<HarmonyMode, number[]> = {
+    analogous: [-30, -15, 0, 15, 30],
+    complementary: [0, 180, 210, 150],
+    monochrome: [0, 0, 0, 0, 0],
+    tetradic: [0, 90, 180, 270],
+    triadic: [0, 120, 240]
+  }
+  const lightnessByMode = [34, 44, hsl.l, 64, 76]
+  const offsets = offsetsByMode[mode]
+
+  return offsets.map((offset, index) => {
+    const nextHsl =
+      mode === 'monochrome'
+        ? { ...hsl, l: lightnessByMode[index] ?? hsl.l }
+        : rotateHue(hsl, offset)
+    return {
+      label: mode === 'monochrome' ? `${index + 1}` : `${nextHsl.h}deg`,
+      value: rgbToHex(hslToRgb(nextHsl))
+    }
+  })
+}
+
+const extractColorsFromCss = (input: string) => {
+  const source = input.slice(0, MAX_CSS_INPUT_LENGTH)
+  const matches = source.match(COLOR_PATTERN) ?? []
+  const seen = new Set<string>()
+  const colors: Swatch[] = []
+
+  for (const match of matches) {
+    const parsed = parseCssColor(match)
+    if (!parsed) continue
+    const value = parsed.color.hex.toUpperCase()
+    if (seen.has(value)) continue
+    seen.add(value)
+    colors.push({ label: match.trim(), value })
+    if (colors.length >= MAX_EXTRACTED_COLORS) break
+  }
+
+  return colors
+}
+
+const buildExport = (
+  format: ExportFormat,
+  palette: Swatch[],
+  harmony: Swatch[],
+  color: ColorValues,
+  alpha: number
+) => {
+  const name = 'brand'
+  const cssPalette = palette
+    .map(item => `  --color-${name}-${item.label}: ${item.value.toUpperCase()};`)
+    .join('\n')
+  const harmonyVars = harmony
+    .map((item, index) => `  --color-${name}-harmony-${index + 1}: ${item.value.toUpperCase()};`)
+    .join('\n')
+
+  if (format === 'tailwind') {
+    return `colors: {\n  ${name}: {\n${palette
+      .map(item => `    ${item.label}: '${item.value.toUpperCase()}',`)
+      .join('\n')}\n  }\n}`
+  }
+
+  if (format === 'scss') {
+    return [
+      `$color-${name}: ${color.hex.toUpperCase()};`,
+      `$color-${name}-alpha: ${alpha.toFixed(2)};`,
+      ...palette.map(item => `$color-${name}-${item.label}: ${item.value.toUpperCase()};`),
+      ...harmony.map(
+        (item, index) => `$color-${name}-harmony-${index + 1}: ${item.value.toUpperCase()};`
+      )
+    ].join('\n')
+  }
+
+  if (format === 'json') {
+    return JSON.stringify(
+      {
+        alpha,
+        color: {
+          hex: color.hex.toUpperCase(),
+          hex8: rgbToHex8(color.rgb, alpha).toUpperCase(),
+          hsl: color.hsl,
+          rgb: color.rgb
+        },
+        harmony,
+        palette
+      },
+      null,
+      2
+    )
+  }
+
+  return `:root {\n  --color-${name}: ${color.hex.toUpperCase()};\n  --color-${name}-rgb: ${color.rgb.r} ${color.rgb.g} ${color.rgb.b};\n  --color-${name}-alpha: ${alpha.toFixed(2)};\n${cssPalette}\n${harmonyVars}\n}`
+}
+
+const downloadText = (content: string, filename: string, type: string) => {
+  const blob = new Blob([content], { type })
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  anchor.click()
+  URL.revokeObjectURL(url)
+}
+
 const ColorClient = () => {
   const { i18n, t } = useTranslation()
   const { copy } = useCopy()
@@ -226,6 +595,17 @@ const ColorClient = () => {
   const [background, setBackground] = useState<ColorValues>(INITIAL_BACKGROUND)
   const [hexInput, setHexInput] = useState(INITIAL_COLOR.hex)
   const [backgroundInput, setBackgroundInput] = useState(INITIAL_BACKGROUND.hex)
+  const [alpha, setAlpha] = useState(1)
+  const [cssInput, setCssInput] = useState(
+    ':root {\n  --brand: #1677ff;\n  --brand-soft: rgba(22, 119, 255, 0.16);\n  --accent: hsl(168, 76%, 42%);\n}'
+  )
+  const [exportFormat, setExportFormat] = useState<ExportFormat>('css')
+  const [harmonyMode, setHarmonyMode] = useState<HarmonyMode>('analogous')
+  const [savedSwatches, setSavedSwatches] = useState<Swatch[]>([
+    { label: 'primary', value: INITIAL_COLOR.hex.toUpperCase() },
+    { label: 'surface', value: '#F6F8FB' },
+    { label: 'ink', value: '#111827' }
+  ])
 
   const setColor = useCallback((next: ColorValues) => {
     setColors(next)
@@ -272,17 +652,55 @@ const ColorClient = () => {
     [colors.hsl, setColor]
   )
 
+  const handleHsvChange = useCallback(
+    (key: keyof HsvValue, value: string) => {
+      const current = rgbToHsv(colors.rgb)
+      const hsv = { ...current, [key]: clampNumber(Number(value), 0, key === 'h' ? 360 : 100) }
+      const rgb = hsvToRgb(hsv)
+      setColor({ hex: rgbToHex(rgb), rgb, hsl: rgbToHsl(rgb) })
+    },
+    [colors.rgb, setColor]
+  )
+
+  const handleCmykChange = useCallback(
+    (key: keyof CmykValue, value: string) => {
+      const current = rgbToCmyk(colors.rgb)
+      const cmyk = { ...current, [key]: clampNumber(Number(value), 0, 100) }
+      const rgb = cmykToRgb(cmyk)
+      setColor({ hex: rgbToHex(rgb), rgb, hsl: rgbToHsl(rgb) })
+    },
+    [colors.rgb, setColor]
+  )
+
   const handleReset = useCallback(() => {
     setColor(INITIAL_COLOR)
     setBackgroundColor(INITIAL_BACKGROUND)
+    setAlpha(1)
+    setExportFormat('css')
+    setHarmonyMode('analogous')
   }, [setBackgroundColor, setColor])
 
   const hexStr = colors.hex.toUpperCase()
+  const hex8Str = rgbToHex8(colors.rgb, alpha).toUpperCase()
   const rgbStr = formatRgb(colors.rgb)
   const hslStr = formatHsl(colors.hsl)
-  const cssVariables = `--color: ${hexStr};\n--color-rgb: ${colors.rgb.r} ${colors.rgb.g} ${colors.rgb.b};\n--color-hsl: ${colors.hsl.h} ${colors.hsl.s}% ${colors.hsl.l}%;`
+  const rgbaStr = formatRgba(colors.rgb, alpha)
+  const hslaStr = formatHsla(colors.hsl, alpha)
+  const hsv = useMemo(() => rgbToHsv(colors.rgb), [colors.rgb])
+  const cmyk = useMemo(() => rgbToCmyk(colors.rgb), [colors.rgb])
+  const oklch = useMemo(() => rgbToOklch(colors.rgb), [colors.rgb])
+  const hsvStr = formatHsv(hsv)
+  const cmykStr = formatCmyk(cmyk)
+  const oklchStr = formatOklch(oklch)
+  const cssVariables = `--color: ${hexStr};\n--color-rgb: ${colors.rgb.r} ${colors.rgb.g} ${colors.rgb.b};\n--color-hsl: ${colors.hsl.h} ${colors.hsl.s}% ${colors.hsl.l}%;\n--color-alpha: ${alpha.toFixed(2)};`
 
   const palette = useMemo(() => buildPalette(colors.rgb), [colors.rgb])
+  const harmony = useMemo(() => buildHarmony(colors.hsl, harmonyMode), [colors.hsl, harmonyMode])
+  const extractedColors = useMemo(() => extractColorsFromCss(cssInput), [cssInput])
+  const exportText = useMemo(
+    () => buildExport(exportFormat, palette, harmony, colors, alpha),
+    [alpha, colors, exportFormat, harmony, palette]
+  )
   const contrastRatio = useMemo(
     () => getContrastRatio(colors.rgb, background.rgb),
     [background.rgb, colors.rgb]
@@ -307,9 +725,30 @@ const ColorClient = () => {
       pass: contrastRatio >= 3
     }
   ]
+  const contrastAdvice =
+    contrastRatio >= 7
+      ? t('app.converter.color.advice.aaa')
+      : contrastRatio >= 4.5
+        ? t('app.converter.color.advice.aa')
+        : contrastRatio >= 3
+          ? t('app.converter.color.advice.large')
+          : t('app.converter.color.advice.fail')
 
   const copyPalette = () => {
     void copy(palette.map(item => `${item.label}: ${item.value.toUpperCase()}`).join('\n'))
+  }
+
+  const saveCurrentSwatch = () => {
+    setSavedSwatches(current => {
+      const nextValue = hexStr
+      if (current.some(item => item.value.toUpperCase() === nextValue)) return current
+      return [{ label: `saved-${current.length + 1}`, value: nextValue }, ...current].slice(0, 16)
+    })
+  }
+
+  const applySwatch = (value: string) => {
+    const next = colorFromHex(value)
+    if (next) setColor(next)
   }
 
   return (
@@ -335,16 +774,31 @@ const ColorClient = () => {
           </div>
         </CardHeader>
         <CardContent className="space-y-6 pb-6">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            <ColorMetric label="HEX8" value={hex8Str} />
+            <ColorMetric label="OKLCH" value={oklchStr} />
+            <ColorMetric
+              label={t('app.converter.color.saved')}
+              value={String(savedSwatches.length)}
+            />
+            <ColorMetric
+              label={t('app.converter.color.extracted')}
+              value={String(extractedColors.length)}
+            />
+          </div>
+
           <div className="grid min-w-0 gap-5 lg:grid-cols-[9rem_minmax(0,1fr)] lg:items-end">
             <div
               className="h-32 w-full rounded-3xl border border-[var(--glass-border-strong)] shadow-[inset_0_1px_0_rgba(255,255,255,0.45),0_18px_50px_rgba(0,0,0,0.18)] lg:h-36"
               style={{
-                background: `radial-gradient(circle at 26% 18%, rgba(255,255,255,0.45), transparent 34%), ${colors.hex}`
+                background: `linear-gradient(45deg, rgba(148,163,184,0.22) 25%, transparent 25% 75%, rgba(148,163,184,0.22) 75%), linear-gradient(45deg, rgba(148,163,184,0.22) 25%, transparent 25% 75%, rgba(148,163,184,0.22) 75%), radial-gradient(circle at 26% 18%, rgba(255,255,255,0.45), transparent 34%), ${rgbaStr}`,
+                backgroundPosition: '0 0, 10px 10px, 0 0, 0 0',
+                backgroundSize: '20px 20px, 20px 20px, auto, auto'
               }}
               aria-label={hexStr}
             />
 
-            <div className="grid min-w-0 gap-4 md:grid-cols-2">
+            <div className="grid min-w-0 gap-4 md:grid-cols-3">
               <div className="grid min-w-0 gap-3">
                 <Label htmlFor="color-picker" className="flex items-center gap-2">
                   <ArrowLeftRight className="h-4 w-4" />
@@ -371,6 +825,28 @@ const ColorClient = () => {
                   }}
                 />
               </div>
+
+              <div className="grid min-w-0 gap-3">
+                <Label htmlFor="color-alpha">{t('app.converter.color.alpha')}</Label>
+                <div className="glass-input rounded-2xl p-3">
+                  <input
+                    id="color-alpha"
+                    type="range"
+                    min={0}
+                    max={100}
+                    value={Math.round(alpha * 100)}
+                    onChange={event =>
+                      setAlpha(clampNumber(Number(event.target.value), 0, 100) / 100)
+                    }
+                    className="w-full accent-[var(--primary)]"
+                  />
+                  <div className="mt-2 flex items-center justify-between gap-3 font-mono text-xs text-[var(--text-secondary)]">
+                    <span>0%</span>
+                    <span>{Math.round(alpha * 100)}%</span>
+                    <span>100%</span>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -389,10 +865,11 @@ const ColorClient = () => {
                     {t('app.converter.color.preview_text')}
                   </div>
                   <div className="mt-2 flex min-w-0 flex-wrap items-center gap-2 font-mono text-sm">
-                    <span>{hexStr}</span>
+                    <span>{hex8Str}</span>
                     <span className="opacity-70">{onBackgroundLabel}</span>
                     <span>{background.hex.toUpperCase()}</span>
                   </div>
+                  <p className="mt-6 max-w-xl text-sm leading-6 opacity-80">{contrastAdvice}</p>
                 </div>
               </div>
 
@@ -425,13 +902,26 @@ const ColorClient = () => {
       </Card>
 
       <div className="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="grid min-w-0 gap-6 lg:grid-cols-3">
+        <div className="grid min-w-0 gap-6 lg:grid-cols-2 2xl:grid-cols-3">
           <ColorFormatCard
             title="HEX"
             value={hexInput}
             displayValue={hexStr}
             onValueChange={handleHexChange}
             onCopy={() => void copy(hexStr)}
+          />
+
+          <ColorFormatCard
+            title="HEX8"
+            value={hex8Str}
+            displayValue={hex8Str}
+            onValueChange={value => {
+              const parsed = parseCssColor(value)
+              if (!parsed) return
+              setColor(parsed.color)
+              setAlpha(parsed.alpha)
+            }}
+            onCopy={() => void copy(hex8Str)}
           />
 
           <Card className="rounded-3xl">
@@ -459,6 +949,19 @@ const ColorClient = () => {
             </CardContent>
           </Card>
 
+          <ColorFormatCard
+            title="RGBA"
+            value={rgbaStr}
+            displayValue={rgbaStr}
+            onValueChange={value => {
+              const parsed = parseCssColor(value)
+              if (!parsed) return
+              setColor(parsed.color)
+              setAlpha(parsed.alpha)
+            }}
+            onCopy={() => void copy(rgbaStr)}
+          />
+
           <Card className="rounded-3xl">
             <CardHeader className="pb-5">
               <CardTitle>HSL</CardTitle>
@@ -483,6 +986,78 @@ const ColorClient = () => {
               <CopyRow value={hslStr} onCopy={() => void copy(hslStr)} />
             </CardContent>
           </Card>
+
+          <ColorFormatCard
+            title="HSLA"
+            value={hslaStr}
+            displayValue={hslaStr}
+            onValueChange={value => {
+              const parsed = parseCssColor(value)
+              if (!parsed) return
+              setColor(parsed.color)
+              setAlpha(parsed.alpha)
+            }}
+            onCopy={() => void copy(hslaStr)}
+          />
+
+          <Card className="rounded-3xl">
+            <CardHeader className="pb-5">
+              <CardTitle>HSV</CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-5 pb-6">
+              <div className="grid min-w-0 grid-cols-3 gap-4">
+                {(['h', 's', 'v'] as const).map(key => (
+                  <div key={key} className="flex min-w-0 flex-col gap-3">
+                    <Label htmlFor={`color-hsv-${key}`}>{key.toUpperCase()}</Label>
+                    <Input
+                      id={`color-hsv-${key}`}
+                      type="number"
+                      min={0}
+                      max={key === 'h' ? 360 : 100}
+                      value={hsv[key]}
+                      onChange={event => handleHsvChange(key, event.target.value)}
+                      className="font-mono"
+                    />
+                  </div>
+                ))}
+              </div>
+              <CopyRow value={hsvStr} onCopy={() => void copy(hsvStr)} />
+            </CardContent>
+          </Card>
+
+          <Card className="rounded-3xl">
+            <CardHeader className="pb-5">
+              <CardTitle>CMYK</CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-5 pb-6">
+              <div className="grid min-w-0 grid-cols-4 gap-3">
+                {(['c', 'm', 'y', 'k'] as const).map(key => (
+                  <div key={key} className="flex min-w-0 flex-col gap-3">
+                    <Label htmlFor={`color-cmyk-${key}`}>{key.toUpperCase()}</Label>
+                    <Input
+                      id={`color-cmyk-${key}`}
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={cmyk[key]}
+                      onChange={event => handleCmykChange(key, event.target.value)}
+                      className="font-mono"
+                    />
+                  </div>
+                ))}
+              </div>
+              <CopyRow value={cmykStr} onCopy={() => void copy(cmykStr)} />
+            </CardContent>
+          </Card>
+
+          <ColorFormatCard
+            title="OKLCH"
+            value={oklchStr}
+            displayValue={oklchStr}
+            onValueChange={() => undefined}
+            onCopy={() => void copy(oklchStr)}
+            readOnly
+          />
         </div>
 
         <Card className="rounded-3xl">
@@ -511,6 +1086,13 @@ const ColorClient = () => {
                 </div>
               </div>
             </div>
+            <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--glass-input-bg)] p-3">
+              <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
+                <Eye className="h-4 w-4 text-[var(--primary)]" />
+                {t('app.converter.color.readability')}
+              </div>
+              <p className="text-sm leading-6 text-[var(--text-secondary)]">{contrastAdvice}</p>
+            </div>
             <div className="space-y-3">
               <Label htmlFor="color-background-input">
                 {t('app.converter.color.background_hex')}
@@ -522,10 +1104,190 @@ const ColorClient = () => {
                 className="font-mono uppercase"
               />
             </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                icon={<Star className="h-4 w-4" />}
+                onClick={saveCurrentSwatch}
+              >
+                {t('app.converter.color.save')}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                icon={<Download className="h-4 w-4" />}
+                onClick={() =>
+                  downloadText(
+                    exportText,
+                    `color-tokens.${exportFormat === 'json' ? 'json' : exportFormat === 'scss' ? 'scss' : 'css'}`,
+                    exportFormat === 'json'
+                      ? 'application/json;charset=utf-8'
+                      : 'text/plain;charset=utf-8'
+                  )
+                }
+              >
+                {t('app.converter.color.download')}
+              </Button>
+            </div>
             <CopyRow value={cssVariables} onCopy={() => void copy(cssVariables)} multiline />
           </CardContent>
         </Card>
       </div>
+
+      <div className="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+        <Card className="rounded-3xl">
+          <CardHeader className="pb-5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Wand2 className="h-4 w-4 text-[var(--primary)]" />
+                  {t('app.converter.color.harmony')}
+                </CardTitle>
+                <CardDescription>{t('app.converter.color.harmony_hint')}</CardDescription>
+              </div>
+              <Select
+                value={harmonyMode}
+                onChange={event => setHarmonyMode(event.target.value as HarmonyMode)}
+              >
+                <option value="analogous">{t('app.converter.color.harmony.analogous')}</option>
+                <option value="complementary">
+                  {t('app.converter.color.harmony.complementary')}
+                </option>
+                <option value="triadic">{t('app.converter.color.harmony.triadic')}</option>
+                <option value="tetradic">{t('app.converter.color.harmony.tetradic')}</option>
+                <option value="monochrome">{t('app.converter.color.harmony.monochrome')}</option>
+              </Select>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4 pb-6">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+              {harmony.map(item => (
+                <SwatchButton
+                  key={`${item.label}-${item.value}`}
+                  label={item.label}
+                  value={item.value}
+                  onApply={() => applySwatch(item.value)}
+                  onCopy={() => void copy(item.value.toUpperCase())}
+                />
+              ))}
+            </div>
+            <CopyRow
+              value={harmony.map(item => `${item.label}: ${item.value.toUpperCase()}`).join('\n')}
+              onCopy={() =>
+                void copy(
+                  harmony.map(item => `${item.label}: ${item.value.toUpperCase()}`).join('\n')
+                )
+              }
+              multiline
+            />
+          </CardContent>
+        </Card>
+
+        <Card className="rounded-3xl">
+          <CardHeader className="pb-5">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Sparkles className="h-4 w-4 text-[var(--primary)]" />
+              {t('app.converter.color.extract')}
+            </CardTitle>
+            <CardDescription>{t('app.converter.color.extract_hint')}</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4 pb-6">
+            <Textarea
+              value={cssInput}
+              onChange={event => setCssInput(event.target.value.slice(0, MAX_CSS_INPUT_LENGTH))}
+              rows={6}
+              className="font-mono"
+              placeholder="color: #1677ff;"
+            />
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {extractedColors.map(item => (
+                <SwatchButton
+                  key={`${item.label}-${item.value}`}
+                  label={item.label}
+                  value={item.value}
+                  onApply={() => applySwatch(item.value)}
+                  onCopy={() => void copy(item.value.toUpperCase())}
+                />
+              ))}
+              {!extractedColors.length && (
+                <p className="col-span-full text-sm text-[var(--text-secondary)]">
+                  {t('app.converter.color.extract_empty')}
+                </p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card className="rounded-3xl">
+        <CardHeader className="pb-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Copy className="h-4 w-4 text-[var(--primary)]" />
+                {t('app.converter.color.export')}
+              </CardTitle>
+              <CardDescription>{t('app.converter.color.export_hint')}</CardDescription>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Select
+                value={exportFormat}
+                onChange={event => setExportFormat(event.target.value as ExportFormat)}
+              >
+                <option value="css">{t('app.converter.color.export.css')}</option>
+                <option value="tailwind">{t('app.converter.color.export.tailwind')}</option>
+                <option value="scss">{t('app.converter.color.export.scss')}</option>
+                <option value="json">{t('app.converter.color.export.json')}</option>
+              </Select>
+              <Button
+                size="sm"
+                icon={<Copy className="h-4 w-4" />}
+                onClick={() => void copy(exportText)}
+              >
+                {t('public.copy')}
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="pb-6">
+          <pre className="max-h-[360px] overflow-auto rounded-2xl border border-[var(--border-subtle)] bg-[var(--glass-input-bg)] p-4 font-mono text-xs leading-6 text-[var(--text-primary)]">
+            {exportText}
+          </pre>
+        </CardContent>
+      </Card>
+
+      <Card className="rounded-3xl">
+        <CardHeader className="pb-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Star className="h-4 w-4 text-[var(--primary)]" />
+              {t('app.converter.color.saved')}
+            </CardTitle>
+            <Button size="sm" variant="ghost" onClick={() => setSavedSwatches([])}>
+              {t('public.clear')}
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="pb-6">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
+            {savedSwatches.map(item => (
+              <SwatchButton
+                key={`${item.label}-${item.value}`}
+                label={item.label}
+                value={item.value}
+                onApply={() => applySwatch(item.value)}
+                onCopy={() => void copy(item.value.toUpperCase())}
+              />
+            ))}
+            {!savedSwatches.length && (
+              <p className="col-span-full text-sm text-[var(--text-secondary)]">
+                {t('app.converter.color.saved_empty')}
+              </p>
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
       <Card className="rounded-3xl">
         <CardHeader className="pb-5">
@@ -573,12 +1335,14 @@ const ColorFormatCard = ({
   displayValue,
   onCopy,
   onValueChange,
+  readOnly,
   title,
   value
 }: {
   displayValue: string
   onCopy: () => void
   onValueChange: (value: string) => void
+  readOnly?: boolean
   title: string
   value: string
 }) => (
@@ -591,10 +1355,50 @@ const ColorFormatCard = ({
         value={value}
         onChange={event => onValueChange(event.target.value)}
         className="font-mono uppercase"
+        readOnly={readOnly}
       />
       <CopyRow value={displayValue} onCopy={onCopy} />
     </CardContent>
   </Card>
+)
+
+const ColorMetric = ({ label, value }: { label: string; value: string }) => (
+  <div className="glass-input rounded-2xl p-3">
+    <div className="text-xs text-[var(--text-tertiary)]">{label}</div>
+    <div className="mt-1 truncate font-mono text-sm font-semibold text-[var(--text-primary)]">
+      {value}
+    </div>
+  </div>
+)
+
+const SwatchButton = ({
+  label,
+  onApply,
+  onCopy,
+  value
+}: {
+  label: string
+  onApply: () => void
+  onCopy: () => void
+  value: string
+}) => (
+  <button
+    type="button"
+    onClick={onApply}
+    onDoubleClick={onCopy}
+    className="glass-panel glass-clip group flex min-h-24 min-w-0 flex-col overflow-hidden rounded-2xl text-left transition-all hover:-translate-y-0.5 hover:glass-panel-strong"
+  >
+    <span
+      className="h-12 w-full border-b border-[var(--glass-border)]"
+      style={{ backgroundColor: value }}
+    />
+    <span className="flex min-w-0 flex-1 flex-col justify-center gap-1 px-3 py-2">
+      <span className="truncate text-xs font-semibold text-[var(--text-primary)]">{label}</span>
+      <span className="truncate font-mono text-xs uppercase text-[var(--text-secondary)]">
+        {value}
+      </span>
+    </span>
+  </button>
 )
 
 const CopyRow = ({

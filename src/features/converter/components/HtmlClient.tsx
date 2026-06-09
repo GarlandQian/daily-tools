@@ -1,17 +1,28 @@
 'use client'
 
 import he from 'he'
-import { ArrowRightLeft, Code, Copy, Trash2 } from 'lucide-react'
-import { useCallback, useState } from 'react'
+import { ArrowRightLeft, Code2, Copy, FlaskConical, ShieldAlert, Trash2 } from 'lucide-react'
+import { useCallback, useDeferredValue, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
 
+type EntityStyle = 'named' | 'decimal' | 'hex'
 type Mode = 'encode' | 'decode'
+
+const MAX_HTML_INPUT_CHARS = 120000
+
+const HTML_SAMPLE = `<section data-note="Tom & Jerry">
+  <h1>Daily Tools \\u00A9 2026</h1>
+  <p>Encode <, >, &, "quotes", and 'apostrophes'.</p>
+</section>`
 
 const entityLegend = [
   { char: '<', entity: '&lt;' },
@@ -21,134 +32,359 @@ const entityLegend = [
   { char: "'", entity: '&#x27;' }
 ]
 
-const HtmlClient = () => {
+const unsafeEntityMap: Record<EntityStyle, Record<string, string>> = {
+  named: {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&apos;',
+    '`': '&#x60;'
+  },
+  decimal: {
+    '&': '&#38;',
+    '<': '&#60;',
+    '>': '&#62;',
+    '"': '&#34;',
+    "'": '&#39;',
+    '`': '&#96;'
+  },
+  hex: {
+    '&': '&#x26;',
+    '<': '&#x3C;',
+    '>': '&#x3E;',
+    '"': '&#x22;',
+    "'": '&#x27;',
+    '`': '&#x60;'
+  }
+}
+
+const htmlEncodeOptions: Record<EntityStyle, he.EncodeOptions> = {
+  named: { useNamedReferences: true },
+  decimal: { decimal: true },
+  hex: {}
+}
+
+const countEntities = (value: string) =>
+  value.match(/&(?:#\d+|#x[\da-f]+|[a-z][\da-z]+);/giu)?.length ?? 0
+
+const hasSuspiciousAmpersand = (value: string) =>
+  /&(?:#x?[0-9a-f]+|[A-Za-z][A-Za-z0-9]{1,31})(?![A-Za-z0-9]*;)/u.test(value)
+
+const hasInvalidNumericEntity = (value: string) => {
+  for (const match of value.matchAll(/&#(?:x([0-9a-f]+)|(\d+));/giu)) {
+    const codePoint = Number.parseInt(match[1] ?? match[2] ?? '', match[1] ? 16 : 10)
+    if (
+      !Number.isFinite(codePoint) ||
+      codePoint > 0x10ffff ||
+      (codePoint >= 0xd800 && codePoint <= 0xdfff)
+    ) {
+      return true
+    }
+  }
+  return false
+}
+
+const escapeUnsafeOnly = (value: string, entityStyle: EntityStyle) =>
+  value.replace(/[&<>"'`]/gu, char => unsafeEntityMap[entityStyle][char] ?? char)
+
+const formatRatio = (inputLength: number, outputLength: number) => {
+  if (inputLength === 0) return '0%'
+  return `${Math.round((outputLength / inputLength) * 100)}%`
+}
+
+export default function HtmlClient() {
   const { t } = useTranslation()
   const { copy } = useCopy()
 
   const [input, setInput] = useState('')
   const [mode, setMode] = useState<Mode>('encode')
-  const [output, setOutput] = useState('')
+  const [entityStyle, setEntityStyle] = useState<EntityStyle>('named')
+  const [encodeNonAscii, setEncodeNonAscii] = useState(true)
+  const [strictDecode, setStrictDecode] = useState(true)
 
-  const handleConvert = useCallback(() => {
-    if (!input) {
-      setOutput('')
-      return
+  const deferredInput = useDeferredValue(input)
+  const deferredMode = useDeferredValue(mode)
+  const deferredEntityStyle = useDeferredValue(entityStyle)
+  const deferredEncodeNonAscii = useDeferredValue(encodeNonAscii)
+  const deferredStrictDecode = useDeferredValue(strictDecode)
+
+  const safeInput = useMemo(() => deferredInput.slice(0, MAX_HTML_INPUT_CHARS), [deferredInput])
+
+  const conversion = useMemo(() => {
+    if (!safeInput) {
+      return {
+        error: null as string | null,
+        output: '',
+        success: true
+      }
     }
 
     try {
-      const result =
-        mode === 'encode' ? he.encode(input, { useNamedReferences: true }) : he.decode(input)
-      setOutput(result)
-    } catch (e) {
-      console.error(e)
+      if (deferredMode === 'encode') {
+        const output = deferredEncodeNonAscii
+          ? he.encode(safeInput, htmlEncodeOptions[deferredEntityStyle])
+          : escapeUnsafeOnly(safeInput, deferredEntityStyle)
+
+        return { error: null, output, success: true }
+      }
+
+      return {
+        error: null,
+        output: he.decode(safeInput, { strict: deferredStrictDecode }),
+        success: true
+      }
+    } catch {
+      return {
+        error: t('app.converter.html.warning.decode_failed'),
+        output: '',
+        success: false
+      }
     }
-  }, [input, mode])
+  }, [
+    deferredEncodeNonAscii,
+    deferredEntityStyle,
+    deferredMode,
+    deferredStrictDecode,
+    safeInput,
+    t
+  ])
+
+  const entityCount = useMemo(
+    () => countEntities(deferredMode === 'decode' ? safeInput : conversion.output),
+    [conversion.output, deferredMode, safeInput]
+  )
+
+  const stats = useMemo(
+    () => [
+      { label: t('app.converter.html.stats.input_chars'), value: safeInput.length },
+      { label: t('app.converter.html.stats.output_chars'), value: conversion.output.length },
+      { label: t('app.converter.html.stats.entities'), value: entityCount },
+      {
+        label: t('app.converter.html.stats.ratio'),
+        value: formatRatio(safeInput.length, conversion.output.length)
+      }
+    ],
+    [conversion.output.length, entityCount, safeInput.length, t]
+  )
+
+  const warnings = useMemo(() => {
+    const messages: string[] = []
+
+    if (deferredInput.length > MAX_HTML_INPUT_CHARS) {
+      messages.push(t('app.converter.html.warning.truncated', { count: MAX_HTML_INPUT_CHARS }))
+    }
+
+    if (deferredMode === 'decode' && safeInput.trim()) {
+      if (deferredStrictDecode && entityCount === 0) {
+        messages.push(t('app.converter.html.warning.no_entities'))
+      }
+      if (hasSuspiciousAmpersand(safeInput)) {
+        messages.push(t('app.converter.html.warning.suspicious_amp'))
+      }
+      if (hasInvalidNumericEntity(safeInput)) {
+        messages.push(t('app.converter.html.warning.invalid_numeric'))
+      }
+    }
+
+    return messages
+  }, [deferredInput.length, deferredMode, deferredStrictDecode, entityCount, safeInput, t])
+
+  const loadSample = useCallback(() => {
+    setMode('encode')
+    setEntityStyle('named')
+    setEncodeNonAscii(true)
+    setStrictDecode(true)
+    setInput(HTML_SAMPLE.replace('\\u00A9', '\u00A9'))
+  }, [])
 
   const handleSwap = () => {
-    setInput(output)
-    setOutput('')
-    setMode(prev => (prev === 'encode' ? 'decode' : 'encode'))
+    setInput(conversion.output)
+    setMode(current => (current === 'encode' ? 'decode' : 'encode'))
   }
 
   const handleClear = () => {
     setInput('')
-    setOutput('')
   }
 
   return (
-    <div className="flex flex-col gap-5 size-full">
-      {/* Toolbar */}
+    <div className="flex size-full flex-col gap-5">
       <Card>
-        <CardContent className="p-4">
-          <div className="flex flex-wrap items-center gap-4">
-            <RadioGroup value={mode} onValueChange={v => setMode(v as Mode)} className="flex gap-0">
-              <label className="flex items-center gap-2 cursor-pointer select-none px-3 py-1.5 rounded-l-lg border border-[var(--border-base)] data-[state=checked]:bg-[var(--primary)] data-[state=checked]:text-white transition-colors">
-                <RadioGroupItem value="encode" className="sr-only" />
-                <span
-                  className={`text-sm font-medium ${mode === 'encode' ? 'text-[var(--primary)]' : ''}`}
-                >
-                  {t('app.converter.html.encode')}
-                </span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer select-none px-3 py-1.5 rounded-r-lg border border-l-0 border-[var(--border-base)] transition-colors">
-                <RadioGroupItem value="decode" className="sr-only" />
-                <span
-                  className={`text-sm font-medium ${mode === 'decode' ? 'text-[var(--primary)]' : ''}`}
-                >
-                  {t('app.converter.html.decode')}
-                </span>
-              </label>
-            </RadioGroup>
-
-            <Button icon={<ArrowRightLeft className="w-4 h-4" />} onClick={handleSwap}>
-              {t('public.swap')}
-            </Button>
-            <Button variant="primary" icon={<Code className="w-4 h-4" />} onClick={handleConvert}>
-              {t('public.convert')}
-            </Button>
-            <Button
-              icon={<Copy className="w-4 h-4" />}
-              onClick={() => copy(output)}
-              disabled={!output}
-            >
-              {t('public.copy')}
-            </Button>
-            <Button variant="ghost" icon={<Trash2 className="w-4 h-4" />} onClick={handleClear}>
-              {t('public.clear')}
-            </Button>
+        <CardHeader>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Code2 className="h-5 w-5 text-[var(--primary)]" />
+                {t('app.converter.html')}
+              </CardTitle>
+              <CardDescription className="mt-2">
+                {t('app.converter.html.description')}
+              </CardDescription>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                icon={<FlaskConical className="h-4 w-4" />}
+                onClick={loadSample}
+              >
+                {t('app.converter.html.sample')}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                icon={<Trash2 className="h-4 w-4" />}
+                onClick={handleClear}
+              >
+                {t('public.clear')}
+              </Button>
+            </div>
           </div>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            {stats.map(item => (
+              <div key={item.label} className="glass-input rounded-xl p-3">
+                <div className="text-xs text-[var(--text-secondary)]">{item.label}</div>
+                <div className="mt-1 text-2xl font-semibold tabular-nums">{item.value}</div>
+              </div>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
+            <div className="space-y-3">
+              <Label>{t('app.converter.html.mode')}</Label>
+              <RadioGroup
+                value={mode}
+                onValueChange={value => setMode(value as Mode)}
+                className="grid grid-cols-2 gap-2"
+              >
+                <label className="glass-input flex min-h-11 cursor-pointer items-center gap-2 rounded-xl px-3">
+                  <RadioGroupItem value="encode" id="html-encode" />
+                  <span className="text-sm font-medium">{t('app.converter.html.encode')}</span>
+                </label>
+                <label className="glass-input flex min-h-11 cursor-pointer items-center gap-2 rounded-xl px-3">
+                  <RadioGroupItem value="decode" id="html-decode" />
+                  <span className="text-sm font-medium">{t('app.converter.html.decode')}</span>
+                </label>
+              </RadioGroup>
+            </div>
+
+            <div className="glass-input space-y-3 rounded-xl p-3">
+              <div className="space-y-2">
+                <Label htmlFor="html-entity-style">{t('app.converter.html.entity_style')}</Label>
+                <Select
+                  id="html-entity-style"
+                  value={entityStyle}
+                  onChange={event => setEntityStyle(event.target.value as EntityStyle)}
+                  disabled={mode === 'decode'}
+                >
+                  <option value="named">{t('app.converter.html.entity_style.named')}</option>
+                  <option value="decimal">{t('app.converter.html.entity_style.decimal')}</option>
+                  <option value="hex">{t('app.converter.html.entity_style.hex')}</option>
+                </Select>
+              </div>
+              <Checkbox
+                checked={encodeNonAscii}
+                onChange={event => setEncodeNonAscii(event.target.checked)}
+                disabled={mode === 'decode'}
+                label={t('app.converter.html.encode_non_ascii')}
+              />
+              <Checkbox
+                checked={strictDecode}
+                onChange={event => setStrictDecode(event.target.checked)}
+                disabled={mode === 'encode'}
+                label={t('app.converter.html.strict_decode')}
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2 px-1">
+            {entityLegend.map(({ char, entity }) => (
+              <span
+                key={char}
+                className="glass-panel inline-flex items-center gap-1.5 rounded-full border border-[var(--border-base)] px-2.5 py-1 font-mono text-xs"
+              >
+                <span className="font-semibold text-[var(--text-primary)]">{char}</span>
+                <span className="text-[var(--text-tertiary)]">-&gt;</span>
+                <span className="text-[var(--primary)]">{entity}</span>
+              </span>
+            ))}
+          </div>
+
+          <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 xl:grid-cols-2">
+            <div className="space-y-3">
+              <Label htmlFor="html-input">{t('app.converter.html.input')}</Label>
+              <Textarea
+                id="html-input"
+                value={input}
+                onChange={event => setInput(event.target.value)}
+                placeholder={
+                  mode === 'encode'
+                    ? t('app.converter.html.encode_placeholder')
+                    : t('app.converter.html.decode_placeholder')
+                }
+                rows={12}
+                className="resize-none font-mono"
+              />
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <Label htmlFor="html-output">{t('app.converter.html.output')}</Label>
+                <div className="flex flex-wrap justify-end gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    icon={<ArrowRightLeft className="h-4 w-4" />}
+                    disabled={!conversion.success || !conversion.output}
+                    onClick={handleSwap}
+                  >
+                    {t('app.converter.html.use_output')}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    icon={<Copy className="h-4 w-4" />}
+                    disabled={!conversion.success || !conversion.output}
+                    onClick={() => copy(conversion.output)}
+                  >
+                    {t('public.copy')}
+                  </Button>
+                </div>
+              </div>
+              <Textarea
+                id="html-output"
+                value={conversion.output}
+                readOnly
+                rows={12}
+                placeholder={t('app.converter.html.result_placeholder')}
+                className="resize-none font-mono"
+              />
+            </div>
+          </div>
+
+          {(conversion.error || warnings.length > 0) && (
+            <div className="space-y-2">
+              {conversion.error && (
+                <p className="flex items-center gap-2 rounded-lg border border-[var(--error)] bg-[var(--error-subtle)] px-3 py-2 text-sm text-[var(--error)]">
+                  <ShieldAlert className="h-4 w-4 shrink-0" />
+                  {conversion.error}
+                </p>
+              )}
+              {warnings.map(message => (
+                <p
+                  key={message}
+                  className="rounded-lg border border-[var(--warning)] bg-[var(--warning-subtle)] px-3 py-2 text-sm text-[var(--warning)]"
+                >
+                  {message}
+                </p>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
-
-      {/* Entity legend hints */}
-      <div className="flex flex-wrap gap-2 px-1">
-        {entityLegend.map(({ char, entity }) => (
-          <span
-            key={char}
-            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono glass-panel border border-[var(--border-base)]"
-          >
-            <span className="text-[var(--text-primary)] font-semibold">{char}</span>
-            <span className="text-[var(--text-tertiary)]">&rarr;</span>
-            <span className="text-[var(--primary)]">{entity}</span>
-          </span>
-        ))}
-      </div>
-
-      {/* Input / Output columns */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1 min-h-0">
-        <Card className="flex flex-col h-full min-h-[300px]">
-          <CardHeader>
-            <CardTitle className="text-base">{t('app.converter.html.input')}</CardTitle>
-          </CardHeader>
-          <CardContent className="flex-1 overflow-hidden">
-            <Textarea
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              placeholder={
-                mode === 'encode'
-                  ? t('app.converter.html.encode_placeholder')
-                  : t('app.converter.html.decode_placeholder')
-              }
-              className="h-full resize-none font-mono"
-            />
-          </CardContent>
-        </Card>
-        <Card className="flex flex-col h-full min-h-[300px]">
-          <CardHeader>
-            <CardTitle className="text-base">{t('app.converter.html.output')}</CardTitle>
-          </CardHeader>
-          <CardContent className="flex-1 overflow-hidden">
-            <Textarea
-              value={output}
-              readOnly
-              placeholder={t('app.converter.html.result_placeholder')}
-              className="h-full resize-none font-mono"
-            />
-          </CardContent>
-        </Card>
-      </div>
     </div>
   )
 }
-
-export default HtmlClient

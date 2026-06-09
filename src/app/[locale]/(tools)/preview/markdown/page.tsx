@@ -4,7 +4,8 @@ import MarkdownClient from '@/features/preview/components/MarkdownClient'
 
 export const metadata: Metadata = {
   title: 'Markdown Preview - Daily Tools',
-  description: 'Real-time Markdown editor and previewer'
+  description:
+    'Preview Markdown, inspect document stats, outline headings, and export reusable content'
 }
 
 export default function MarkdownPage() {

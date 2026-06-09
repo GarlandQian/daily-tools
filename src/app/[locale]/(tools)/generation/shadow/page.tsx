@@ -4,7 +4,7 @@ import ShadowClient from '@/features/generation/components/ShadowClient'
 
 export const metadata: Metadata = {
   title: 'CSS Box Shadow Generator - Daily Tools',
-  description: 'Generate CSS box-shadow with visual controls'
+  description: 'Generate layered CSS box shadows with visual controls and code snippets'
 }
 
 export default function ShadowPage() {

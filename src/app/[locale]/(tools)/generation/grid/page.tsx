@@ -4,7 +4,7 @@ import GridBuilderClient from '@/features/generation/components/GridBuilderClien
 
 export const metadata: Metadata = {
   title: 'CSS Grid Builder - Daily Tools',
-  description: 'Design responsive CSS Grid tracks and copy production-ready CSS'
+  description: 'Design CSS Grid tracks, named areas, container-query fallbacks, and copy-ready code'
 }
 
 export default function GridPage() {

@@ -4,7 +4,8 @@ import MarkdownTocClient from '@/features/format/components/MarkdownTocClient'
 
 export const metadata: Metadata = {
   title: 'Markdown TOC Generator - Daily Tools',
-  description: 'Extract Markdown headings and generate GitHub-compatible table of contents'
+  description:
+    'Extract Markdown headings, diagnose outline levels, and generate downloadable GitHub-compatible tables of contents'
 }
 
 export default function MarkdownTocPage() {

@@ -4,7 +4,8 @@ import CaseClient from '@/features/format/components/CaseClient'
 
 export const metadata: Metadata = {
   title: 'Case Converter - Daily Tools',
-  description: 'Convert text case (camelCase, snake_case, etc.)'
+  description:
+    'Convert names in batch across camelCase, snake_case, ENV keys, slugs, prefixes, suffixes, separators, and export formats.'
 }
 
 export default function CasePage() {

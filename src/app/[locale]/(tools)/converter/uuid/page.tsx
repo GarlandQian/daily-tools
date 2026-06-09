@@ -4,7 +4,7 @@ import UuidInspectorClient from '@/features/converter/components/UuidInspectorCl
 
 export const metadata: Metadata = {
   title: 'UUID Inspector - Daily Tools',
-  description: 'Inspect UUID version, variant, timestamp, namespace style, and byte layout'
+  description: 'Inspect, normalize, batch validate, convert, and export UUID metadata'
 }
 
 export default function UuidPage() {

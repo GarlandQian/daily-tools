@@ -4,8 +4,11 @@ import {
   ClipboardList,
   Copy,
   Cpu,
+  Download,
+  FileJson,
   Globe,
   Info,
+  ListChecks,
   Monitor,
   Radar,
   RotateCcw,
@@ -13,6 +16,7 @@ import {
   ShieldCheck,
   Smartphone,
   Sparkles,
+  Table2,
   Trash2
 } from 'lucide-react'
 import { type ReactNode, useDeferredValue, useMemo, useState, useSyncExternalStore } from 'react'
@@ -41,6 +45,31 @@ interface Signal {
   key: string
   labelKey: string
   active: boolean
+}
+
+interface UaAnalysis {
+  confidenceKey: string
+  family: string
+  isBot: boolean
+  isDesktop: boolean
+  isInApp: boolean
+  isMobile: boolean
+  isTablet: boolean
+  isWebView: boolean
+  length: number
+  score: number
+  versionCount: number
+}
+
+interface BatchUaResult {
+  browser: string
+  confidence: number
+  device: string
+  engineFamily: string
+  input: string
+  os: string
+  signals: string[]
+  version: string
 }
 
 const SAMPLE_USER_AGENTS: SampleUserAgent[] = [
@@ -74,6 +103,13 @@ const WEBVIEW_PATTERN = /(; wv\)|\bwebview\b|version\/\d+\.\d+ chrome\/\d+.+mobi
 const IN_APP_PATTERN =
   /\b(FBAN|FBAV|FB_IAB|MicroMessenger|Line\/|Instagram|TikTok|Twitter|LinkedInApp|Alipay|Zalo)\b/i
 const UA_EXTENSIONS = [Bots, Crawlers, InApps] as UAParser.UAParserExt
+const MAX_UA_INPUT_CHARS = 10000
+const MAX_UA_BATCH_LINES = 80
+const MAX_UA_BATCH_CHARS = 60000
+const MAX_UA_BATCH_PREVIEW_ROWS = 12
+const uaNumberFormatter = new Intl.NumberFormat()
+
+const formatUaNumber = (value: number) => uaNumberFormatter.format(value)
 
 const subscribeToUserAgent = () => () => {}
 const getClientUserAgent = () => navigator.userAgent
@@ -88,11 +124,24 @@ function getDeviceLabel(type: string | undefined, desktopLabel: string) {
 }
 
 function getEngineFamily(browserName = '', engineName = '', userAgent = '') {
-  const signature = `${browserName} ${engineName} ${userAgent}`.toLowerCase()
-  if (signature.includes('firefox') || signature.includes('gecko')) return 'Gecko'
-  if (signature.includes('safari') || signature.includes('webkit')) return 'WebKit'
-  if (signature.includes('chrome') || signature.includes('edge') || signature.includes('blink')) {
+  const browser = browserName.toLowerCase()
+  const engine = engineName.toLowerCase()
+  const ua = userAgent.toLowerCase()
+  if (
+    browser.includes('chrome') ||
+    browser.includes('chromium') ||
+    browser.includes('edge') ||
+    browser.includes('opera') ||
+    browser.includes('samsung') ||
+    engine.includes('blink')
+  ) {
     return 'Chromium'
+  }
+  if (browser.includes('safari') || engine.includes('webkit') || ua.includes('applewebkit')) {
+    return 'WebKit'
+  }
+  if (browser.includes('firefox') || engine.includes('gecko') || /\bgecko\//.test(ua)) {
+    return 'Gecko'
   }
   return 'Unknown'
 }
@@ -114,6 +163,108 @@ function getConfidenceScore(parsed: UAParser.IResult) {
   return fields.filter(Boolean).length
 }
 
+function buildUaAnalysis(parsed: UAParser.IResult, userAgent: string): UaAnalysis {
+  const browserName = parsed.browser.name || ''
+  const engineName = parsed.engine.name || ''
+  const deviceType = parsed.device.type
+  const family = getEngineFamily(browserName, engineName, userAgent)
+  const score = getConfidenceScore(parsed)
+  const confidenceKey =
+    score >= 7
+      ? 'app.format.ua.confidence.high'
+      : score >= 4
+        ? 'app.format.ua.confidence.medium'
+        : 'app.format.ua.confidence.low'
+  const browserType = parsed.browser.type?.toLowerCase()
+  const isBot = BOT_PATTERN.test(userAgent) || browserType === 'crawler'
+  const isWebView = WEBVIEW_PATTERN.test(userAgent) || browserName.toLowerCase().includes('webview')
+  const isInApp = IN_APP_PATTERN.test(userAgent) || browserType === 'inapp'
+  const isMobile = deviceType === 'mobile'
+  const isTablet = deviceType === 'tablet'
+
+  return {
+    confidenceKey,
+    family,
+    isBot,
+    isDesktop: !deviceType,
+    isInApp,
+    isMobile,
+    isTablet,
+    isWebView,
+    length: userAgent.length,
+    score,
+    versionCount: (userAgent.match(/\d+(?:[._-]\d+)+/g) ?? []).length
+  }
+}
+
+function getActiveSignalKeys(analysis: UaAnalysis) {
+  return [
+    analysis.isDesktop ? 'desktop' : '',
+    analysis.isMobile ? 'mobile' : '',
+    analysis.isTablet ? 'tablet' : '',
+    analysis.isWebView ? 'webview' : '',
+    analysis.isInApp ? 'inapp' : '',
+    analysis.isBot ? 'bot' : ''
+  ].filter(Boolean)
+}
+
+const csvEscape = (value: string | number | string[]) => {
+  const text = Array.isArray(value) ? value.join('|') : String(value)
+  return /[",\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text
+}
+
+const buildBatchRows = (input: string): BatchUaResult[] =>
+  input
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean)
+    .slice(0, MAX_UA_BATCH_LINES)
+    .map(line => {
+      const safeLine = line.length > MAX_UA_INPUT_CHARS ? line.slice(0, MAX_UA_INPUT_CHARS) : line
+      const parsed = new UAParser(safeLine, UA_EXTENSIONS).getResult()
+      const analysis = buildUaAnalysis(parsed, safeLine)
+
+      return {
+        browser: displayValue(parsed.browser.name, 'Unknown'),
+        confidence: analysis.score,
+        device: parsed.device.type || 'desktop',
+        engineFamily: analysis.family,
+        input: safeLine,
+        os: displayValue(parsed.os.name, 'Unknown'),
+        signals: getActiveSignalKeys(analysis),
+        version: displayValue(parsed.browser.version, '-')
+      }
+    })
+
+const buildBatchCsv = (rows: BatchUaResult[]) =>
+  [
+    'input,browser,version,os,device,engineFamily,confidence,signals',
+    ...rows.map(row =>
+      [
+        row.input,
+        row.browser,
+        row.version,
+        row.os,
+        row.device,
+        row.engineFamily,
+        row.confidence,
+        row.signals
+      ]
+        .map(csvEscape)
+        .join(',')
+    )
+  ].join('\n')
+
+const downloadText = (content: string, filename: string, type: string) => {
+  const blob = new Blob([content], { type })
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  anchor.click()
+  URL.revokeObjectURL(url)
+}
+
 const UaClient = () => {
   const { t } = useTranslation()
   const { copy } = useCopy()
@@ -123,51 +274,90 @@ const UaClient = () => {
     getServerUserAgent
   )
   const [inputOverride, setInputOverride] = useState<string | null>(null)
+  const [batchInput, setBatchInput] = useState('')
   const input = inputOverride ?? userAgent
   const trimmedInput = input.trim()
   const deferredTrimmedInput = useDeferredValue(trimmedInput)
+  const deferredBatchInput = useDeferredValue(batchInput)
+  const isInputTruncated = deferredTrimmedInput.length > MAX_UA_INPUT_CHARS
+  const isBatchInputTruncated = deferredBatchInput.length > MAX_UA_BATCH_CHARS
+  const safeTrimmedInput = useMemo(
+    () =>
+      deferredTrimmedInput.length > MAX_UA_INPUT_CHARS
+        ? deferredTrimmedInput.slice(0, MAX_UA_INPUT_CHARS)
+        : deferredTrimmedInput,
+    [deferredTrimmedInput]
+  )
+  const safeBatchInput = useMemo(
+    () =>
+      deferredBatchInput.length > MAX_UA_BATCH_CHARS
+        ? deferredBatchInput.slice(0, MAX_UA_BATCH_CHARS)
+        : deferredBatchInput,
+    [deferredBatchInput]
+  )
+  const batchLineCount = useMemo(
+    () =>
+      safeBatchInput
+        .split(/\r?\n/)
+        .map(line => line.trim())
+        .filter(Boolean).length,
+    [safeBatchInput]
+  )
+  const isBatchLineLimited = batchLineCount > MAX_UA_BATCH_LINES
 
   const parsed = useMemo(() => {
-    if (!deferredTrimmedInput) return null
-    return new UAParser(deferredTrimmedInput, UA_EXTENSIONS).getResult()
-  }, [deferredTrimmedInput])
+    if (!safeTrimmedInput) return null
+    return new UAParser(safeTrimmedInput, UA_EXTENSIONS).getResult()
+  }, [safeTrimmedInput])
 
   const analysis = useMemo(() => {
     if (!parsed) return null
 
-    const browserName = parsed.browser.name || ''
-    const engineName = parsed.engine.name || ''
-    const deviceType = parsed.device.type
-    const family = getEngineFamily(browserName, engineName, deferredTrimmedInput)
-    const score = getConfidenceScore(parsed)
-    const confidenceKey =
-      score >= 7
-        ? 'app.format.ua.confidence.high'
-        : score >= 4
-          ? 'app.format.ua.confidence.medium'
-          : 'app.format.ua.confidence.low'
-    const browserType = parsed.browser.type?.toLowerCase()
-    const isBot = BOT_PATTERN.test(deferredTrimmedInput) || browserType === 'crawler'
-    const isWebView =
-      WEBVIEW_PATTERN.test(deferredTrimmedInput) || browserName.toLowerCase().includes('webview')
-    const isInApp = IN_APP_PATTERN.test(deferredTrimmedInput) || browserType === 'inapp'
-    const isMobile = deviceType === 'mobile'
-    const isTablet = deviceType === 'tablet'
-    const isDesktop = !deviceType
+    return buildUaAnalysis(parsed, safeTrimmedInput)
+  }, [safeTrimmedInput, parsed])
+
+  const batchRows = useMemo(() => buildBatchRows(safeBatchInput), [safeBatchInput])
+  const batchCsv = useMemo(() => buildBatchCsv(batchRows), [batchRows])
+  const batchStats = useMemo(() => {
+    const browserSet = new Set<string>()
+    const osSet = new Set<string>()
+    let bots = 0
+    let mobile = 0
+    let webviews = 0
+    let inApps = 0
+
+    batchRows.forEach(row => {
+      if (row.browser !== 'Unknown') browserSet.add(row.browser)
+      if (row.os !== 'Unknown') osSet.add(row.os)
+      if (row.signals.includes('bot')) bots += 1
+      if (row.signals.includes('mobile') || row.signals.includes('tablet')) mobile += 1
+      if (row.signals.includes('webview')) webviews += 1
+      if (row.signals.includes('inapp')) inApps += 1
+    })
 
     return {
-      family,
-      score,
-      confidenceKey,
-      isBot,
-      isWebView,
-      isInApp,
-      isMobile,
-      isTablet,
-      isDesktop,
-      length: deferredTrimmedInput.length
+      bots,
+      browsers: browserSet.size,
+      inApps,
+      mobile,
+      os: osSet.size,
+      total: batchRows.length,
+      webviews
     }
-  }, [deferredTrimmedInput, parsed])
+  }, [batchRows])
+
+  const batchJson = useMemo(
+    () =>
+      JSON.stringify(
+        {
+          rows: batchRows,
+          stats: batchStats
+        },
+        null,
+        2
+      ),
+    [batchRows, batchStats]
+  )
 
   const sections = useMemo<Section[]>(() => {
     if (!parsed) return []
@@ -278,6 +468,38 @@ const UaClient = () => {
     ]
   }, [analysis])
 
+  const diagnostics = useMemo(() => {
+    if (!parsed || !analysis) return []
+
+    return [
+      {
+        active: analysis.isBot,
+        key: 'bot',
+        labelKey: 'app.format.ua.diagnostic.bot'
+      },
+      {
+        active: analysis.isWebView || analysis.isInApp,
+        key: 'embedded',
+        labelKey: 'app.format.ua.diagnostic.embedded'
+      },
+      {
+        active: analysis.score <= 3,
+        key: 'low-confidence',
+        labelKey: 'app.format.ua.diagnostic.low_confidence'
+      },
+      {
+        active: !parsed.browser.version,
+        key: 'missing-version',
+        labelKey: 'app.format.ua.diagnostic.missing_version'
+      },
+      {
+        active: analysis.length > 512,
+        key: 'long',
+        labelKey: 'app.format.ua.diagnostic.long'
+      }
+    ].filter(item => item.active)
+  }, [analysis, parsed])
+
   const resultJson = useMemo(() => {
     if (!parsed || !analysis) return ''
 
@@ -288,13 +510,14 @@ const UaClient = () => {
           engineFamily: analysis.family,
           confidenceScore: analysis.score,
           length: analysis.length,
-          signals: signals.filter(signal => signal.active).map(signal => signal.key)
+          signals: getActiveSignalKeys(analysis),
+          versionCount: analysis.versionCount
         }
       },
       null,
       2
     )
-  }, [analysis, parsed, signals])
+  }, [analysis, parsed])
 
   const handleUseCurrent = () => {
     setInputOverride(null)
@@ -306,6 +529,11 @@ const UaClient = () => {
 
   const handleClear = () => {
     setInputOverride('')
+    setBatchInput('')
+  }
+
+  const handleBatchSample = () => {
+    setBatchInput(SAMPLE_USER_AGENTS.map(sample => sample.value).join('\n'))
   }
 
   return (
@@ -354,6 +582,13 @@ const UaClient = () => {
             rows={4}
             className="font-mono"
           />
+          {isInputTruncated && (
+            <p className="rounded-lg border border-[var(--warning)] bg-[var(--warning-subtle)] px-3 py-2 text-sm text-[var(--warning)]">
+              {t('app.format.ua.warning.truncated', {
+                limit: formatUaNumber(MAX_UA_INPUT_CHARS)
+              })}
+            </p>
+          )}
           <div className="flex flex-col gap-3">
             <div className="flex items-center gap-2 text-xs font-medium uppercase text-[var(--text-tertiary)]">
               <Sparkles className="h-3.5 w-3.5" />
@@ -439,10 +674,35 @@ const UaClient = () => {
                   </span>
                 ))}
               </div>
-              <div className="grid grid-cols-1 gap-3 text-sm md:grid-cols-3">
-                <Metric label={t('app.format.ua.length')} value={String(analysis.length)} />
+              <div className="grid grid-cols-1 gap-3 text-sm md:grid-cols-4">
+                <Metric label={t('app.format.ua.length')} value={formatUaNumber(analysis.length)} />
                 <Metric label={t('app.format.ua.family')} value={analysis.family} />
                 <Metric label={t('app.format.ua.confidence')} value={`${analysis.score}/10`} />
+                <Metric
+                  label={t('app.format.ua.version_count')}
+                  value={formatUaNumber(analysis.versionCount)}
+                />
+              </div>
+              <div className="space-y-2">
+                <div className="text-xs font-medium uppercase text-[var(--text-tertiary)]">
+                  {t('app.format.ua.diagnostics')}
+                </div>
+                {diagnostics.length ? (
+                  <div className="flex flex-wrap gap-2">
+                    {diagnostics.map(item => (
+                      <span
+                        key={item.key}
+                        className="inline-flex rounded-full border border-[var(--warning)] bg-[var(--warning-subtle)] px-3 py-1.5 text-sm text-[var(--warning)]"
+                      >
+                        {t(item.labelKey)}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-[var(--text-secondary)]">
+                    {t('app.format.ua.diagnostic.clean')}
+                  </p>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -484,15 +744,32 @@ const UaClient = () => {
                   <ClipboardList className="h-4 w-4 text-[var(--primary)]" />
                   {t('app.format.ua.json')}
                 </CardTitle>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  icon={<Copy className="h-4 w-4" />}
-                  onClick={() => copy(resultJson)}
-                >
-                  {t('public.copy')}
-                </Button>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    icon={<Copy className="h-4 w-4" />}
+                    onClick={() => copy(resultJson)}
+                  >
+                    {t('public.copy')}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    icon={<Download className="h-4 w-4" />}
+                    onClick={() =>
+                      downloadText(
+                        resultJson,
+                        'daily-tools-user-agent.json',
+                        'application/json;charset=utf-8'
+                      )
+                    }
+                  >
+                    {t('app.format.ua.download_json')}
+                  </Button>
+                </div>
               </div>
             </CardHeader>
             <CardContent>
@@ -503,6 +780,196 @@ const UaClient = () => {
           </Card>
         </>
       )}
+
+      <Card>
+        <CardHeader>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="space-y-2">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <ListChecks className="h-4 w-4 text-[var(--primary)]" />
+                {t('app.format.ua.batch')}
+              </CardTitle>
+              <p className="text-sm text-[var(--text-secondary)]">
+                {t('app.format.ua.batch_description')}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                icon={<Sparkles className="h-4 w-4" />}
+                onClick={handleBatchSample}
+              >
+                {t('app.format.ua.batch_sample')}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                icon={<FileJson className="h-4 w-4" />}
+                onClick={() => copy(batchJson)}
+                disabled={!batchRows.length}
+              >
+                JSON
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                icon={<Table2 className="h-4 w-4" />}
+                onClick={() => copy(batchCsv)}
+                disabled={!batchRows.length}
+              >
+                CSV
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                icon={<Download className="h-4 w-4" />}
+                onClick={() =>
+                  downloadText(
+                    batchJson,
+                    'daily-tools-user-agents.json',
+                    'application/json;charset=utf-8'
+                  )
+                }
+                disabled={!batchRows.length}
+              >
+                {t('app.format.ua.download_json')}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                icon={<Trash2 className="h-4 w-4" />}
+                onClick={() => setBatchInput('')}
+                disabled={!batchInput}
+              >
+                {t('public.clear')}
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <Textarea
+            value={batchInput}
+            onChange={event => setBatchInput(event.target.value)}
+            placeholder={t('app.format.ua.batch_placeholder')}
+            rows={5}
+            className="font-mono"
+          />
+          {(isBatchInputTruncated || isBatchLineLimited) && (
+            <div className="space-y-2">
+              {isBatchInputTruncated && (
+                <p className="rounded-lg border border-[var(--warning)] bg-[var(--warning-subtle)] px-3 py-2 text-sm text-[var(--warning)]">
+                  {t('app.format.ua.batch_warning.truncated', {
+                    limit: formatUaNumber(MAX_UA_BATCH_CHARS)
+                  })}
+                </p>
+              )}
+              {isBatchLineLimited && (
+                <p className="rounded-lg border border-[var(--warning)] bg-[var(--warning-subtle)] px-3 py-2 text-sm text-[var(--warning)]">
+                  {t('app.format.ua.batch_warning.lines', {
+                    limit: formatUaNumber(MAX_UA_BATCH_LINES)
+                  })}
+                </p>
+              )}
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
+            <Metric
+              label={t('app.format.ua.batch_total')}
+              value={formatUaNumber(batchStats.total)}
+            />
+            <Metric
+              label={t('app.format.ua.batch_browsers')}
+              value={formatUaNumber(batchStats.browsers)}
+            />
+            <Metric label={t('app.format.ua.batch_os')} value={formatUaNumber(batchStats.os)} />
+            <Metric
+              label={t('app.format.ua.batch_mobile')}
+              value={formatUaNumber(batchStats.mobile)}
+            />
+            <Metric label={t('app.format.ua.batch_bots')} value={formatUaNumber(batchStats.bots)} />
+            <Metric
+              label={t('app.format.ua.batch_webviews')}
+              value={formatUaNumber(batchStats.webviews)}
+            />
+            <Metric
+              label={t('app.format.ua.batch_inapps')}
+              value={formatUaNumber(batchStats.inApps)}
+            />
+          </div>
+
+          {batchRows.length ? (
+            <div className="space-y-3">
+              {batchRows.slice(0, MAX_UA_BATCH_PREVIEW_ROWS).map((row, index) => (
+                <div
+                  key={`${row.input}-${index}`}
+                  className="glass-input grid min-w-0 gap-3 rounded-lg p-3 text-sm lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_auto]"
+                >
+                  <div className="min-w-0">
+                    <div className="text-xs text-[var(--text-tertiary)]">
+                      {t('app.format.ua.batch_user_agent')}
+                    </div>
+                    <div className="mt-1 truncate font-mono text-[var(--text-primary)]">
+                      {row.input}
+                    </div>
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-xs text-[var(--text-tertiary)]">
+                      {t('app.format.ua.browser')}
+                    </div>
+                    <div className="mt-1 truncate font-medium text-[var(--text-primary)]">
+                      {row.browser === 'Unknown' ? t('public.unknown') : row.browser}
+                    </div>
+                    <div className="truncate font-mono text-xs text-[var(--text-secondary)]">
+                      {row.version}
+                    </div>
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-xs text-[var(--text-tertiary)]">
+                      {t('app.format.ua.os')}
+                    </div>
+                    <div className="mt-1 truncate text-[var(--text-primary)]">
+                      {row.os === 'Unknown' ? t('public.unknown') : row.os}
+                    </div>
+                    <div className="truncate font-mono text-xs text-[var(--text-secondary)]">
+                      {row.device} · {row.engineFamily}
+                    </div>
+                  </div>
+                  <div className="min-w-0 lg:text-right">
+                    <div className="text-xs text-[var(--text-tertiary)]">
+                      {t('app.format.ua.confidence')}
+                    </div>
+                    <div className="mt-1 font-mono font-semibold text-[var(--text-primary)]">
+                      {row.confidence}/10
+                    </div>
+                    <div className="max-w-full truncate text-xs text-[var(--text-secondary)]">
+                      {row.signals.length
+                        ? row.signals.map(signal => t(`app.format.ua.signal.${signal}`)).join(' · ')
+                        : '-'}
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {batchRows.length > MAX_UA_BATCH_PREVIEW_ROWS && (
+                <p className="text-sm text-[var(--text-secondary)]">
+                  {t('app.format.ua.batch_preview_more', {
+                    count: batchRows.length - MAX_UA_BATCH_PREVIEW_ROWS
+                  })}
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="glass-panel-static rounded-lg p-4 text-sm text-[var(--text-secondary)]">
+              {t('app.format.ua.batch_empty')}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   )
 }

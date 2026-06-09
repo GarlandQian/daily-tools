@@ -4,7 +4,7 @@ import UnitClient from '@/features/converter/components/UnitClient'
 
 export const metadata: Metadata = {
   title: 'Unit Converter - Daily Tools',
-  description: 'Convert between units of length, weight, temperature, and data storage'
+  description: 'Convert common units with presets, precision controls, and all-unit result tables'
 }
 
 export default function UnitPage() {
