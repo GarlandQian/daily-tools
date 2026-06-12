@@ -1,6 +1,6 @@
 'use client'
 
-import { Copy, FileJson2, KeyRound, RotateCcw, Sparkles } from 'lucide-react'
+import { Copy, FileDown, FileJson2, KeyRound, RotateCcw, Sparkles } from 'lucide-react'
 import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { v1, v3, v4, v5, validate as validateUuid } from 'uuid'
@@ -58,6 +58,10 @@ const UUID_PRESETS: UUIDPreset[] = [
   }
 ]
 
+const MAX_UUID_ROW_PREVIEW = 120
+const UUID_NAMESPACE_LIMIT = 36
+const UUID_NAME_LIMIT = 512
+
 const clampNumber = (value: number, min: number, max: number) => {
   if (!Number.isFinite(value)) return min
   return Math.min(max, Math.max(min, Math.floor(value)))
@@ -66,6 +70,16 @@ const clampNumber = (value: number, min: number, max: number) => {
 const formatUuidValue = (uuid: string, uppercase: boolean, hyphenless: boolean) => {
   const formatted = hyphenless ? uuid.replaceAll('-', '') : uuid
   return uppercase ? formatted.toUpperCase() : formatted
+}
+
+const downloadText = (content: string, filename: string, type: string) => {
+  const blob = new Blob([content], { type })
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  anchor.click()
+  URL.revokeObjectURL(url)
 }
 
 const UuidClient = () => {
@@ -87,7 +101,12 @@ const UuidClient = () => {
     () => result.map(uuid => formatUuidValue(uuid, uppercase, hyphenless)),
     [hyphenless, result, uppercase]
   )
-  const resultText = formattedResult.join('\n')
+  const visibleFormattedResult = useMemo(
+    () => formattedResult.slice(0, MAX_UUID_ROW_PREVIEW),
+    [formattedResult]
+  )
+  const hiddenRowCount = Math.max(0, formattedResult.length - visibleFormattedResult.length)
+  const resultText = useMemo(() => formattedResult.join('\n'), [formattedResult])
   const resultJson = useMemo(() => JSON.stringify(formattedResult, null, 2), [formattedResult])
 
   const validationMessage = useMemo(() => {
@@ -131,6 +150,11 @@ const UuidClient = () => {
     setHyphenless(false)
     setResult([])
   }, [])
+
+  const handleDownload = useCallback(() => {
+    if (!resultText) return
+    downloadText(resultText, 'daily-tools-uuids.txt', 'text/plain;charset=utf-8')
+  }, [resultText])
 
   return (
     <div className="flex size-full flex-col gap-5">
@@ -216,7 +240,10 @@ const UuidClient = () => {
                     <Input
                       id="uuid-namespace"
                       value={namespace}
-                      onChange={event => setNamespace(event.target.value)}
+                      onChange={event =>
+                        setNamespace(event.target.value.slice(0, UUID_NAMESPACE_LIMIT))
+                      }
+                      maxLength={UUID_NAMESPACE_LIMIT}
                       aria-invalid={!validateUuid(namespace)}
                       placeholder={t('app.generation.uuid.ns_placeholder')}
                     />
@@ -242,7 +269,8 @@ const UuidClient = () => {
                     <Input
                       id="uuid-name"
                       value={name}
-                      onChange={event => setName(event.target.value)}
+                      onChange={event => setName(event.target.value.slice(0, UUID_NAME_LIMIT))}
+                      maxLength={UUID_NAME_LIMIT}
                       aria-invalid={!name.trim()}
                       placeholder={t('app.generation.uuid.name_placeholder')}
                     />
@@ -323,6 +351,14 @@ const UuidClient = () => {
               >
                 {t('app.generation.uuid.copy_json')}
               </Button>
+              <Button
+                variant="ghost"
+                icon={<FileDown className="h-4 w-4" />}
+                disabled={!resultText}
+                onClick={handleDownload}
+              >
+                {t('app.generation.uuid.download')}
+              </Button>
             </div>
           </CardHeader>
           <CardContent className="flex min-h-0 flex-1 flex-col">
@@ -341,24 +377,34 @@ const UuidClient = () => {
           </CardHeader>
           <CardContent className="min-h-0 flex-1 space-y-3 overflow-auto">
             {formattedResult.length ? (
-              formattedResult.map((uuid, index) => (
-                <div key={`${uuid}-${index}`} className="glass-input rounded-xl p-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <code className="min-w-0 break-all text-sm text-[var(--text-primary)]">
-                      {uuid}
-                    </code>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      icon={<Copy className="h-3.5 w-3.5" />}
-                      onClick={() => copy(uuid)}
-                    >
-                      {t('public.copy')}
-                    </Button>
+              <>
+                {hiddenRowCount > 0 && (
+                  <p className="rounded-xl border border-[var(--warning)] bg-[var(--warning-subtle)] px-3 py-2 text-xs text-[var(--warning)]">
+                    {t('app.generation.uuid.rows_limited', {
+                      total: formattedResult.length,
+                      visible: visibleFormattedResult.length
+                    })}
+                  </p>
+                )}
+                {visibleFormattedResult.map((uuid, index) => (
+                  <div key={`${uuid}-${index}`} className="glass-input rounded-xl p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <code className="min-w-0 break-all text-sm text-[var(--text-primary)]">
+                        {uuid}
+                      </code>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        icon={<Copy className="h-3.5 w-3.5" />}
+                        onClick={() => copy(uuid)}
+                      >
+                        {t('public.copy')}
+                      </Button>
+                    </div>
                   </div>
-                </div>
-              ))
+                ))}
+              </>
             ) : (
               <div className="flex min-h-[260px] flex-col items-center justify-center rounded-xl border border-dashed border-[var(--border-base)] px-4 text-center text-sm text-[var(--text-tertiary)]">
                 <Sparkles className="mb-3 h-6 w-6 text-[var(--text-tertiary)]" />

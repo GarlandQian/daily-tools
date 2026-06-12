@@ -32,6 +32,7 @@ const COMMON_CODES = [
 const BATCH_INPUT_LIMIT = 24000
 const BATCH_CODE_LIMIT = 240
 const COMPARE_LIMIT = 4
+const QUERY_INPUT_LIMIT = 160
 
 type StatusFamily = (typeof STATUS_FAMILIES)[number]
 type StatusClass = (typeof STATUS_CLASSES)[number]
@@ -576,6 +577,24 @@ const createClassCounts = (): Record<StatusFamily, number> => ({
   '5xx': 0
 })
 
+const collectStatusCodes = (input: string) => {
+  const source = input.slice(0, BATCH_INPUT_LIMIT)
+  const pattern = /\b[1-5]\d{2}\b/g
+  const codes: number[] = []
+  let limited = input.length > BATCH_INPUT_LIMIT
+  let match: RegExpExecArray | null
+
+  while ((match = pattern.exec(source))) {
+    if (codes.length >= BATCH_CODE_LIMIT) {
+      limited = true
+      break
+    }
+    codes.push(Number(match[0]))
+  }
+
+  return { codes, limited }
+}
+
 const headerPairs = (headers: string[]) =>
   headers.map(header => {
     const separator = header.indexOf(':')
@@ -685,10 +704,8 @@ const statusSignals = (status: StatusInfo): StatusSignal[] => {
   return signals
 }
 
-const analyzeBatch = (input: string): BatchAnalysis => {
-  const truncated = input.slice(0, BATCH_INPUT_LIMIT)
-  const matches = truncated.match(/\b[1-5]\d{2}\b/g) ?? []
-  const codes = matches.slice(0, BATCH_CODE_LIMIT).map(Number)
+const analyzeBatch = (input: string, inputCapped = false): BatchAnalysis => {
+  const { codes, limited } = collectStatusCodes(input)
   const grouped = new Map<number, number>()
   const classCounts = createClassCounts()
   let cacheable = 0
@@ -744,7 +761,7 @@ const analyzeBatch = (input: string): BatchAnalysis => {
 
   return {
     cacheable,
-    capped: input.length > BATCH_INPUT_LIMIT || matches.length > BATCH_CODE_LIMIT,
+    capped: inputCapped || limited,
     classCounts,
     exportCsv,
     exportJson: JSON.stringify(
@@ -789,6 +806,7 @@ const HttpStatusClient = () => {
   const [filter, setFilter] = useState<StatusClass>('all')
   const [snippetType, setSnippetType] = useState<SnippetType>('json')
   const [batchInput, setBatchInput] = useState(SCENARIOS[5].sample)
+  const [isBatchInputCapped, setIsBatchInputCapped] = useState(false)
   const deferredBatchInput = useDeferredValue(batchInput)
   const [compareCodes, setCompareCodes] = useState<number[]>([200, 404, 503])
 
@@ -812,7 +830,10 @@ const HttpStatusClient = () => {
   const selectedClass = statusClass(selected.code)
   const snippet = useMemo(() => buildSnippet(selected, snippetType), [selected, snippetType])
   const signals = useMemo(() => statusSignals(selected), [selected])
-  const batchAnalysis = useMemo(() => analyzeBatch(deferredBatchInput), [deferredBatchInput])
+  const batchAnalysis = useMemo(
+    () => analyzeBatch(deferredBatchInput, isBatchInputCapped),
+    [deferredBatchInput, isBatchInputCapped]
+  )
   const classCounts = useMemo(
     () =>
       STATUS_FAMILIES.map(className => ({
@@ -851,10 +872,21 @@ const HttpStatusClient = () => {
   )
   const selectedIsCompared = compareCodes.includes(selected.code)
 
+  const updateQuery = (value: string) => {
+    setQuery(value.slice(0, QUERY_INPUT_LIMIT))
+  }
+
+  const updateBatchInput = (value: string) => {
+    const capped = value.length > BATCH_INPUT_LIMIT
+
+    setIsBatchInputCapped(capped)
+    setBatchInput(capped ? value.slice(0, BATCH_INPUT_LIMIT) : value)
+  }
+
   const loadScenario = (scenario: ScenarioPreset) => {
-    setQuery(scenario.query)
+    updateQuery(scenario.query)
     setFilter(scenario.filter)
-    setBatchInput(scenario.sample)
+    updateBatchInput(scenario.sample)
     setCompareCodes(scenario.codes.slice(0, COMPARE_LIMIT))
   }
 
@@ -959,8 +991,9 @@ const HttpStatusClient = () => {
                 <Input
                   id="status-search"
                   value={query}
-                  onChange={event => setQuery(event.target.value)}
+                  onChange={event => updateQuery(event.target.value)}
                   placeholder="404, unauthorized, timeout"
+                  maxLength={QUERY_INPUT_LIMIT}
                   className="pl-10"
                 />
               </div>
@@ -1226,8 +1259,9 @@ const HttpStatusClient = () => {
               <Textarea
                 id="status-batch"
                 value={batchInput}
-                onChange={event => setBatchInput(event.target.value.slice(0, BATCH_INPUT_LIMIT))}
+                onChange={event => updateBatchInput(event.target.value)}
                 placeholder={t('app.converter.http_status.batch_placeholder')}
+                maxLength={BATCH_INPUT_LIMIT}
                 rows={9}
                 className="min-h-[220px] resize-y font-mono"
               />

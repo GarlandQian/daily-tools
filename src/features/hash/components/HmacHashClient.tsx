@@ -1,6 +1,5 @@
 'use client'
 
-import CryptoJS from 'crypto-js'
 import {
   AlertTriangle,
   CheckCircle2,
@@ -14,7 +13,7 @@ import {
   Sparkles,
   XCircle
 } from 'lucide-react'
-import { useDeferredValue, useMemo, useState } from 'react'
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
@@ -28,17 +27,10 @@ import { useToast } from '@/components/ui/toast'
 import { commonPasswords } from '@/const/common-passwords'
 import { useCopy } from '@/hooks/useCopy'
 
+import { calculateHmac, type HmacAlgorithm, loadCryptoJS } from '../utils/crypto'
+
 type HmacFamily = 'md5' | 'sha' | 'ripemd'
 type ExportFormat = 'txt' | 'csv' | 'json'
-type HmacAlgorithm =
-  | 'HmacMD5'
-  | 'HmacRIPEMD160'
-  | 'HmacSHA1'
-  | 'HmacSHA224'
-  | 'HmacSHA256'
-  | 'HmacSHA3'
-  | 'HmacSHA384'
-  | 'HmacSHA512'
 
 interface HmacHashClientProps {
   family: HmacFamily
@@ -50,6 +42,11 @@ interface HmacResult {
   message: string
 }
 
+interface HmacCalculationState {
+  isLoading: boolean
+  results: HmacResult[]
+}
+
 interface VerifyResult {
   digest: string
   plaintext: string
@@ -57,8 +54,11 @@ interface VerifyResult {
 }
 
 const MAX_HMAC_INPUT_CHARS = 200000
+const MAX_HMAC_LIVE_INPUT_CHARS = 50000
 const MAX_BATCH_LINES = 200
 const MAX_KEY_CHARS = 4096
+const VISIBLE_HMAC_RESULT_LIMIT = 80
+const MAX_HMAC_VERIFY_DIGEST_CHARS = 512
 const numberFormatter = new Intl.NumberFormat()
 
 const FAMILY_ALGORITHMS: Record<HmacFamily, HmacAlgorithm[]> = {
@@ -97,34 +97,37 @@ const SAMPLES = {
   }
 } as const
 
-const calculateHmac = (algorithm: HmacAlgorithm, message: string, key: string) => {
-  switch (algorithm) {
-    case 'HmacMD5':
-      return CryptoJS.HmacMD5(message, key).toString()
-    case 'HmacRIPEMD160':
-      return CryptoJS.HmacRIPEMD160(message, key).toString()
-    case 'HmacSHA1':
-      return CryptoJS.HmacSHA1(message, key).toString()
-    case 'HmacSHA224':
-      return CryptoJS.HmacSHA224(message, key).toString()
-    case 'HmacSHA256':
-      return CryptoJS.HmacSHA256(message, key).toString()
-    case 'HmacSHA3':
-      return CryptoJS.HmacSHA3(message, key).toString()
-    case 'HmacSHA384':
-      return CryptoJS.HmacSHA384(message, key).toString()
-    case 'HmacSHA512':
-      return CryptoJS.HmacSHA512(message, key).toString()
-  }
-}
-
 const splitMessages = (input: string, lineByLine: boolean) => {
   if (!lineByLine) return input.trim() ? [input] : []
-  return input
-    .split(/\r?\n/)
-    .map(line => line.trim())
-    .filter(Boolean)
-    .slice(0, MAX_BATCH_LINES)
+  const lines: string[] = []
+  let lineStart = 0
+
+  for (let index = 0; index <= input.length && lines.length < MAX_BATCH_LINES; index += 1) {
+    if (index < input.length && input[index] !== '\n') continue
+
+    const lineEnd = input[index - 1] === '\r' ? index - 1 : index
+    const line = input.slice(lineStart, lineEnd).trim()
+    if (line) lines.push(line)
+    lineStart = index + 1
+  }
+
+  return lines
+}
+
+const hasMoreNonEmptyLines = (input: string, limit: number) => {
+  let count = 0
+  let lineStart = 0
+
+  for (let index = 0; index <= input.length; index += 1) {
+    if (index < input.length && input[index] !== '\n') continue
+
+    const lineEnd = input[index - 1] === '\r' ? index - 1 : index
+    if (input.slice(lineStart, lineEnd).trim()) count += 1
+    if (count > limit) return true
+    lineStart = index + 1
+  }
+
+  return false
 }
 
 const csvEscape = (value: string | number) => {
@@ -182,6 +185,8 @@ const HmacHashClient = ({ family }: HmacHashClientProps) => {
   const algorithms = FAMILY_ALGORITHMS[family]
   const [message, setMessage] = useState('')
   const [key, setKey] = useState('')
+  const [isMessageCapped, setIsMessageCapped] = useState(false)
+  const [isKeyCapped, setIsKeyCapped] = useState(false)
   const [enabledAlgorithms, setEnabledAlgorithms] = useState<HmacAlgorithm[]>(algorithms)
   const [lineByLine, setLineByLine] = useState(false)
   const [uppercase, setUppercase] = useState(false)
@@ -191,21 +196,61 @@ const HmacHashClient = ({ family }: HmacHashClientProps) => {
   const [verifyDigest, setVerifyDigest] = useState('')
   const [verifyAlgorithm, setVerifyAlgorithm] = useState<HmacAlgorithm>(algorithms[0])
   const [verifyResult, setVerifyResult] = useState<VerifyResult | null>(null)
+  const [verifyLoading, setVerifyLoading] = useState(false)
+  const [hashState, setHashState] = useState<HmacCalculationState>({
+    isLoading: false,
+    results: []
+  })
+  const hashRequestRef = useRef(0)
+  const verifyRequestRef = useRef(0)
   const deferredMessage = useDeferredValue(message)
   const deferredKey = useDeferredValue(key)
-  const isMessageTooLarge = deferredMessage.length > MAX_HMAC_INPUT_CHARS
-  const isKeyTooLarge = deferredKey.length > MAX_KEY_CHARS
-  const values = useMemo(
-    () => splitMessages(deferredMessage, lineByLine),
-    [deferredMessage, lineByLine]
+  const isMessageTooLarge = isMessageCapped || deferredMessage.length > MAX_HMAC_INPUT_CHARS
+  const isKeyTooLarge = isKeyCapped || deferredKey.length > MAX_KEY_CHARS
+  const safeMessage = useMemo(
+    () => (isMessageTooLarge ? deferredMessage.slice(0, MAX_HMAC_INPUT_CHARS) : deferredMessage),
+    [deferredMessage, isMessageTooLarge]
   )
+  const safeKey = useMemo(
+    () => (isKeyTooLarge ? deferredKey.slice(0, MAX_KEY_CHARS) : deferredKey),
+    [deferredKey, isKeyTooLarge]
+  )
+  const trimmedSafeKey = useMemo(() => safeKey.trim(), [safeKey])
+  const values = useMemo(() => splitMessages(safeMessage, lineByLine), [lineByLine, safeMessage])
   const activeAlgorithms = enabledAlgorithms.length ? enabledAlgorithms : algorithms
-  const results = useMemo<HmacResult[]>(() => {
-    if (!deferredKey.trim() || isMessageTooLarge || isKeyTooLarge) return []
+  const results = hashState.results
+  const isHashing = hashState.isLoading
+  const exportMeta = {
+    csv: { filename: `${family}-hmac.csv`, type: 'text/csv;charset=utf-8' },
+    json: { filename: `${family}-hmac.json`, type: 'application/json;charset=utf-8' },
+    txt: { filename: `${family}-hmac.txt`, type: 'text/plain;charset=utf-8' }
+  }[exportFormat]
+  const visibleResults = useMemo(() => results.slice(0, VISIBLE_HMAC_RESULT_LIMIT), [results])
+  const isResultPreviewLimited = results.length > visibleResults.length
+  const messageBytes = useMemo(() => new TextEncoder().encode(safeMessage).length, [safeMessage])
+  const keyBytes = useMemo(() => new TextEncoder().encode(safeKey).length, [safeKey])
+  const digestChars = useMemo(
+    () => results.reduce((total, result) => total + result.digest.length, 0),
+    [results]
+  )
+  const lineLimitReached =
+    lineByLine && !isMessageTooLarge && hasMoreNonEmptyLines(safeMessage, MAX_BATCH_LINES)
+  const hasLegacyAlgorithm = activeAlgorithms.some(
+    algorithm => algorithm === 'HmacMD5' || algorithm === 'HmacSHA1'
+  )
+  const isLiveHashDeferred =
+    safeMessage.length > MAX_HMAC_LIVE_INPUT_CHARS &&
+    !isMessageTooLarge &&
+    !isKeyTooLarge &&
+    Boolean(trimmedSafeKey) &&
+    values.length > 0
+
+  const calculateResults = useCallback(async () => {
+    const cryptoJS = await loadCryptoJS()
 
     return values.flatMap(value =>
       activeAlgorithms.map(algorithm => {
-        const digest = calculateHmac(algorithm, value, deferredKey)
+        const digest = calculateHmac(cryptoJS, algorithm, value, safeKey)
         return {
           algorithm,
           digest: uppercase ? digest.toUpperCase() : digest,
@@ -213,27 +258,68 @@ const HmacHashClient = ({ family }: HmacHashClientProps) => {
         }
       })
     )
-  }, [activeAlgorithms, deferredKey, isKeyTooLarge, isMessageTooLarge, uppercase, values])
-  const exportOutput = useMemo(
-    () => buildExport(results, exportFormat, includeMessage),
-    [exportFormat, includeMessage, results]
-  )
-  const exportMeta = {
-    csv: { filename: `${family}-hmac.csv`, type: 'text/csv;charset=utf-8' },
-    json: { filename: `${family}-hmac.json`, type: 'application/json;charset=utf-8' },
-    txt: { filename: `${family}-hmac.txt`, type: 'text/plain;charset=utf-8' }
-  }[exportFormat]
-  const messageBytes = useMemo(
-    () => new TextEncoder().encode(deferredMessage).length,
-    [deferredMessage]
-  )
-  const keyBytes = useMemo(() => new TextEncoder().encode(deferredKey).length, [deferredKey])
-  const digestChars = results.reduce((total, result) => total + result.digest.length, 0)
-  const lineLimitReached =
-    lineByLine && deferredMessage.split(/\r?\n/).filter(Boolean).length > MAX_BATCH_LINES
-  const hasLegacyAlgorithm = activeAlgorithms.some(
-    algorithm => algorithm === 'HmacMD5' || algorithm === 'HmacSHA1'
-  )
+  }, [activeAlgorithms, safeKey, uppercase, values])
+
+  useEffect(() => {
+    const requestId = hashRequestRef.current + 1
+    hashRequestRef.current = requestId
+
+    if (
+      !trimmedSafeKey ||
+      isMessageTooLarge ||
+      isKeyTooLarge ||
+      isLiveHashDeferred ||
+      !values.length
+    ) {
+      setHashState({ isLoading: false, results: [] })
+      return
+    }
+
+    let isCurrent = true
+    setHashState({ isLoading: true, results: [] })
+
+    void calculateResults()
+      .then(nextResults => {
+        if (!isCurrent || hashRequestRef.current !== requestId) return
+        setHashState({ isLoading: false, results: nextResults })
+      })
+      .catch(() => {
+        if (!isCurrent || hashRequestRef.current !== requestId) return
+        setHashState({ isLoading: false, results: [] })
+        toast.error(t('public.error'))
+      })
+
+    return () => {
+      isCurrent = false
+    }
+  }, [
+    calculateResults,
+    isKeyTooLarge,
+    isLiveHashDeferred,
+    isMessageTooLarge,
+    t,
+    toast,
+    trimmedSafeKey,
+    values.length
+  ])
+
+  useEffect(() => {
+    verifyRequestRef.current += 1
+    setVerifyLoading(false)
+    setVerifyResult(null)
+  }, [key, verifyAlgorithm, verifyDigest])
+
+  const updateMessage = useCallback((value: string) => {
+    const capped = value.length > MAX_HMAC_INPUT_CHARS
+    setIsMessageCapped(capped)
+    setMessage(capped ? value.slice(0, MAX_HMAC_INPUT_CHARS) : value)
+  }, [])
+
+  const updateKey = useCallback((value: string) => {
+    const capped = value.length > MAX_KEY_CHARS
+    setIsKeyCapped(capped)
+    setKey(capped ? value.slice(0, MAX_KEY_CHARS) : value)
+  }, [])
 
   const toggleAlgorithm = (algorithm: HmacAlgorithm, checked: boolean) => {
     setEnabledAlgorithms(prev =>
@@ -245,13 +331,56 @@ const HmacHashClient = ({ family }: HmacHashClientProps) => {
   }
 
   const applySample = (sample: keyof typeof SAMPLES) => {
+    setIsMessageCapped(false)
+    setIsKeyCapped(false)
     setMessage(SAMPLES[sample].message)
     setKey(SAMPLES[sample].key)
     setLineByLine(sample === 'lines')
     setVerifyResult(null)
   }
 
-  const handleVerify = () => {
+  const handleCopyResults = () => {
+    if (isHashing || !results.length) return
+    void copy(buildExport(results, exportFormat, includeMessage))
+  }
+
+  const handleDownloadResults = () => {
+    if (isHashing || !results.length) return
+    downloadText(
+      buildExport(results, exportFormat, includeMessage),
+      exportMeta.filename,
+      exportMeta.type
+    )
+  }
+
+  const handleGenerateResults = async () => {
+    if (!trimmedSafeKey || isMessageTooLarge || isKeyTooLarge || !values.length) return
+
+    const requestId = hashRequestRef.current + 1
+    hashRequestRef.current = requestId
+    setHashState({ isLoading: true, results: [] })
+
+    try {
+      const nextResults = await calculateResults()
+      if (hashRequestRef.current !== requestId) return
+      setHashState({ isLoading: false, results: nextResults })
+    } catch {
+      if (hashRequestRef.current !== requestId) return
+      setHashState({ isLoading: false, results: [] })
+      toast.error(t('public.error'))
+    }
+  }
+
+  const handleVerify = async () => {
+    if (isKeyCapped || key.length > MAX_KEY_CHARS) {
+      toast.warning(
+        t('app.hash.hmac.warning.key_too_large', {
+          limit: numberFormatter.format(MAX_KEY_CHARS)
+        })
+      )
+      return
+    }
+
     const trimmedKey = key.trim()
     const target = verifyDigest.trim().toLowerCase()
 
@@ -265,18 +394,33 @@ const HmacHashClient = ({ family }: HmacHashClientProps) => {
       return
     }
 
-    const found = commonPasswords.find(
-      password => calculateHmac(verifyAlgorithm, password, key).toLowerCase() === target
-    )
+    setVerifyLoading(true)
+    const requestId = verifyRequestRef.current + 1
+    verifyRequestRef.current = requestId
 
-    if (found) {
-      setVerifyResult({ digest: target, plaintext: found, success: true })
-      toast.success(t('app.hash.verify.success'))
-      return
+    try {
+      const cryptoJS = await loadCryptoJS()
+      if (verifyRequestRef.current !== requestId) return
+
+      const found = commonPasswords.find(
+        password => calculateHmac(cryptoJS, verifyAlgorithm, password, key).toLowerCase() === target
+      )
+
+      if (verifyRequestRef.current !== requestId) return
+
+      if (found) {
+        setVerifyResult({ digest: target, plaintext: found, success: true })
+        toast.success(t('app.hash.verify.success'))
+        return
+      }
+
+      setVerifyResult({ digest: target, plaintext: t('app.hash.verify.fail'), success: false })
+      toast.warning(t('app.hash.verify.fail'))
+    } catch {
+      if (verifyRequestRef.current === requestId) toast.error(t('public.error'))
+    } finally {
+      if (verifyRequestRef.current === requestId) setVerifyLoading(false)
     }
-
-    setVerifyResult({ digest: target, plaintext: t('app.hash.verify.fail'), success: false })
-    toast.warning(t('app.hash.verify.fail'))
   }
 
   return (
@@ -314,7 +458,11 @@ const HmacHashClient = ({ family }: HmacHashClientProps) => {
             <Metric label={t('app.hash.hmac.metric.digest_chars')} value={digestChars} />
           </div>
 
-          {(hasLegacyAlgorithm || isMessageTooLarge || isKeyTooLarge || lineLimitReached) && (
+          {(hasLegacyAlgorithm ||
+            isMessageTooLarge ||
+            isKeyTooLarge ||
+            isLiveHashDeferred ||
+            lineLimitReached) && (
             <div className="space-y-2">
               {hasLegacyAlgorithm && <Warning>{t('app.hash.hmac.warning.legacy')}</Warning>}
               {isMessageTooLarge && (
@@ -328,6 +476,13 @@ const HmacHashClient = ({ family }: HmacHashClientProps) => {
                 <Warning>
                   {t('app.hash.hmac.warning.key_too_large', {
                     limit: numberFormatter.format(MAX_KEY_CHARS)
+                  })}
+                </Warning>
+              )}
+              {isLiveHashDeferred && (
+                <Warning>
+                  {t('app.hash.hmac.warning.live_deferred', {
+                    limit: numberFormatter.format(MAX_HMAC_LIVE_INPUT_CHARS)
                   })}
                 </Warning>
               )}
@@ -354,7 +509,7 @@ const HmacHashClient = ({ family }: HmacHashClientProps) => {
               <Textarea
                 id="hmac-message"
                 value={message}
-                onChange={event => setMessage(event.target.value)}
+                onChange={event => updateMessage(event.target.value)}
                 rows={9}
                 placeholder={t('app.hash.hmac.message_placeholder')}
                 className="font-mono"
@@ -368,7 +523,7 @@ const HmacHashClient = ({ family }: HmacHashClientProps) => {
                   id="hmac-key"
                   type={showKey ? 'text' : 'password'}
                   value={key}
-                  onChange={event => setKey(event.target.value)}
+                  onChange={event => updateKey(event.target.value)}
                   placeholder={t('app.hash.hmac.key_placeholder')}
                   className="font-mono"
                 />
@@ -441,9 +596,19 @@ const HmacHashClient = ({ family }: HmacHashClientProps) => {
               <div className="flex flex-wrap gap-2">
                 <Button
                   type="button"
+                  variant="primary"
+                  icon={<KeyRound className="h-4 w-4" />}
+                  loading={isHashing}
+                  disabled={!trimmedSafeKey || isMessageTooLarge || isKeyTooLarge || !values.length}
+                  onClick={handleGenerateResults}
+                >
+                  {t('app.hash.generate')}
+                </Button>
+                <Button
+                  type="button"
                   icon={<Copy className="h-4 w-4" />}
-                  disabled={!results.length}
-                  onClick={() => copy(exportOutput)}
+                  disabled={isHashing || !results.length}
+                  onClick={handleCopyResults}
                 >
                   {t('app.hash.text.copy_results')}
                 </Button>
@@ -451,8 +616,8 @@ const HmacHashClient = ({ family }: HmacHashClientProps) => {
                   type="button"
                   variant="default"
                   icon={<Download className="h-4 w-4" />}
-                  disabled={!results.length}
-                  onClick={() => downloadText(exportOutput, exportMeta.filename, exportMeta.type)}
+                  disabled={isHashing || !results.length}
+                  onClick={handleDownloadResults}
                 >
                   {t('app.hash.text.download')}
                 </Button>
@@ -472,7 +637,7 @@ const HmacHashClient = ({ family }: HmacHashClientProps) => {
             <CardContent className="min-h-0 flex-1 overflow-auto">
               {results.length ? (
                 <div className="space-y-3">
-                  {results.map((result, index) => (
+                  {visibleResults.map((result, index) => (
                     <div
                       key={`${result.algorithm}-${index}-${result.digest}`}
                       className="rounded-xl border border-[var(--border-subtle)] bg-[var(--glass-input-bg)] p-3"
@@ -501,6 +666,18 @@ const HmacHashClient = ({ family }: HmacHashClientProps) => {
                       )}
                     </div>
                   ))}
+                  {isResultPreviewLimited && (
+                    <Warning>
+                      {t('app.hash.text.warning.rows_limited', {
+                        total: numberFormatter.format(results.length),
+                        visible: numberFormatter.format(visibleResults.length)
+                      })}
+                    </Warning>
+                  )}
+                </div>
+              ) : isHashing ? (
+                <div className="flex min-h-48 items-center justify-center text-center text-sm text-[var(--text-secondary)]">
+                  {t('public.loading')}
                 </div>
               ) : (
                 <div className="flex min-h-48 items-center justify-center text-center text-sm text-[var(--text-secondary)]">
@@ -532,8 +709,11 @@ const HmacHashClient = ({ family }: HmacHashClientProps) => {
                 </Select>
                 <Input
                   value={verifyDigest}
-                  onChange={event => setVerifyDigest(event.target.value)}
+                  onChange={event =>
+                    setVerifyDigest(event.target.value.slice(0, MAX_HMAC_VERIFY_DIGEST_CHARS))
+                  }
                   placeholder={t('app.hash.target')}
+                  maxLength={MAX_HMAC_VERIFY_DIGEST_CHARS}
                   className="font-mono"
                 />
               </div>
@@ -541,6 +721,7 @@ const HmacHashClient = ({ family }: HmacHashClientProps) => {
                 type="button"
                 variant="primary"
                 icon={<Search className="h-4 w-4" />}
+                loading={verifyLoading}
                 onClick={handleVerify}
               >
                 {t('public.verify')}

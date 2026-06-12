@@ -12,16 +12,22 @@ import {
   Sparkles,
   Trash2
 } from 'lucide-react'
-import { useDeferredValue, useMemo, useState } from 'react'
+import { useCallback, useDeferredValue, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { InputCapNotice } from '@/components/ui/input-cap-notice'
 import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
+import {
+  createOutputPreview,
+  isOutputPreviewLimited,
+  OUTPUT_PREVIEW_CHARS
+} from '@/utils/outputPreview'
 
 const HEADER_CATEGORIES = [
   'all',
@@ -35,6 +41,8 @@ const HEADER_CATEGORIES = [
 const OUTPUT_TYPES = ['raw', 'next', 'nginx', 'curl', 'json'] as const
 const BATCH_INPUT_LIMIT = 28000
 const CUSTOM_HEADER_LIMIT = 80
+const OUTPUT_PREVIEW_ROW_LIMIT = 60
+const VISIBLE_HEADER_ROW_LIMIT = 80
 
 type HeaderCategory = (typeof HEADER_CATEGORIES)[number]
 type OutputType = (typeof OUTPUT_TYPES)[number]
@@ -420,30 +428,32 @@ const analyzeRows = (rows: HeaderRow[]) => {
     }
   }
 
-  const exportCsv = [
-    'name,value,category,known',
-    ...rows.map(row => [row.name, row.value, row.category, row.known].map(escapeCsv).join(','))
-  ].join('\n')
-
   return {
     categoryCounts,
-    exportCsv,
-    exportJson: JSON.stringify(
-      {
-        total: rows.length,
-        known,
-        custom: rows.length - known,
-        categories: categoryCounts,
-        rows
-      },
-      null,
-      2
-    ),
     known,
     total: rows.length,
     custom: rows.length - known
   }
 }
+
+const buildHeaderExportCsv = (rows: HeaderRow[]) =>
+  [
+    'name,value,category,known',
+    ...rows.map(row => [row.name, row.value, row.category, row.known].map(escapeCsv).join(','))
+  ].join('\n')
+
+const buildHeaderExportJson = (rows: HeaderRow[], analysis: ReturnType<typeof analyzeRows>) =>
+  JSON.stringify(
+    {
+      total: analysis.total,
+      known: analysis.known,
+      custom: analysis.custom,
+      categories: analysis.categoryCounts,
+      rows
+    },
+    null,
+    2
+  )
 
 const downloadText = (content: string, filename: string, type: string) => {
   const blob = new Blob([content], { type })
@@ -473,7 +483,29 @@ export default function HttpHeadersClient() {
   const parsedRows = useMemo(() => parseHeaderLines(deferredHeaderText), [deferredHeaderText])
   const analysis = useMemo(() => analyzeRows(parsedRows), [parsedRows])
   const auditItems = useMemo(() => auditHeaders(parsedRows), [parsedRows])
-  const output = useMemo(() => buildOutput(parsedRows, outputType), [outputType, parsedRows])
+  const outputPreviewRows = useMemo(
+    () => parsedRows.slice(0, OUTPUT_PREVIEW_ROW_LIMIT),
+    [parsedRows]
+  )
+  const outputPreviewSource = useMemo(
+    () => buildOutput(outputPreviewRows, outputType),
+    [outputPreviewRows, outputType]
+  )
+  const outputPreview = useMemo(
+    () => createOutputPreview(outputPreviewSource),
+    [outputPreviewSource]
+  )
+  const outputPreviewLimited = isOutputPreviewLimited(outputPreviewSource)
+  const outputPreviewRowsLimited = parsedRows.length > outputPreviewRows.length
+  const buildCurrentOutput = useCallback(
+    () => buildOutput(parsedRows, outputType),
+    [outputType, parsedRows]
+  )
+  const visibleParsedRows = useMemo(
+    () => parsedRows.slice(0, VISIBLE_HEADER_ROW_LIMIT),
+    [parsedRows]
+  )
+  const parsedRowsLimited = parsedRows.length > visibleParsedRows.length
   const filteredReference = useMemo(() => {
     const normalized = deferredQuery.trim().toLowerCase()
 
@@ -524,6 +556,18 @@ export default function HttpHeadersClient() {
     )
   }
 
+  const copyHeaderJson = useCallback(() => {
+    copy(buildHeaderExportJson(parsedRows, analysis))
+  }, [analysis, copy, parsedRows])
+
+  const downloadHeaderCsv = useCallback(() => {
+    downloadText(
+      buildHeaderExportCsv(parsedRows),
+      'daily-tools-http-headers.csv',
+      'text/csv;charset=utf-8'
+    )
+  }, [parsedRows])
+
   const addHeader = (header: HeaderInfo) => {
     const rows = parseHeaderLines(headerText)
     const exists = rows.some(row => row.name.toLowerCase() === header.name.toLowerCase())
@@ -572,7 +616,7 @@ export default function HttpHeadersClient() {
                 type="button"
                 size="sm"
                 icon={<Copy className="h-4 w-4" />}
-                onClick={() => copy(output)}
+                onClick={() => copy(buildCurrentOutput())}
               >
                 {t('public.copy')}
               </Button>
@@ -636,7 +680,7 @@ export default function HttpHeadersClient() {
                 <Input
                   id="header-search"
                   value={query}
-                  onChange={event => setQuery(event.target.value)}
+                  onChange={event => setQuery(event.target.value.slice(0, 160))}
                   placeholder="CSP, cache, cors"
                   className="pl-10"
                 />
@@ -746,6 +790,10 @@ export default function HttpHeadersClient() {
               rows={12}
               className="min-h-[250px] resize-y font-mono"
             />
+            <InputCapNotice
+              visible={headerText.length >= BATCH_INPUT_LIMIT}
+              limit={BATCH_INPUT_LIMIT}
+            />
 
             <div className="space-y-2">
               <p className="text-sm font-medium text-[var(--text-primary)]">
@@ -771,11 +819,27 @@ export default function HttpHeadersClient() {
               {t('app.converter.http_headers.output_preview')}
             </div>
             <Textarea
-              value={output}
+              value={outputPreview}
               readOnly
               rows={8}
               className="min-h-[190px] resize-none font-mono"
             />
+            {outputPreviewLimited && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('public.output_preview_limited', {
+                  total: outputPreviewSource.length.toLocaleString(),
+                  visible: OUTPUT_PREVIEW_CHARS.toLocaleString()
+                })}
+              </p>
+            )}
+            {outputPreviewRowsLimited && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('public.output_preview_rows_limited', {
+                  total: parsedRows.length.toLocaleString(),
+                  visible: outputPreviewRows.length.toLocaleString()
+                })}
+              </p>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -805,7 +869,7 @@ export default function HttpHeadersClient() {
                 size="sm"
                 variant="ghost"
                 icon={<Copy className="h-4 w-4" />}
-                onClick={() => copy(analysis.exportJson)}
+                onClick={copyHeaderJson}
               >
                 {t('app.converter.http_headers.copy_json')}
               </Button>
@@ -814,13 +878,7 @@ export default function HttpHeadersClient() {
                 size="sm"
                 variant="ghost"
                 icon={<Download className="h-4 w-4" />}
-                onClick={() =>
-                  downloadText(
-                    analysis.exportCsv,
-                    'daily-tools-http-headers.csv',
-                    'text/csv;charset=utf-8'
-                  )
-                }
+                onClick={downloadHeaderCsv}
               >
                 {t('app.converter.http_headers.download_csv')}
               </Button>
@@ -843,7 +901,7 @@ export default function HttpHeadersClient() {
 
           {parsedRows.length ? (
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {parsedRows.map(row => (
+              {visibleParsedRows.map(row => (
                 <div key={`${row.name}:${row.value}`} className="glass-input rounded-xl p-3">
                   <div className="flex items-start justify-between gap-3">
                     <p className="break-all font-mono text-sm font-semibold text-[var(--text-primary)]">
@@ -860,6 +918,14 @@ export default function HttpHeadersClient() {
                   </p>
                 </div>
               ))}
+              {parsedRowsLimited && (
+                <p className="text-xs leading-5 text-amber-600 dark:text-amber-300 md:col-span-2 xl:col-span-3">
+                  {t('public.rows_render_limited', {
+                    total: parsedRows.length,
+                    visible: visibleParsedRows.length
+                  })}
+                </p>
+              )}
             </div>
           ) : (
             <div className="glass-input rounded-xl p-6 text-center text-sm text-[var(--text-secondary)]">

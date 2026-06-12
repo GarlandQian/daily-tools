@@ -1,11 +1,12 @@
-import CryptoJS from 'crypto-js'
-
 // 定义支持的加密模式、填充方式和编码格式类型
-type AesMode = keyof typeof CryptoJS.mode
-type AesPadding = keyof typeof CryptoJS.pad
-type AesEncoding = keyof typeof CryptoJS.enc
-type AesFormat = keyof typeof CryptoJS.format
+type AesMode = 'CBC' | 'CFB' | 'CTR' | 'ECB' | 'OFB'
+type AesPadding = 'AnsiX923' | 'Iso10126' | 'Iso97971' | 'NoPadding' | 'Pkcs7' | 'ZeroPadding'
+type AesEncoding = 'Base64' | 'Hex' | 'Latin1' | 'Utf8'
+type AesFormat = 'Hex' | 'OpenSSL'
 type SymmetricAlgorithm = 'AES' | 'DES' | 'TripleDES'
+type CryptoJSModule = typeof import('crypto-js')
+type CryptoJSImport = CryptoJSModule & { default?: CryptoJSModule }
+type CryptoWordArray = ReturnType<CryptoJSModule['enc']['Utf8']['parse']>
 
 export interface AesCryptoOptions {
   iv: string // 初始化向量，部分模式必需
@@ -33,10 +34,21 @@ const IV_LENGTHS: Record<SymmetricAlgorithm, number> = {
   TripleDES: 8
 }
 
+let cryptoPromise: Promise<CryptoJSModule> | null = null
+
+const loadCryptoJS = () => {
+  cryptoPromise ??= import('crypto-js').then(module => {
+    const loaded = module as CryptoJSImport
+    return loaded.default ?? loaded
+  })
+
+  return cryptoPromise
+}
+
 function validateKeyAndIvLength(
   algorithm: SymmetricAlgorithm,
-  key: CryptoJS.lib.WordArray,
-  iv: CryptoJS.lib.WordArray | undefined,
+  key: CryptoWordArray,
+  iv: CryptoWordArray | undefined,
   mode: AesMode
 ) {
   if (!KEY_LENGTHS[algorithm].includes(key.sigBytes)) {
@@ -56,6 +68,43 @@ function validateKeyAndIvLength(
   }
 }
 
+const runSymmetricCrypto = (
+  cryptoJS: CryptoJSModule,
+  algorithm: SymmetricAlgorithm,
+  text: string,
+  secret: string,
+  options: AesCryptoOptions,
+  isEncrypt: boolean
+) => {
+  const { iv, mode, padding, format, encoding } = options
+
+  const secretKey = cryptoJS.enc[encoding].parse(secret) // 使用指定编码解析密钥
+  const ivWordArray = iv ? cryptoJS.enc.Utf8.parse(iv) : undefined
+
+  // 检查密钥和 IV 的长度
+  validateKeyAndIvLength(algorithm, secretKey, ivWordArray, mode)
+
+  const operationOptions = {
+    iv: ivWordArray,
+    mode: cryptoJS.mode[mode],
+    padding: cryptoJS.pad[padding],
+    format: cryptoJS.format[format]
+  }
+
+  if (algorithm === 'AES') {
+    if (isEncrypt) return cryptoJS.AES.encrypt(text, secretKey, operationOptions).toString()
+    return cryptoJS.AES.decrypt(text, secretKey, operationOptions).toString(cryptoJS.enc.Utf8)
+  }
+
+  if (algorithm === 'DES') {
+    if (isEncrypt) return cryptoJS.DES.encrypt(text, secretKey, operationOptions).toString()
+    return cryptoJS.DES.decrypt(text, secretKey, operationOptions).toString(cryptoJS.enc.Utf8)
+  }
+
+  if (isEncrypt) return cryptoJS.TripleDES.encrypt(text, secretKey, operationOptions).toString()
+  return cryptoJS.TripleDES.decrypt(text, secretKey, operationOptions).toString(cryptoJS.enc.Utf8)
+}
+
 /**
  * 通用 AES 加密/解密方法
  * @param text - 要加密或解密的文本。
@@ -69,32 +118,10 @@ export function aesCrypto(
   secret: string,
   options: AesCryptoOptions,
   isEncrypt: boolean = true
-): string {
-  const { iv, mode, padding, format, encoding } = options
-
-  const secretKey = CryptoJS.enc[encoding].parse(secret) // 使用指定编码解析密钥
-  const ivWordArray = iv ? CryptoJS.enc.Utf8.parse(iv) : undefined
-
-  // 检查密钥和 IV 的长度
-  validateKeyAndIvLength('AES', secretKey, ivWordArray, mode)
-
-  if (isEncrypt) {
-    const encrypted = CryptoJS.AES.encrypt(text, secretKey, {
-      iv: ivWordArray,
-      mode: CryptoJS.mode[mode],
-      padding: CryptoJS.pad[padding],
-      format: CryptoJS.format[format]
-    })
-    return encrypted.toString()
-  } else {
-    const decrypted = CryptoJS.AES.decrypt(text, secretKey, {
-      iv: ivWordArray,
-      mode: CryptoJS.mode[mode],
-      padding: CryptoJS.pad[padding],
-      format: CryptoJS.format[format]
-    })
-    return decrypted.toString(CryptoJS.enc.Utf8) // 解密结果一般是字符串，保持 Utf8 解码输出
-  }
+): Promise<string> {
+  return loadCryptoJS().then(cryptoJS =>
+    runSymmetricCrypto(cryptoJS, 'AES', text, secret, options, isEncrypt)
+  )
 }
 
 /**
@@ -110,32 +137,10 @@ export function desCrypto(
   secret: string,
   options: AesCryptoOptions,
   isEncrypt: boolean = true
-): string {
-  const { iv, mode, padding, format, encoding } = options
-
-  const secretKey = CryptoJS.enc[encoding].parse(secret) // 使用指定编码解析密钥
-  const ivWordArray = iv ? CryptoJS.enc.Utf8.parse(iv) : undefined
-
-  // 检查密钥和 IV 的长度
-  validateKeyAndIvLength('DES', secretKey, ivWordArray, mode)
-
-  if (isEncrypt) {
-    const encrypted = CryptoJS.DES.encrypt(text, secretKey, {
-      iv: ivWordArray,
-      mode: CryptoJS.mode[mode],
-      padding: CryptoJS.pad[padding],
-      format: CryptoJS.format[format]
-    })
-    return encrypted.toString()
-  } else {
-    const decrypted = CryptoJS.DES.decrypt(text, secretKey, {
-      iv: ivWordArray,
-      mode: CryptoJS.mode[mode],
-      padding: CryptoJS.pad[padding],
-      format: CryptoJS.format[format]
-    })
-    return decrypted.toString(CryptoJS.enc.Utf8) // 解密结果一般是字符串，保持 Utf8 解码输出
-  }
+): Promise<string> {
+  return loadCryptoJS().then(cryptoJS =>
+    runSymmetricCrypto(cryptoJS, 'DES', text, secret, options, isEncrypt)
+  )
 }
 
 /**
@@ -151,32 +156,10 @@ export function TripleDesCrypto(
   secret: string,
   options: AesCryptoOptions,
   isEncrypt: boolean = true
-): string {
-  const { iv, mode, padding, format, encoding } = options
-
-  const secretKey = CryptoJS.enc[encoding].parse(secret) // 使用指定编码解析密钥
-  const ivWordArray = iv ? CryptoJS.enc.Utf8.parse(iv) : undefined
-
-  // 检查密钥和 IV 的长度
-  validateKeyAndIvLength('TripleDES', secretKey, ivWordArray, mode)
-
-  if (isEncrypt) {
-    const encrypted = CryptoJS.TripleDES.encrypt(text, secretKey, {
-      iv: ivWordArray,
-      mode: CryptoJS.mode[mode],
-      padding: CryptoJS.pad[padding],
-      format: CryptoJS.format[format]
-    })
-    return encrypted.toString()
-  } else {
-    const decrypted = CryptoJS.TripleDES.decrypt(text, secretKey, {
-      iv: ivWordArray,
-      mode: CryptoJS.mode[mode],
-      padding: CryptoJS.pad[padding],
-      format: CryptoJS.format[format]
-    })
-    return decrypted.toString(CryptoJS.enc.Utf8) // 解密结果一般是字符串，保持 Utf8 解码输出
-  }
+): Promise<string> {
+  return loadCryptoJS().then(cryptoJS =>
+    runSymmetricCrypto(cryptoJS, 'TripleDES', text, secret, options, isEncrypt)
+  )
 }
 
 export const aesModes = [

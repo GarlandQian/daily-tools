@@ -14,21 +14,34 @@ import {
   Sparkles,
   Trash2
 } from 'lucide-react'
-import { useDeferredValue, useMemo, useState } from 'react'
+import { useCallback, useDeferredValue, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { InputCapNotice } from '@/components/ui/input-cap-notice'
 import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
+import {
+  createOutputPreview,
+  isOutputPreviewLimited,
+  OUTPUT_PREVIEW_CHARS
+} from '@/utils/outputPreview'
 
 const RECORD_TYPES = ['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'CAA', 'SRV', 'NS', 'SOA'] as const
 const OUTPUT_TYPES = ['zone', 'cloudflare', 'route53', 'terraform', 'json'] as const
 const WORKSPACE_LIMIT = 32000
+const DNS_DOMAIN_LIMIT = 253
+const DNS_TTL_LIMIT = 10
+const DNS_SMALL_NUMBER_LIMIT = 5
+const DRAFT_VALUE_LIMIT = 4000
 const RECORD_LIMIT = 240
+const OUTPUT_PREVIEW_RECORD_LIMIT = 80
+const VISIBLE_AUDIT_LIMIT = 16
+const VISIBLE_RECORD_LIMIT = 36
 const DEFAULT_ORIGIN = 'example.com'
 
 type RecordType = (typeof RECORD_TYPES)[number]
@@ -244,6 +257,20 @@ const isIpv4 = (value: string) => {
 
 const isIpv6 = (value: string) => /^[0-9a-f:]+$/iu.test(value.trim()) && value.includes(':')
 const escapeCsv = (value: boolean | number | string) => `"${String(value).replaceAll('"', '""')}"`
+const buildRecordsCsv = (records: ParsedRecord[]) =>
+  [
+    ['name', 'type', 'ttl', 'value', 'priority', 'valid'],
+    ...records.map(record => [
+      record.fullName,
+      record.type,
+      String(record.ttl),
+      record.value,
+      String(record.priority ?? ''),
+      String(record.valid)
+    ])
+  ]
+    .map(row => row.map(escapeCsv).join(','))
+    .join('\n')
 
 const downloadText = (content: string, filename: string, type: string) => {
   const blob = new Blob([content], { type })
@@ -594,23 +621,28 @@ export default function DnsRecordsClient() {
   )
   const audits = useMemo(() => auditRecords(parsedRecords, origin), [origin, parsedRecords])
   const score = useMemo(() => getScore(audits), [audits])
-  const output = useMemo(() => buildOutput(parsedRecords, outputType), [outputType, parsedRecords])
-  const csvOutput = useMemo(
-    () =>
-      [
-        ['name', 'type', 'ttl', 'value', 'priority', 'valid'],
-        ...parsedRecords.map(record => [
-          record.fullName,
-          record.type,
-          String(record.ttl),
-          record.value,
-          String(record.priority ?? ''),
-          String(record.valid)
-        ])
-      ]
-        .map(row => row.map(escapeCsv).join(','))
-        .join('\n'),
+  const visibleAudits = useMemo(() => audits.slice(0, VISIBLE_AUDIT_LIMIT), [audits])
+  const visibleParsedRecords = useMemo(
+    () => parsedRecords.slice(0, VISIBLE_RECORD_LIMIT),
     [parsedRecords]
+  )
+  const outputPreviewRecords = useMemo(
+    () => parsedRecords.slice(0, OUTPUT_PREVIEW_RECORD_LIMIT),
+    [parsedRecords]
+  )
+  const outputPreviewSource = useMemo(
+    () => buildOutput(outputPreviewRecords, outputType),
+    [outputPreviewRecords, outputType]
+  )
+  const outputPreview = useMemo(
+    () => createOutputPreview(outputPreviewSource),
+    [outputPreviewSource]
+  )
+  const outputPreviewLimited = isOutputPreviewLimited(outputPreviewSource)
+  const outputPreviewRowsLimited = parsedRecords.length > outputPreviewRecords.length
+  const buildCurrentOutput = useCallback(
+    () => buildOutput(parsedRecords, outputType),
+    [outputType, parsedRecords]
   )
   const metrics = useMemo(() => {
     const valid = parsedRecords.filter(record => record.valid)
@@ -743,7 +775,7 @@ export default function DnsRecordsClient() {
                 <Input
                   id="dns-origin"
                   value={origin}
-                  onChange={event => setOrigin(event.target.value)}
+                  onChange={event => setOrigin(event.target.value.slice(0, DNS_DOMAIN_LIMIT))}
                 />
               </div>
               <div className="space-y-2">
@@ -768,7 +800,10 @@ export default function DnsRecordsClient() {
                   id="dns-name"
                   value={draft.name}
                   onChange={event =>
-                    setDraft(current => ({ ...current, name: event.target.value }))
+                    setDraft(current => ({
+                      ...current,
+                      name: event.target.value.slice(0, DNS_DOMAIN_LIMIT)
+                    }))
                   }
                 />
               </div>
@@ -778,7 +813,12 @@ export default function DnsRecordsClient() {
                   id="dns-ttl"
                   inputMode="numeric"
                   value={draft.ttl}
-                  onChange={event => setDraft(current => ({ ...current, ttl: event.target.value }))}
+                  onChange={event =>
+                    setDraft(current => ({
+                      ...current,
+                      ttl: event.target.value.slice(0, DNS_TTL_LIMIT)
+                    }))
+                  }
                 />
               </div>
               <div className="space-y-2">
@@ -788,7 +828,10 @@ export default function DnsRecordsClient() {
                   inputMode="numeric"
                   value={draft.priority}
                   onChange={event =>
-                    setDraft(current => ({ ...current, priority: event.target.value }))
+                    setDraft(current => ({
+                      ...current,
+                      priority: event.target.value.slice(0, DNS_SMALL_NUMBER_LIMIT)
+                    }))
                   }
                 />
               </div>
@@ -800,7 +843,10 @@ export default function DnsRecordsClient() {
                     inputMode="numeric"
                     value={draft.weight}
                     onChange={event =>
-                      setDraft(current => ({ ...current, weight: event.target.value }))
+                      setDraft(current => ({
+                        ...current,
+                        weight: event.target.value.slice(0, DNS_SMALL_NUMBER_LIMIT)
+                      }))
                     }
                   />
                 </div>
@@ -811,7 +857,10 @@ export default function DnsRecordsClient() {
                     inputMode="numeric"
                     value={draft.port}
                     onChange={event =>
-                      setDraft(current => ({ ...current, port: event.target.value }))
+                      setDraft(current => ({
+                        ...current,
+                        port: event.target.value.slice(0, DNS_SMALL_NUMBER_LIMIT)
+                      }))
                     }
                   />
                 </div>
@@ -822,8 +871,17 @@ export default function DnsRecordsClient() {
               <Textarea
                 id="dns-value"
                 value={draft.value}
-                onChange={event => setDraft(current => ({ ...current, value: event.target.value }))}
+                onChange={event =>
+                  setDraft(current => ({
+                    ...current,
+                    value: event.target.value.slice(0, DRAFT_VALUE_LIMIT)
+                  }))
+                }
                 className="min-h-[110px] font-mono"
+              />
+              <InputCapNotice
+                visible={draft.value.length >= DRAFT_VALUE_LIMIT}
+                limit={DRAFT_VALUE_LIMIT}
               />
             </div>
             <div className="glass-input rounded-xl p-3">
@@ -859,15 +917,18 @@ export default function DnsRecordsClient() {
               placeholder={t('app.converter.dns_records.workspace_placeholder')}
               className="min-h-[360px] font-mono"
             />
+            <InputCapNotice visible={workspace.length >= WORKSPACE_LIMIT} limit={WORKSPACE_LIMIT} />
             <div className="flex flex-wrap gap-2">
-              <Button type="button" variant="outline" onClick={() => copy(output)}>
+              <Button type="button" variant="outline" onClick={() => copy(buildCurrentOutput())}>
                 <Copy className="h-4 w-4" />
                 {t('app.converter.dns_records.copy_output')}
               </Button>
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => downloadText(output, 'dns-records.txt', 'text/plain;charset=utf-8')}
+                onClick={() =>
+                  downloadText(buildCurrentOutput(), 'dns-records.txt', 'text/plain;charset=utf-8')
+                }
               >
                 <Download className="h-4 w-4" />
                 {t('app.converter.dns_records.download_output')}
@@ -890,23 +951,31 @@ export default function DnsRecordsClient() {
             </div>
           </CardHeader>
           <CardContent className="space-y-2">
-            {audits.slice(0, 16).map((item, index) => (
+            {visibleAudits.map((item, index) => (
               <div
                 key={`${item.key}:${item.subject}:${index}`}
                 className={`rounded-xl border px-3 py-2 text-xs ${levelClass(item.level)}`}
               >
                 <div className="flex items-start justify-between gap-3">
-                  <span>
+                  <span className="min-w-0 break-all leading-5">
                     <span className="font-semibold">{item.subject}</span>
-                    <span className="mx-2">/</span>
+                    <span className="mx-2 inline-block">/</span>
                     {t(`app.converter.dns_records.audit.${item.key}`)}
                   </span>
-                  <span className="font-medium">
+                  <span className="shrink-0 font-medium">
                     {t(`app.converter.dns_records.level.${item.level}`)}
                   </span>
                 </div>
               </div>
             ))}
+            {audits.length > visibleAudits.length && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('public.rows_render_limited', {
+                  total: audits.length.toLocaleString(),
+                  visible: visibleAudits.length.toLocaleString()
+                })}
+              </p>
+            )}
           </CardContent>
         </Card>
 
@@ -936,7 +1005,23 @@ export default function DnsRecordsClient() {
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Textarea readOnly value={output} className="min-h-[260px] font-mono" />
+            <Textarea readOnly value={outputPreview} className="min-h-[260px] font-mono" />
+            {outputPreviewLimited && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('public.output_preview_limited', {
+                  total: outputPreviewSource.length.toLocaleString(),
+                  visible: OUTPUT_PREVIEW_CHARS.toLocaleString()
+                })}
+              </p>
+            )}
+            {outputPreviewRowsLimited && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('public.output_preview_rows_limited', {
+                  total: parsedRecords.length.toLocaleString(),
+                  visible: outputPreviewRecords.length.toLocaleString()
+                })}
+              </p>
+            )}
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
@@ -949,7 +1034,13 @@ export default function DnsRecordsClient() {
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => downloadText(csvOutput, 'dns-records.csv', 'text/csv;charset=utf-8')}
+                onClick={() =>
+                  downloadText(
+                    buildRecordsCsv(parsedRecords),
+                    'dns-records.csv',
+                    'text/csv;charset=utf-8'
+                  )
+                }
               >
                 <Download className="h-4 w-4" />
                 {t('app.converter.dns_records.download_csv')}
@@ -970,7 +1061,7 @@ export default function DnsRecordsClient() {
           <CardContent>
             {parsedRecords.length ? (
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {parsedRecords.slice(0, 36).map((record, index) => (
+                {visibleParsedRecords.map((record, index) => (
                   <div key={`${record.line}:${index}`} className="glass-input rounded-xl p-3">
                     <div className="flex items-start justify-between gap-3">
                       <p className="break-all font-mono text-sm font-semibold text-[var(--text-primary)]">
@@ -991,6 +1082,14 @@ export default function DnsRecordsClient() {
                     </p>
                   </div>
                 ))}
+                {parsedRecords.length > visibleParsedRecords.length && (
+                  <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)] md:col-span-2 xl:col-span-3">
+                    {t('public.rows_render_limited', {
+                      total: parsedRecords.length.toLocaleString(),
+                      visible: visibleParsedRecords.length.toLocaleString()
+                    })}
+                  </p>
+                )}
               </div>
             ) : (
               <div className="glass-input rounded-xl p-6 text-center text-sm text-[var(--text-secondary)]">
@@ -1014,7 +1113,7 @@ export default function DnsRecordsClient() {
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-tertiary)]" />
               <Input
                 value={referenceQuery}
-                onChange={event => setReferenceQuery(event.target.value)}
+                onChange={event => setReferenceQuery(event.target.value.slice(0, 160))}
                 placeholder={t('app.converter.dns_records.reference_search')}
                 className="pl-10"
               />

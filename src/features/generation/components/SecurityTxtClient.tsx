@@ -13,20 +13,31 @@ import {
   Sparkles,
   Trash2
 } from 'lucide-react'
-import { useDeferredValue, useMemo, useState } from 'react'
+import { useCallback, useDeferredValue, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { InputCapNotice } from '@/components/ui/input-cap-notice'
 import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
+import {
+  createOutputPreview,
+  isOutputPreviewLimited,
+  OUTPUT_PREVIEW_CHARS
+} from '@/utils/outputPreview'
 
 const OUTPUT_TYPES = ['txt', 'next', 'nginx', 'apache', 'json'] as const
 const SECURITY_INPUT_LIMIT = 28000
+const SECURITY_FIELD_LIMIT = 420
+const SECURITY_CONTACT_LIMIT = 4000
+const SECURITY_LANGUAGE_LIMIT = 160
 const SECURITY_ROW_LIMIT = 160
+const VISIBLE_FINDING_LIMIT = 10
+const VISIBLE_ROW_LIMIT = 42
 const FIELD_NAMES = [
   'Contact',
   'Expires',
@@ -433,12 +444,34 @@ export default function SecurityTxtClient() {
   const [draft, setDraft] = useState<SecurityTxtDraft>(DEFAULT_DRAFT)
   const [outputType, setOutputType] = useState<OutputType>('txt')
   const [workspace, setWorkspace] = useState(PRESETS[0].workspace)
+  const [isWorkspaceCapped, setIsWorkspaceCapped] = useState(false)
   const deferredWorkspace = useDeferredValue(workspace)
 
-  const output = useMemo(() => buildOutput(draft, outputType), [draft, outputType])
+  const outputPreviewSource = useMemo(() => buildOutput(draft, outputType), [draft, outputType])
+  const outputPreview = useMemo(
+    () => createOutputPreview(outputPreviewSource),
+    [outputPreviewSource]
+  )
+  const outputPreviewLimited = isOutputPreviewLimited(outputPreviewSource)
+  const buildCurrentOutput = useCallback(() => buildOutput(draft, outputType), [draft, outputType])
   const generatedText = useMemo(() => buildSecurityTxt(draft), [draft])
   const parsedRows = useMemo(() => parseSecurityTxt(deferredWorkspace), [deferredWorkspace])
-  const findings = useMemo(() => auditSecurityTxt(draft, parsedRows), [draft, parsedRows])
+  const findings = useMemo(() => {
+    const next = auditSecurityTxt(draft, parsedRows)
+
+    if (isWorkspaceCapped) {
+      return [
+        ...next,
+        { key: 'workspace_capped', level: 'warn' as const, subject: String(SECURITY_INPUT_LIMIT) }
+      ]
+    }
+
+    return next
+  }, [draft, isWorkspaceCapped, parsedRows])
+  const visibleFindings = useMemo(() => findings.slice(0, VISIBLE_FINDING_LIMIT), [findings])
+  const findingsLimited = findings.length > visibleFindings.length
+  const visibleParsedRows = useMemo(() => parsedRows.slice(0, VISIBLE_ROW_LIMIT), [parsedRows])
+  const parsedRowsLimited = parsedRows.length > visibleParsedRows.length
   const metrics = useMemo(() => {
     const contacts = getContactList(draft.contactLines).length
     const risks = findings.filter(finding => finding.level !== 'good').length
@@ -455,7 +488,7 @@ export default function SecurityTxtClient() {
       risks: String(risks)
     }
   }, [draft.contactLines, draft.expiresDate, findings, generatedText, parsedRows, t])
-  const exportJson = useMemo(
+  const buildCurrentJson = useCallback(
     () =>
       JSON.stringify(
         {
@@ -469,7 +502,7 @@ export default function SecurityTxtClient() {
       ),
     [draft.siteUrl, findings, generatedText, parsedRows]
   )
-  const exportCsv = useMemo(
+  const buildCurrentCsv = useCallback(
     () =>
       [
         ['field', 'value', 'known', 'valid', 'raw'],
@@ -490,12 +523,27 @@ export default function SecurityTxtClient() {
     key: Key,
     value: SecurityTxtDraft[Key]
   ) => {
-    setDraft(current => ({ ...current, [key]: value }))
+    const stringLimit =
+      key === 'contactLines'
+        ? SECURITY_CONTACT_LIMIT
+        : key === 'preferredLanguages'
+          ? SECURITY_LANGUAGE_LIMIT
+          : SECURITY_FIELD_LIMIT
+    const nextValue =
+      typeof value === 'string' ? (value.slice(0, stringLimit) as SecurityTxtDraft[Key]) : value
+    setDraft(current => ({ ...current, [key]: nextValue }))
   }
+
+  const updateWorkspace = useCallback((value: string) => {
+    const capped = value.length > SECURITY_INPUT_LIMIT
+
+    setIsWorkspaceCapped(capped)
+    setWorkspace(capped ? value.slice(0, SECURITY_INPUT_LIMIT) : value)
+  }, [])
 
   const applyPreset = (preset: Preset) => {
     setDraft(preset.draft)
-    setWorkspace(preset.workspace)
+    updateWorkspace(preset.workspace)
     setOutputType('txt')
   }
 
@@ -617,8 +665,12 @@ export default function SecurityTxtClient() {
                 <Textarea
                   id="security-contacts"
                   value={draft.contactLines}
-                  onChange={event => updateDraft('contactLines', event.target.value.slice(0, 4000))}
+                  onChange={event => updateDraft('contactLines', event.target.value)}
                   className="min-h-[110px] font-mono"
+                />
+                <InputCapNotice
+                  visible={draft.contactLines.length >= SECURITY_CONTACT_LIMIT}
+                  limit={SECURITY_CONTACT_LIMIT}
                 />
               </div>
               <SecurityInput
@@ -652,7 +704,12 @@ export default function SecurityTxtClient() {
                 <Input
                   id="security-languages"
                   value={draft.preferredLanguages}
-                  onChange={event => updateDraft('preferredLanguages', event.target.value)}
+                  onChange={event =>
+                    updateDraft(
+                      'preferredLanguages',
+                      event.target.value.slice(0, SECURITY_LANGUAGE_LIMIT)
+                    )
+                  }
                   placeholder="en, zh"
                 />
               </div>
@@ -699,13 +756,25 @@ export default function SecurityTxtClient() {
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Textarea readOnly value={output} className="min-h-[260px] font-mono" />
+            <Textarea readOnly value={outputPreview} className="min-h-[260px] font-mono" />
+            {outputPreviewLimited && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('public.output_preview_limited', {
+                  total: outputPreviewSource.length.toLocaleString(),
+                  visible: OUTPUT_PREVIEW_CHARS.toLocaleString()
+                })}
+              </p>
+            )}
             <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-              <Button type="button" onClick={() => copy(output)}>
+              <Button type="button" onClick={() => copy(buildCurrentOutput())}>
                 <Copy className="h-4 w-4" />
                 {t('public.copy')}
               </Button>
-              <Button type="button" variant="outline" onClick={() => setWorkspace(generatedText)}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => updateWorkspace(generatedText)}
+              >
                 <Search className="h-4 w-4" />
                 {t('app.generation.security_txt.use_output')}
               </Button>
@@ -716,17 +785,25 @@ export default function SecurityTxtClient() {
                 {t('app.generation.security_txt.audit')}
               </h3>
               <div className="space-y-2">
-                {findings.slice(0, 10).map((finding, index) => (
+                {visibleFindings.map((finding, index) => (
                   <div
                     key={`${finding.key}:${finding.subject}:${index}`}
-                    className={`rounded-xl border px-3 py-2 text-xs ${getFindingClass(finding.level)}`}
+                    className={`min-w-0 break-all rounded-xl border px-3 py-2 text-xs leading-5 ${getFindingClass(finding.level)}`}
                   >
                     <span className="font-semibold">{finding.subject}</span>
-                    <span className="mx-2">/</span>
+                    <span className="mx-2 inline-block">/</span>
                     {t(`app.generation.security_txt.audit.${finding.key}`)}
                   </div>
                 ))}
               </div>
+              {findingsLimited && (
+                <p className="text-xs leading-5 text-amber-600 dark:text-amber-300">
+                  {t('public.rows_render_limited', {
+                    total: findings.length,
+                    visible: visibleFindings.length
+                  })}
+                </p>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -742,7 +819,7 @@ export default function SecurityTxtClient() {
               <CardDescription>{t('app.generation.security_txt.workspace_hint')}</CardDescription>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button type="button" variant="outline" onClick={() => copy(exportJson)}>
+              <Button type="button" variant="outline" onClick={() => copy(buildCurrentJson())}>
                 <Copy className="h-4 w-4" />
                 {t('app.generation.security_txt.copy_json')}
               </Button>
@@ -750,7 +827,7 @@ export default function SecurityTxtClient() {
                 type="button"
                 variant="outline"
                 onClick={() =>
-                  downloadText(exportCsv, 'security-txt.csv', 'text/csv;charset=utf-8')
+                  downloadText(buildCurrentCsv(), 'security-txt.csv', 'text/csv;charset=utf-8')
                 }
               >
                 <Download className="h-4 w-4" />
@@ -766,7 +843,7 @@ export default function SecurityTxtClient() {
                 <Download className="h-4 w-4" />
                 {t('app.generation.security_txt.download_txt')}
               </Button>
-              <Button type="button" variant="outline" onClick={() => setWorkspace('')}>
+              <Button type="button" variant="outline" onClick={() => updateWorkspace('')}>
                 <Trash2 className="h-4 w-4" />
                 {t('public.clear')}
               </Button>
@@ -776,10 +853,11 @@ export default function SecurityTxtClient() {
         <CardContent className="space-y-5">
           <Textarea
             value={workspace}
-            onChange={event => setWorkspace(event.target.value.slice(0, SECURITY_INPUT_LIMIT))}
+            onChange={event => updateWorkspace(event.target.value)}
             placeholder={t('app.generation.security_txt.workspace_placeholder')}
             className="min-h-[180px] font-mono"
           />
+          <InputCapNotice visible={isWorkspaceCapped} limit={SECURITY_INPUT_LIMIT} />
 
           <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
             <div className="glass-input rounded-xl p-3">
@@ -812,44 +890,54 @@ export default function SecurityTxtClient() {
           </div>
 
           {parsedRows.length ? (
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {parsedRows.map((row, index) => (
-                <div
-                  key={`${row.field}:${row.value}:${index}`}
-                  className="glass-input rounded-xl p-3"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="break-all font-mono text-sm font-semibold text-[var(--text-primary)]">
-                        {row.field}
-                      </p>
-                      <p className="mt-1 text-xs text-[var(--text-secondary)]">
-                        {row.known
-                          ? t('app.generation.security_txt.known')
-                          : t('app.generation.security_txt.unknown')}
-                      </p>
+            <>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {visibleParsedRows.map((row, index) => (
+                  <div
+                    key={`${row.field}:${row.value}:${index}`}
+                    className="glass-input rounded-xl p-3"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="break-all font-mono text-sm font-semibold text-[var(--text-primary)]">
+                          {row.field}
+                        </p>
+                        <p className="mt-1 text-xs text-[var(--text-secondary)]">
+                          {row.known
+                            ? t('app.generation.security_txt.known')
+                            : t('app.generation.security_txt.unknown')}
+                        </p>
+                      </div>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-xs ${
+                          row.valid
+                            ? 'bg-emerald-500/10 text-emerald-700'
+                            : 'bg-red-500/10 text-red-600'
+                        }`}
+                      >
+                        {row.valid
+                          ? t('app.generation.security_txt.valid')
+                          : t('app.generation.security_txt.invalid')}
+                      </span>
                     </div>
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-xs ${
-                        row.valid
-                          ? 'bg-emerald-500/10 text-emerald-700'
-                          : 'bg-red-500/10 text-red-600'
-                      }`}
-                    >
-                      {row.valid
-                        ? t('app.generation.security_txt.valid')
-                        : t('app.generation.security_txt.invalid')}
-                    </span>
+                    <p className="mt-3 break-all font-mono text-sm text-[var(--text-primary)]">
+                      {row.value}
+                    </p>
+                    <p className="mt-3 line-clamp-3 break-all font-mono text-xs text-[var(--text-tertiary)]">
+                      {row.raw}
+                    </p>
                   </div>
-                  <p className="mt-3 break-all font-mono text-sm text-[var(--text-primary)]">
-                    {row.value}
-                  </p>
-                  <p className="mt-3 line-clamp-3 break-all font-mono text-xs text-[var(--text-tertiary)]">
-                    {row.raw}
-                  </p>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+              {parsedRowsLimited && (
+                <p className="text-xs leading-5 text-amber-600 dark:text-amber-300">
+                  {t('public.rows_render_limited', {
+                    total: parsedRows.length,
+                    visible: visibleParsedRows.length
+                  })}
+                </p>
+              )}
+            </>
           ) : (
             <div className="glass-input rounded-xl p-6 text-center text-sm text-[var(--text-secondary)]">
               {t('app.generation.security_txt.empty')}
@@ -875,7 +963,11 @@ function SecurityInput({
   return (
     <div className="space-y-3">
       <Label htmlFor={id}>{label}</Label>
-      <Input id={id} value={value} onChange={event => onChange(event.target.value)} />
+      <Input
+        id={id}
+        value={value}
+        onChange={event => onChange(event.target.value.slice(0, SECURITY_FIELD_LIMIT))}
+      />
     </div>
   )
 }

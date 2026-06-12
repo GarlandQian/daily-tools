@@ -39,6 +39,24 @@ interface JsonPathItem {
   value: string
 }
 
+interface JsonAnalysis {
+  arrays: number
+  enumCandidates: Array<{ key: string; values: string[] }>
+  heterogeneousArrays: string[]
+  maxDepth: number
+  nullable: number
+  objects: number
+  paths: JsonPathItem[]
+  properties: number
+  truncatedDepth: boolean
+  truncatedNodes: boolean
+}
+
+interface GeneratedTypes {
+  limited: boolean
+  output: string
+}
+
 const SAMPLE_JSON = JSON.stringify(
   {
     id: 'tool_123',
@@ -120,6 +138,14 @@ const JSON_SAMPLES: Record<JsonSample, { input: string; rootName: string }> = {
 const MAX_JSON2TS_INPUT_CHARS = 200000
 const MAX_JSON2TS_PATH_ITEMS = 80
 const MAX_JSON2TS_ENUM_VALUES = 8
+const MAX_JSON2TS_STRUCTURE_NODES = 5000
+const MAX_JSON2TS_ANALYSIS_DEPTH = 80
+const MAX_JSON2TS_TYPE_NODES = 3000
+const MAX_JSON2TS_TYPE_DEPTH = 60
+const MAX_JSON2TS_ARRAY_ITEMS = 200
+const MAX_JSON2TS_OBJECT_KEYS = 200
+const MAX_JSON2TS_OUTPUT_PREVIEW_CHARS = 40000
+const MAX_JSON2TS_ROOT_NAME_CHARS = 80
 const jsonToTsNumberFormatter = new Intl.NumberFormat()
 
 const isRecord = (value: JsonValue): value is { [key: string]: JsonValue } =>
@@ -171,17 +197,42 @@ const formatJsonPathValue = (value: JsonValue) => {
   return `{${formatJsonToTsNumber(Object.keys(value).length)}}`
 }
 
-const analyzeJson = (value: JsonValue) => {
+const analyzeJson = (value: JsonValue): JsonAnalysis => {
   let objects = 0
   let arrays = 0
   let properties = 0
   let maxDepth = 0
   let nullable = 0
+  let visitedNodes = 0
+  let truncatedDepth = false
+  let truncatedNodes = false
   const paths: JsonPathItem[] = []
   const enumCandidates = new Map<string, Set<string>>()
   const heterogeneousArrays = new Set<string>()
+  const stack: Array<{ depth: number; node: JsonValue; path: string }> = [
+    { depth: 1, node: value, path: '$' }
+  ]
 
-  const visit = (node: JsonValue, depth: number, path = '$') => {
+  const pushChild = (node: JsonValue, depth: number, path: string) => {
+    if (visitedNodes + stack.length >= MAX_JSON2TS_STRUCTURE_NODES) {
+      truncatedNodes = true
+      return
+    }
+
+    stack.push({ depth, node, path })
+  }
+
+  while (stack.length) {
+    const current = stack.pop()
+    if (!current) continue
+
+    visitedNodes += 1
+    if (visitedNodes > MAX_JSON2TS_STRUCTURE_NODES) {
+      truncatedNodes = true
+      break
+    }
+
+    const { depth, node, path } = current
     maxDepth = Math.max(maxDepth, depth)
 
     if (paths.length < MAX_JSON2TS_PATH_ITEMS) {
@@ -192,30 +243,52 @@ const analyzeJson = (value: JsonValue) => {
       })
     }
 
+    if (depth >= MAX_JSON2TS_ANALYSIS_DEPTH) {
+      if (
+        (Array.isArray(node) && node.length > 0) ||
+        (isRecord(node) && Object.keys(node).length > 0)
+      ) {
+        truncatedDepth = true
+      }
+      continue
+    }
+
     if (Array.isArray(node)) {
       arrays += 1
-      const itemTypes = new Set(node.map(getJsonValueType))
+      const itemLimit = Math.min(node.length, MAX_JSON2TS_ARRAY_ITEMS)
+      const itemTypes = new Set<string>()
+
+      if (node.length > itemLimit) truncatedNodes = true
+      for (let index = itemLimit - 1; index >= 0; index -= 1) {
+        const item = node[index]
+        itemTypes.add(getJsonValueType(item))
+        pushChild(item, depth + 1, `${path}[${index}]`)
+      }
+
       if (itemTypes.size > 1) heterogeneousArrays.add(path)
-      node.forEach((item, index) => visit(item, depth + 1, `${path}[${index}]`))
-      return
+      continue
     }
 
     if (isRecord(node)) {
       objects += 1
-      properties += Object.keys(node).length
-      Object.entries(node).forEach(([key, item]) => {
+      const entries = Object.entries(node)
+      const entryLimit = Math.min(entries.length, MAX_JSON2TS_OBJECT_KEYS)
+
+      properties += entries.length
+      if (entries.length > entryLimit) truncatedNodes = true
+
+      for (let index = entryLimit - 1; index >= 0; index -= 1) {
+        const [key, item] = entries[index]
         if (item === null) nullable += 1
         if (typeof item === 'string') {
           const values = enumCandidates.get(key) ?? new Set<string>()
           if (values.size < MAX_JSON2TS_ENUM_VALUES) values.add(item)
           enumCandidates.set(key, values)
         }
-        visit(item, depth + 1, `${path}.${key}`)
-      })
+        pushChild(item, depth + 1, `${path}.${key}`)
+      }
     }
   }
-
-  visit(value, 1)
 
   return {
     arrays,
@@ -228,28 +301,45 @@ const analyzeJson = (value: JsonValue) => {
     nullable,
     objects,
     paths,
-    properties
+    properties,
+    truncatedDepth,
+    truncatedNodes
   }
 }
 
-const generateTypes = (value: JsonValue, rootName: string, options: GenerateOptions) => {
+const generateTypes = (
+  value: JsonValue,
+  rootName: string,
+  options: GenerateOptions
+): GeneratedTypes => {
   const definitions: string[] = []
   const usedNames = new Map<string, number>()
   const optionalKeysByNode = new WeakMap<object, Set<string>>()
   const unionValuesByNode = new WeakMap<object, Map<string, JsonValue[]>>()
+  let visitedNodes = 0
+  let limited = false
 
   const mergeObjectArray = (items: { [key: string]: JsonValue }[]) => {
-    const keys = new Set(items.flatMap(item => Object.keys(item)))
+    const sampledItems = items.slice(0, MAX_JSON2TS_ARRAY_ITEMS)
+    const keys = new Set<string>()
     const merged: { [key: string]: JsonValue } = {}
     const optionalKeys = new Set<string>()
     const unionValues = new Map<string, JsonValue[]>()
 
+    if (items.length > sampledItems.length) limited = true
+
+    sampledItems.forEach(item => {
+      const itemKeys = Object.keys(item)
+      if (itemKeys.length > MAX_JSON2TS_OBJECT_KEYS) limited = true
+      itemKeys.slice(0, MAX_JSON2TS_OBJECT_KEYS).forEach(key => keys.add(key))
+    })
+
     keys.forEach(key => {
-      const values = items
+      const values = sampledItems
         .map(item => item[key])
         .filter((item): item is JsonValue => item !== undefined)
 
-      if (values.length < items.length) optionalKeys.add(key)
+      if (values.length < sampledItems.length) optionalKeys.add(key)
       unionValues.set(key, values)
       merged[key] = values[0] ?? null
     })
@@ -266,7 +356,13 @@ const generateTypes = (value: JsonValue, rootName: string, options: GenerateOpti
     return current === 0 ? baseName : `${baseName}${current + 1}`
   }
 
-  const infer = (node: JsonValue, nameHint: string): string => {
+  const infer = (node: JsonValue, nameHint: string, depth = 1): string => {
+    visitedNodes += 1
+    if (visitedNodes > MAX_JSON2TS_TYPE_NODES || depth > MAX_JSON2TS_TYPE_DEPTH) {
+      limited = true
+      return 'unknown'
+    }
+
     if (node === null) return 'null'
     if (typeof node === 'string') return 'string'
     if (typeof node === 'number') return 'number'
@@ -275,28 +371,36 @@ const generateTypes = (value: JsonValue, rootName: string, options: GenerateOpti
     if (Array.isArray(node)) {
       if (!node.length) return 'unknown[]'
       const itemName = toSingularName(nameHint)
-      const objectItems = node.filter(isRecord)
+      const sampledItems = node.slice(0, MAX_JSON2TS_ARRAY_ITEMS)
+      const objectItems = sampledItems.filter(isRecord)
+      if (node.length > sampledItems.length) limited = true
       const itemTypes =
-        objectItems.length === node.length && objectItems.length > 1
-          ? [infer(mergeObjectArray(objectItems), itemName)]
-          : node.map(item => infer(item, itemName))
+        objectItems.length === sampledItems.length && objectItems.length > 1
+          ? [infer(mergeObjectArray(objectItems), itemName, depth + 1)]
+          : sampledItems.map(item => infer(item, itemName, depth + 1))
       return `Array<${unionTypes(itemTypes)}>`
     }
 
     const interfaceName = reserveName(nameHint)
     const optionalKeys = optionalKeysByNode.get(node)
     const unionValues = unionValuesByNode.get(node)
-    const lines = Object.entries(node).map(([key, child]) => {
+    const entries = Object.entries(node)
+    const visibleEntries = entries.slice(0, MAX_JSON2TS_OBJECT_KEYS)
+    if (entries.length > visibleEntries.length) limited = true
+
+    const lines = visibleEntries.map(([key, child]) => {
       const nullable = child === null
       const missingInMergedArray = options.optionalMissing && optionalKeys?.has(key)
       const optional = (options.nullableAsOptional && nullable) || missingInMergedArray ? '?' : ''
-      const typeValues = unionValues?.get(key)
+      const allTypeValues = unionValues?.get(key)
+      const typeValues = allTypeValues?.slice(0, MAX_JSON2TS_ARRAY_ITEMS)
+      if (allTypeValues && allTypeValues.length > (typeValues?.length ?? 0)) limited = true
       const type =
         options.nullableAsOptional && nullable
           ? 'unknown'
           : typeValues
-            ? unionTypes(typeValues.map(item => infer(item, key)))
-            : infer(child, key)
+            ? unionTypes(typeValues.map(item => infer(item, key, depth + 1)))
+            : infer(child, key, depth + 1)
       const readonly = options.readonlyProps ? 'readonly ' : ''
 
       return `  ${readonly}${formatPropertyName(key)}${optional}: ${type}`
@@ -318,7 +422,7 @@ const generateTypes = (value: JsonValue, rootName: string, options: GenerateOpti
     output.push(`export type ${sanitizedRootName} = ${rootType}`)
   }
 
-  return output.join('\n\n')
+  return { limited, output: output.join('\n\n') }
 }
 
 const parseJson = (input: string): { data: JsonValue | null; error: string | null } => {
@@ -345,13 +449,20 @@ const JsonToTsClient = () => {
   const { t } = useTranslation()
   const { copy } = useCopy()
   const [input, setInput] = useState(SAMPLE_JSON)
+  const [isInputCapped, setIsInputCapped] = useState(false)
   const [rootName, setRootName] = useState('Root')
   const [readonlyProps, setReadonlyProps] = useState(false)
   const [nullableAsOptional, setNullableAsOptional] = useState(false)
   const [optionalMissing, setOptionalMissing] = useState(true)
   const [outputStyle, setOutputStyle] = useState<OutputStyle>('interface')
   const deferredInput = useDeferredValue(input)
-  const isInputTooLarge = deferredInput.length > MAX_JSON2TS_INPUT_CHARS
+  const isInputTooLarge = isInputCapped || deferredInput.length > MAX_JSON2TS_INPUT_CHARS
+
+  const updateInput = (value: string) => {
+    const capped = value.length > MAX_JSON2TS_INPUT_CHARS
+    setIsInputCapped(capped)
+    setInput(capped ? value.slice(0, MAX_JSON2TS_INPUT_CHARS) : value)
+  }
 
   const parsed = useMemo(
     () => (isInputTooLarge ? { data: null, error: null } : parseJson(deferredInput)),
@@ -361,8 +472,8 @@ const JsonToTsClient = () => {
     () => (parsed.data === null ? null : analyzeJson(parsed.data)),
     [parsed.data]
   )
-  const output = useMemo(() => {
-    if (parsed.data === null) return ''
+  const output = useMemo<GeneratedTypes | null>(() => {
+    if (parsed.data === null) return null
     return generateTypes(parsed.data, rootName, {
       nullableAsOptional,
       optionalMissing,
@@ -370,9 +481,22 @@ const JsonToTsClient = () => {
       readonlyProps
     })
   }, [nullableAsOptional, optionalMissing, outputStyle, parsed.data, readonlyProps, rootName])
+  const outputText = output ? output.output : ''
+  const outputPreview = useMemo(
+    () =>
+      outputText.length > MAX_JSON2TS_OUTPUT_PREVIEW_CHARS
+        ? `${outputText.slice(0, MAX_JSON2TS_OUTPUT_PREVIEW_CHARS)}\n\n/* ... */`
+        : outputText,
+    [outputText]
+  )
+  const isOutputPreviewLimited = outputText.length > MAX_JSON2TS_OUTPUT_PREVIEW_CHARS
+  const isStructureLimited =
+    Boolean(output?.limited) ||
+    Boolean(analysis?.truncatedDepth) ||
+    Boolean(analysis?.truncatedNodes)
 
   const handleReset = () => {
-    setInput(SAMPLE_JSON)
+    updateInput(SAMPLE_JSON)
     setRootName('Root')
     setReadonlyProps(false)
     setNullableAsOptional(false)
@@ -381,13 +505,13 @@ const JsonToTsClient = () => {
   }
 
   const handleSample = (sample: JsonSample) => {
-    setInput(JSON_SAMPLES[sample].input)
+    updateInput(JSON_SAMPLES[sample].input)
     setRootName(JSON_SAMPLES[sample].rootName)
   }
 
   const handleDownload = () => {
-    if (!output) return
-    downloadText(output, 'daily-tools-types.ts', 'text/typescript;charset=utf-8')
+    if (!outputText) return
+    downloadText(outputText, 'daily-tools-types.ts', 'text/typescript;charset=utf-8')
   }
 
   return (
@@ -405,8 +529,8 @@ const JsonToTsClient = () => {
             <div className="flex flex-wrap gap-3">
               <Button
                 icon={<Copy className="h-4 w-4" />}
-                onClick={() => copy(output)}
-                disabled={!output}
+                onClick={() => copy(outputText)}
+                disabled={!outputText}
               >
                 {t('public.copy')}
               </Button>
@@ -414,7 +538,7 @@ const JsonToTsClient = () => {
                 variant="ghost"
                 icon={<Download className="h-4 w-4" />}
                 onClick={handleDownload}
-                disabled={!output}
+                disabled={!outputText}
               >
                 {t('app.format.json2ts.download')}
               </Button>
@@ -450,7 +574,10 @@ const JsonToTsClient = () => {
               <Input
                 id="json2ts-root"
                 value={rootName}
-                onChange={event => setRootName(event.target.value)}
+                onChange={event =>
+                  setRootName(event.target.value.slice(0, MAX_JSON2TS_ROOT_NAME_CHARS))
+                }
+                maxLength={MAX_JSON2TS_ROOT_NAME_CHARS}
                 className="font-mono"
               />
             </div>
@@ -521,6 +648,15 @@ const JsonToTsClient = () => {
               })}
             </p>
           )}
+
+          {isStructureLimited && (
+            <p className="rounded-lg border border-[var(--warning)] bg-[var(--warning-subtle)] px-3 py-2 text-sm text-[var(--warning)]">
+              {t('app.format.json2ts.warning.structure_limited', {
+                depth: formatJsonToTsNumber(MAX_JSON2TS_TYPE_DEPTH),
+                nodes: formatJsonToTsNumber(MAX_JSON2TS_TYPE_NODES)
+              })}
+            </p>
+          )}
         </CardContent>
       </Card>
 
@@ -536,7 +672,7 @@ const JsonToTsClient = () => {
                 size="sm"
                 variant="ghost"
                 icon={<Trash2 className="h-4 w-4" />}
-                onClick={() => setInput('')}
+                onClick={() => updateInput('')}
               >
                 {t('public.clear')}
               </Button>
@@ -545,7 +681,7 @@ const JsonToTsClient = () => {
           <CardContent className="flex-1 overflow-hidden">
             <Textarea
               value={input}
-              onChange={event => setInput(event.target.value)}
+              onChange={event => updateInput(event.target.value)}
               placeholder={t('app.format.json2ts.placeholder')}
               className="h-full min-h-[360px] resize-none font-mono text-xs"
             />
@@ -559,21 +695,29 @@ const JsonToTsClient = () => {
               TypeScript
             </CardTitle>
           </CardHeader>
-          <CardContent className="flex-1 overflow-hidden">
+          <CardContent className="flex min-h-0 flex-1 flex-col overflow-hidden">
             {parsed.error ? (
-              <div className="glass-input flex h-full min-h-[360px] items-center justify-center rounded-xl p-6 text-center">
+              <div className="glass-input flex min-h-[360px] flex-1 items-center justify-center rounded-xl p-6 text-center">
                 <p className="max-w-md text-sm leading-6 text-[var(--error)]">{parsed.error}</p>
               </div>
-            ) : output ? (
-              <pre className="glass-input h-full min-h-[360px] overflow-auto rounded-xl p-4 font-mono text-xs leading-6 text-[var(--text-primary)]">
-                {output}
+            ) : outputPreview ? (
+              <pre className="glass-input min-h-[360px] flex-1 overflow-auto rounded-xl p-4 font-mono text-xs leading-6 text-[var(--text-primary)]">
+                {outputPreview}
               </pre>
             ) : (
-              <div className="glass-input flex h-full min-h-[360px] items-center justify-center rounded-xl p-6 text-center">
+              <div className="glass-input flex min-h-[360px] flex-1 items-center justify-center rounded-xl p-6 text-center">
                 <p className="max-w-md text-sm leading-6 text-[var(--text-secondary)]">
                   {t('app.format.json2ts.empty')}
                 </p>
               </div>
+            )}
+            {isOutputPreviewLimited && (
+              <p className="mt-3 rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('app.format.json2ts.warning.output_preview_limited', {
+                  total: formatJsonToTsNumber(outputText.length),
+                  visible: formatJsonToTsNumber(MAX_JSON2TS_OUTPUT_PREVIEW_CHARS)
+                })}
+              </p>
             )}
           </CardContent>
         </Card>

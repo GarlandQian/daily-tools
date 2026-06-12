@@ -23,6 +23,7 @@ import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
+import { collectBoundedNonEmptyLines } from '@/utils/textScan'
 
 interface QueryParam {
   key: string
@@ -49,13 +50,24 @@ interface BatchUrlResult {
 
 const MAX_URL_INPUT_CHARS = 200000
 const MAX_URL_QUERY_PARAMS = 500
+const MAX_URL_RENDERED_QUERY_PARAMS = 160
 const MAX_URL_BATCH_LINES = 80
 const MAX_URL_BATCH_CHARS = 100000
+const MAX_URL_HOST_CHARS = 253
+const MAX_URL_PATH_CHARS = 4096
+const MAX_URL_HASH_CHARS = 1024
+const MAX_URL_PARAM_CHARS = 1024
+const MAX_URL_BATCH_LINE_CHARS = 4096
 const UTM_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'utm_id']
 const urlNumberFormatter = new Intl.NumberFormat()
 
 const formatUrlNumber = (value: number) => urlNumberFormatter.format(value)
 const makeParamId = () => globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)
+const capUrlParam = (param: QueryParam): QueryParam => ({
+  ...param,
+  key: param.key.slice(0, MAX_URL_PARAM_CHARS),
+  value: param.value.slice(0, MAX_URL_PARAM_CHARS)
+})
 
 const SAMPLE_URLS = {
   api: 'https://api.example.com/v1/search?q=daily%20tools&page=2&sort=recent#results',
@@ -90,7 +102,7 @@ const parseUrlParts = (value: string): ParsedUrlParts => {
       hitParamLimit = true
       break
     }
-    params.push({ key, value: paramValue, id: makeParamId() })
+    params.push(capUrlParam({ key, value: paramValue, id: makeParamId() }))
   }
 
   return {
@@ -148,35 +160,45 @@ const buildQueryData = (params: QueryParam[]) => {
 }
 
 const buildBatchResults = (input: string): BatchUrlResult[] =>
-  input
-    .split(/\r?\n/)
-    .map(line => line.trim())
-    .filter(Boolean)
-    .slice(0, MAX_URL_BATCH_LINES)
-    .map(line => {
-      try {
-        const url = new URL(normalizeUrlInput(line))
-        return {
-          error: '',
-          host: url.host,
-          input: line,
-          normalized: url.toString(),
-          pathDepth: url.pathname.split('/').filter(Boolean).length,
-          queryCount: [...url.searchParams].length,
-          status: 'ok' as const
-        }
-      } catch (error) {
-        return {
-          error: error instanceof Error ? error.message : String(error),
-          host: '',
-          input: line,
-          normalized: '',
-          pathDepth: 0,
-          queryCount: 0,
-          status: 'error' as const
-        }
+  collectBoundedNonEmptyLines(input, MAX_URL_BATCH_LINES).lines.map(line => {
+    const safeLine = line.slice(0, MAX_URL_BATCH_LINE_CHARS)
+
+    try {
+      const url = new URL(normalizeUrlInput(safeLine))
+      return {
+        error: '',
+        host: url.host,
+        input: safeLine,
+        normalized: url.toString(),
+        pathDepth: url.pathname.split('/').filter(Boolean).length,
+        queryCount: [...url.searchParams].length,
+        status: 'ok' as const
       }
-    })
+    } catch (error) {
+      return {
+        error: error instanceof Error ? error.message : String(error),
+        host: '',
+        input: safeLine,
+        normalized: '',
+        pathDepth: 0,
+        queryCount: 0,
+        status: 'error' as const
+      }
+    }
+  })
+
+const buildBatchExport = (
+  batchRows: BatchUrlResult[],
+  batchStats: { errors: number; hosts: number; total: number; valid: number }
+) =>
+  JSON.stringify(
+    {
+      results: batchRows,
+      stats: batchStats
+    },
+    null,
+    2
+  )
 
 const downloadText = (content: string, filename: string, type: string) => {
   const blob = new Blob([content], { type })
@@ -193,6 +215,7 @@ const UrlClient = () => {
   const { copy } = useCopy()
 
   const [inputUrl, setInputUrl] = useState('')
+  const [isInputUrlCapped, setIsInputUrlCapped] = useState(false)
   const [protocol, setProtocol] = useState('https:')
   const [host, setHost] = useState('')
   const [pathname, setPathname] = useState('')
@@ -201,6 +224,7 @@ const UrlClient = () => {
   const [error, setError] = useState<string | null>(null)
   const [warning, setWarning] = useState<string | null>(null)
   const [batchInput, setBatchInput] = useState('')
+  const [isBatchInputCapped, setIsBatchInputCapped] = useState(false)
   const deferredBatchInput = useDeferredValue(batchInput)
   const safeBatchInput = useMemo(
     () =>
@@ -210,16 +234,22 @@ const UrlClient = () => {
     [deferredBatchInput]
   )
 
+  const updateInputUrl = useCallback((value: string) => {
+    const capped = value.length > MAX_URL_INPUT_CHARS
+    setIsInputUrlCapped(capped)
+    setInputUrl(capped ? value.slice(0, MAX_URL_INPUT_CHARS) : value)
+  }, [])
+
   const applyParsedValue = useCallback(
     (value: string) => {
       try {
         const { hitParamLimit, normalized, params, url } = parseUrlParts(value)
         setProtocol(url.protocol)
-        setHost(url.host)
-        setPathname(url.pathname)
-        setHash(url.hash)
-        setInputUrl(normalized)
-        setQueryParams(params)
+        setHost(url.host.slice(0, MAX_URL_HOST_CHARS))
+        setPathname(url.pathname.slice(0, MAX_URL_PATH_CHARS))
+        setHash(url.hash.slice(0, MAX_URL_HASH_CHARS))
+        updateInputUrl(normalized)
+        setQueryParams(params.map(capUrlParam))
         setError(null)
         setWarning(
           hitParamLimit
@@ -233,13 +263,13 @@ const UrlClient = () => {
         setWarning(null)
       }
     },
-    [t]
+    [t, updateInputUrl]
   )
 
   const handleParse = useCallback(() => {
     if (!inputUrl.trim()) return
 
-    if (inputUrl.length > MAX_URL_INPUT_CHARS) {
+    if (isInputUrlCapped || inputUrl.length > MAX_URL_INPUT_CHARS) {
       setError(null)
       setWarning(
         t('app.format.url.warning.too_large', {
@@ -250,7 +280,7 @@ const UrlClient = () => {
     }
 
     applyParsedValue(inputUrl)
-  }, [applyParsedValue, inputUrl, t])
+  }, [applyParsedValue, inputUrl, isInputUrlCapped, t])
 
   // Reconstruct URL from components
   const constructedUrl = useMemo(() => {
@@ -282,6 +312,11 @@ const UrlClient = () => {
 
   const queryData = useMemo(() => buildQueryData(queryParams), [queryParams])
   const queryJson = queryData.json
+  const visibleQueryParams = useMemo(
+    () => queryParams.slice(0, MAX_URL_RENDERED_QUERY_PARAMS),
+    [queryParams]
+  )
+  const isQueryParamRenderLimited = queryParams.length > visibleQueryParams.length
   const batchRows = useMemo(() => buildBatchResults(safeBatchInput), [safeBatchInput])
   const batchStats = useMemo(
     () => ({
@@ -333,21 +368,16 @@ const UrlClient = () => {
     )
   }, [constructedUrl, decodedUrl, queryJson, urlSummary])
 
-  const batchExport = useMemo(
-    () =>
-      JSON.stringify(
-        {
-          results: batchRows,
-          stats: batchStats
-        },
-        null,
-        2
-      ),
-    [batchRows, batchStats]
-  )
-
   const handleParamChange = (id: string, field: 'key' | 'value', value: string) => {
-    setQueryParams(prev => prev.map(p => (p.id === id ? { ...p, [field]: value } : p)))
+    setQueryParams(prev =>
+      prev.map(p => (p.id === id ? { ...p, [field]: value.slice(0, MAX_URL_PARAM_CHARS) } : p))
+    )
+  }
+
+  const updateBatchInput = (value: string) => {
+    const capped = value.length > MAX_URL_BATCH_CHARS
+    setIsBatchInputCapped(capped)
+    setBatchInput(capped ? value.slice(0, MAX_URL_BATCH_CHARS) : value)
   }
 
   const handleAddParam = () => {
@@ -387,12 +417,12 @@ const UrlClient = () => {
 
   const handleFromCurrentPage = () => {
     if (typeof window !== 'undefined') {
-      setInputUrl(window.location.href)
+      updateInputUrl(window.location.href)
     }
   }
 
   const handleClear = () => {
-    setInputUrl('')
+    updateInputUrl('')
     setProtocol('https:')
     setHost('')
     setPathname('')
@@ -400,7 +430,7 @@ const UrlClient = () => {
     setQueryParams([])
     setError(null)
     setWarning(null)
-    setBatchInput('')
+    updateBatchInput('')
   }
 
   return (
@@ -440,7 +470,7 @@ const UrlClient = () => {
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
             <Textarea
               value={inputUrl}
-              onChange={e => setInputUrl(e.target.value)}
+              onChange={e => updateInputUrl(e.target.value)}
               placeholder={t('app.format.url.placeholder')}
               rows={2}
               className="flex-1 font-mono resize-none"
@@ -501,8 +531,9 @@ const UrlClient = () => {
                 </Label>
                 <Input
                   value={host}
-                  onChange={e => setHost(e.target.value)}
+                  onChange={e => setHost(e.target.value.slice(0, MAX_URL_HOST_CHARS))}
                   placeholder="example.com"
+                  maxLength={MAX_URL_HOST_CHARS}
                 />
               </div>
               <div className="space-y-3">
@@ -511,8 +542,9 @@ const UrlClient = () => {
                 </Label>
                 <Input
                   value={pathname}
-                  onChange={e => setPathname(e.target.value)}
+                  onChange={e => setPathname(e.target.value.slice(0, MAX_URL_PATH_CHARS))}
                   placeholder="/path"
+                  maxLength={MAX_URL_PATH_CHARS}
                 />
               </div>
               <div className="space-y-3">
@@ -521,8 +553,9 @@ const UrlClient = () => {
                 </Label>
                 <Input
                   value={hash}
-                  onChange={e => setHash(e.target.value)}
+                  onChange={e => setHash(e.target.value.slice(0, MAX_URL_HASH_CHARS))}
                   placeholder="#section"
+                  maxLength={MAX_URL_HASH_CHARS}
                 />
               </div>
             </div>
@@ -569,18 +602,20 @@ const UrlClient = () => {
                   {t('app.format.url.no_query_params')}
                 </p>
               )}
-              {queryParams.map(param => (
+              {visibleQueryParams.map(param => (
                 <div key={param.id} className="flex flex-col gap-3 sm:flex-row sm:items-center">
                   <Input
                     value={param.key}
                     onChange={e => handleParamChange(param.id, 'key', e.target.value)}
                     placeholder={t('app.format.url.key')}
+                    maxLength={MAX_URL_PARAM_CHARS}
                     className="flex-1"
                   />
                   <Input
                     value={param.value}
                     onChange={e => handleParamChange(param.id, 'value', e.target.value)}
                     placeholder={t('app.format.url.value')}
+                    maxLength={MAX_URL_PARAM_CHARS}
                     className="flex-1"
                   />
                   <Button
@@ -593,6 +628,13 @@ const UrlClient = () => {
                   </Button>
                 </div>
               ))}
+              {isQueryParamRenderLimited && (
+                <p className="rounded-lg border border-[var(--warning)] bg-[var(--warning-subtle)] px-3 py-2 text-sm text-[var(--warning)]">
+                  {t('app.format.url.warning.too_many_params', {
+                    limit: formatUrlNumber(MAX_URL_RENDERED_QUERY_PARAMS)
+                  })}
+                </p>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -779,7 +821,7 @@ const UrlClient = () => {
                 size="sm"
                 variant="outline"
                 onClick={() =>
-                  setBatchInput(
+                  updateBatchInput(
                     [SAMPLE_URLS.api, SAMPLE_URLS.campaign, SAMPLE_URLS.deepLink].join('\n')
                   )
                 }
@@ -791,7 +833,7 @@ const UrlClient = () => {
                 variant="outline"
                 icon={<Copy className="h-4 w-4" />}
                 disabled={!batchRows.length}
-                onClick={() => void copy(batchExport)}
+                onClick={() => void copy(buildBatchExport(batchRows, batchStats))}
               >
                 JSON
               </Button>
@@ -802,7 +844,7 @@ const UrlClient = () => {
                 disabled={!batchRows.length}
                 onClick={() =>
                   downloadText(
-                    batchExport,
+                    buildBatchExport(batchRows, batchStats),
                     'daily-tools-url-batch.json',
                     'application/json;charset=utf-8'
                   )
@@ -816,12 +858,12 @@ const UrlClient = () => {
         <CardContent className="space-y-4">
           <Textarea
             value={batchInput}
-            onChange={event => setBatchInput(event.target.value)}
+            onChange={event => updateBatchInput(event.target.value)}
             placeholder={t('app.format.url.batch_placeholder')}
             rows={4}
             className="font-mono"
           />
-          {deferredBatchInput.length > MAX_URL_BATCH_CHARS && (
+          {(isBatchInputCapped || deferredBatchInput.length > MAX_URL_BATCH_CHARS) && (
             <p className="rounded-lg border border-[var(--warning)] bg-[var(--warning-subtle)] px-3 py-2 text-sm text-[var(--warning)]">
               {t('app.format.url.warning.batch_too_large', {
                 limit: formatUrlNumber(MAX_URL_BATCH_CHARS)

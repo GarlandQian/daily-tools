@@ -22,6 +22,11 @@ import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
+import {
+  createOutputPreview,
+  isOutputPreviewLimited,
+  OUTPUT_PREVIEW_CHARS
+} from '@/utils/outputPreview'
 
 type AuditSeverity = 'error' | 'ok' | 'warn'
 type HintGroup = 'device' | 'network' | 'preference' | 'ua' | 'viewport'
@@ -467,7 +472,16 @@ const ClientHintsClient = () => {
   const [workspace, setWorkspace] = useState(PRESETS[0]?.workspace ?? '')
   const deferredWorkspace = useDeferredValue(workspace)
 
-  const output = useMemo(() => buildOutput(draft, outputFormat), [draft, outputFormat])
+  const outputPreviewSource = useMemo(() => buildOutput(draft, outputFormat), [draft, outputFormat])
+  const outputPreview = useMemo(
+    () => createOutputPreview(outputPreviewSource),
+    [outputPreviewSource]
+  )
+  const outputPreviewLimited = isOutputPreviewLimited(outputPreviewSource)
+  const buildCurrentOutput = useCallback(
+    () => buildOutput(draft, outputFormat),
+    [draft, outputFormat]
+  )
   const parsed = useMemo(() => parseHeaders(deferredWorkspace), [deferredWorkspace])
   const selectedSet = useMemo(() => new Set(draft.selected), [draft.selected])
   const criticalSet = useMemo(() => new Set(draft.critical), [draft.critical])
@@ -1044,7 +1058,7 @@ const ClientHintsClient = () => {
                 type="button"
                 variant="default"
                 icon={<Copy className="h-4 w-4" />}
-                onClick={() => void copy(output)}
+                onClick={() => void copy(buildCurrentOutput())}
                 className="self-end"
               >
                 {t('public.copy')}
@@ -1055,7 +1069,7 @@ const ClientHintsClient = () => {
                 icon={<Download className="h-4 w-4" />}
                 onClick={() =>
                   downloadText(
-                    output,
+                    buildCurrentOutput(),
                     outputFormat === 'csv' ? 'client-hints.csv' : 'client-hints.txt',
                     outputFormat === 'csv' ? 'text/csv;charset=utf-8' : 'text/plain;charset=utf-8'
                   )
@@ -1072,9 +1086,17 @@ const ClientHintsClient = () => {
                 {t(`app.converter.client_hints.output.${outputFormat}`)}
               </div>
               <pre className="max-h-[440px] overflow-auto whitespace-pre-wrap break-all font-mono text-xs text-[var(--text-primary)]">
-                {output}
+                {outputPreview}
               </pre>
             </div>
+            {outputPreviewLimited ? (
+              <p className="text-xs leading-5 text-amber-600 dark:text-amber-300">
+                {t('public.output_preview_limited', {
+                  total: outputPreviewSource.length.toLocaleString(),
+                  visible: OUTPUT_PREVIEW_CHARS.toLocaleString()
+                })}
+              </p>
+            ) : null}
           </CardContent>
         </Card>
       </div>

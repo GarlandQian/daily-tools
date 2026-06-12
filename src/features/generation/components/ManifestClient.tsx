@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { ColorPicker } from '@/components/ui/color-picker'
 import { Input } from '@/components/ui/input'
+import { InputCapNotice } from '@/components/ui/input-cap-notice'
 import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
@@ -217,6 +218,15 @@ const ORIENTATION_OPTIONS: Orientation[] = [
   'landscape-secondary'
 ]
 const MANIFEST_WORKSPACE_LIMIT = 40000
+const MANIFEST_FIELD_LIMIT = 240
+const MANIFEST_DESCRIPTION_LIMIT = 1200
+const MANIFEST_CATEGORIES_LIMIT = 600
+const MANIFEST_DISPLAY_OVERRIDE_LIMIT = 420
+const MANIFEST_ICON_LIMIT = 24
+const MANIFEST_SCREENSHOT_LIMIT = 16
+const VISIBLE_MANIFEST_ICON_ROWS = 16
+const VISIBLE_MANIFEST_SCREENSHOT_ROWS = 10
+const MANIFEST_SCREENSHOT_LABEL_LIMIT = 240
 const KNOWN_MANIFEST_KEYS = new Set([
   'background_color',
   'categories',
@@ -434,14 +444,32 @@ const ManifestClient = () => {
   const [icons, setIcons] = useState(cloneIcons)
   const [screenshots, setScreenshots] = useState(cloneScreenshots)
   const [workspace, setWorkspace] = useState(DEFAULT_MANIFEST_JSON)
+  const [isWorkspaceCapped, setIsWorkspaceCapped] = useState(false)
   const deferredWorkspace = useDeferredValue(workspace)
 
   const categoryList = useMemo(() => parseList(categories), [categories])
   const displayOverrideList = useMemo(() => parseList(displayOverride), [displayOverride])
-  const parsedManifest = useMemo(
-    () => parseManifestWorkspace(deferredWorkspace),
-    [deferredWorkspace]
+  const parsedManifest = useMemo(() => {
+    const next = parseManifestWorkspace(deferredWorkspace)
+
+    return isWorkspaceCapped ? { ...next, capped: true } : next
+  }, [deferredWorkspace, isWorkspaceCapped])
+  const visibleIcons = useMemo(() => icons.slice(0, VISIBLE_MANIFEST_ICON_ROWS), [icons])
+  const visibleScreenshots = useMemo(
+    () => screenshots.slice(0, VISIBLE_MANIFEST_SCREENSHOT_ROWS),
+    [screenshots]
   )
+  const isIconCapReached = icons.length >= MANIFEST_ICON_LIMIT
+  const isScreenshotCapReached = screenshots.length >= MANIFEST_SCREENSHOT_LIMIT
+  const isIconListLimited = icons.length > visibleIcons.length
+  const isScreenshotListLimited = screenshots.length > visibleScreenshots.length
+
+  const updateWorkspace = (value: string) => {
+    const capped = value.length > MANIFEST_WORKSPACE_LIMIT
+
+    setIsWorkspaceCapped(capped)
+    setWorkspace(capped ? value.slice(0, MANIFEST_WORKSPACE_LIMIT) : value)
+  }
 
   const manifest = useMemo(() => {
     const payload: Record<string, unknown> = {
@@ -688,7 +716,7 @@ const ManifestClient = () => {
     setBackgroundColor('#0b1020')
     setIcons(cloneIcons())
     setScreenshots(cloneScreenshots())
-    setWorkspace(DEFAULT_MANIFEST_JSON)
+    updateWorkspace(DEFAULT_MANIFEST_JSON)
   }
 
   const applyParsedManifest = () => {
@@ -879,9 +907,15 @@ const ManifestClient = () => {
               <Textarea
                 id="manifest-description"
                 value={description}
-                onChange={event => setDescription(event.target.value)}
+                onChange={event =>
+                  setDescription(event.target.value.slice(0, MANIFEST_DESCRIPTION_LIMIT))
+                }
                 rows={3}
                 className="resize-none"
+              />
+              <InputCapNotice
+                visible={description.length >= MANIFEST_DESCRIPTION_LIMIT}
+                limit={MANIFEST_DESCRIPTION_LIMIT}
               />
             </div>
             <div className="space-y-3">
@@ -889,9 +923,15 @@ const ManifestClient = () => {
               <Textarea
                 id="manifest-categories"
                 value={categories}
-                onChange={event => setCategories(event.target.value)}
+                onChange={event =>
+                  setCategories(event.target.value.slice(0, MANIFEST_CATEGORIES_LIMIT))
+                }
                 rows={3}
                 className="resize-none font-mono"
+              />
+              <InputCapNotice
+                visible={categories.length >= MANIFEST_CATEGORIES_LIMIT}
+                limit={MANIFEST_CATEGORIES_LIMIT}
               />
             </div>
             <div className="space-y-3 lg:col-span-2">
@@ -901,7 +941,9 @@ const ManifestClient = () => {
               <Input
                 id="manifest-display-override"
                 value={displayOverride}
-                onChange={event => setDisplayOverride(event.target.value)}
+                onChange={event =>
+                  setDisplayOverride(event.target.value.slice(0, MANIFEST_DISPLAY_OVERRIDE_LIMIT))
+                }
                 className="font-mono"
               />
             </div>
@@ -940,17 +982,22 @@ const ManifestClient = () => {
               <Button
                 size="sm"
                 icon={<Plus className="h-4 w-4" />}
+                disabled={isIconCapReached}
                 onClick={() =>
-                  setIcons(prev => [
-                    ...prev,
-                    {
-                      id: makeId('icon'),
-                      src: '/icons/icon.png',
-                      sizes: '512x512',
-                      type: 'image/png',
-                      purpose: 'any'
-                    }
-                  ])
+                  setIcons(prev =>
+                    prev.length >= MANIFEST_ICON_LIMIT
+                      ? prev
+                      : [
+                          ...prev,
+                          {
+                            id: makeId('icon'),
+                            src: '/icons/icon.png',
+                            sizes: '512x512',
+                            type: 'image/png',
+                            purpose: 'any'
+                          }
+                        ]
+                  )
                 }
               >
                 {t('public.add')}
@@ -963,24 +1010,24 @@ const ManifestClient = () => {
               <span>{t('app.generation.manifest.purpose')}</span>
               <span />
             </div>
-            {icons.map(icon => (
+            {visibleIcons.map(icon => (
               <div
                 key={icon.id}
                 className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_120px_140px_160px_44px]"
               >
                 <Input
                   value={icon.src}
-                  onChange={event => updateIcon(icon.id, 'src', event.target.value)}
+                  onChange={event => updateIcon(icon.id, 'src', event.target.value.slice(0, 420))}
                   className="font-mono"
                 />
                 <Input
                   value={icon.sizes}
-                  onChange={event => updateIcon(icon.id, 'sizes', event.target.value)}
+                  onChange={event => updateIcon(icon.id, 'sizes', event.target.value.slice(0, 80))}
                   className="font-mono"
                 />
                 <Input
                   value={icon.type}
-                  onChange={event => updateIcon(icon.id, 'type', event.target.value)}
+                  onChange={event => updateIcon(icon.id, 'type', event.target.value.slice(0, 80))}
                   className="font-mono"
                 />
                 <Select
@@ -1003,6 +1050,21 @@ const ManifestClient = () => {
                 </Button>
               </div>
             ))}
+            {isIconListLimited && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('app.generation.manifest.warning.icons_limited', {
+                  total: icons.length.toLocaleString(),
+                  visible: visibleIcons.length.toLocaleString()
+                })}
+              </p>
+            )}
+            {isIconCapReached && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('app.generation.manifest.warning.icons_cap', {
+                  limit: MANIFEST_ICON_LIMIT.toLocaleString()
+                })}
+              </p>
+            )}
           </div>
 
           <div className="space-y-3 rounded-xl border border-[var(--border-base)] p-4">
@@ -1018,18 +1080,23 @@ const ManifestClient = () => {
               <Button
                 size="sm"
                 icon={<Plus className="h-4 w-4" />}
+                disabled={isScreenshotCapReached}
                 onClick={() =>
-                  setScreenshots(prev => [
-                    ...prev,
-                    {
-                      id: makeId('screen'),
-                      src: '/screenshots/app.png',
-                      sizes: '1170x2532',
-                      type: 'image/png',
-                      formFactor: 'narrow',
-                      label: ''
-                    }
-                  ])
+                  setScreenshots(prev =>
+                    prev.length >= MANIFEST_SCREENSHOT_LIMIT
+                      ? prev
+                      : [
+                          ...prev,
+                          {
+                            id: makeId('screen'),
+                            src: '/screenshots/app.png',
+                            sizes: '1170x2532',
+                            type: 'image/png',
+                            formFactor: 'narrow',
+                            label: ''
+                          }
+                        ]
+                  )
                 }
               >
                 {t('public.add')}
@@ -1043,19 +1110,23 @@ const ManifestClient = () => {
               <span>{t('app.generation.manifest.label')}</span>
               <span />
             </div>
-            {screenshots.map(screenshot => (
+            {visibleScreenshots.map(screenshot => (
               <div
                 key={screenshot.id}
                 className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_120px_120px_150px_minmax(0,1fr)_44px]"
               >
                 <Input
                   value={screenshot.src}
-                  onChange={event => updateScreenshot(screenshot.id, 'src', event.target.value)}
+                  onChange={event =>
+                    updateScreenshot(screenshot.id, 'src', event.target.value.slice(0, 420))
+                  }
                   className="font-mono"
                 />
                 <Input
                   value={screenshot.sizes}
-                  onChange={event => updateScreenshot(screenshot.id, 'sizes', event.target.value)}
+                  onChange={event =>
+                    updateScreenshot(screenshot.id, 'sizes', event.target.value.slice(0, 80))
+                  }
                   className="font-mono"
                 />
                 <Select
@@ -1072,12 +1143,21 @@ const ManifestClient = () => {
                 </Select>
                 <Input
                   value={screenshot.type}
-                  onChange={event => updateScreenshot(screenshot.id, 'type', event.target.value)}
+                  onChange={event =>
+                    updateScreenshot(screenshot.id, 'type', event.target.value.slice(0, 80))
+                  }
                   className="font-mono"
                 />
                 <Input
                   value={screenshot.label}
-                  onChange={event => updateScreenshot(screenshot.id, 'label', event.target.value)}
+                  onChange={event =>
+                    updateScreenshot(
+                      screenshot.id,
+                      'label',
+                      event.target.value.slice(0, MANIFEST_SCREENSHOT_LABEL_LIMIT)
+                    )
+                  }
+                  maxLength={MANIFEST_SCREENSHOT_LABEL_LIMIT}
                 />
                 <Button
                   size="icon"
@@ -1091,6 +1171,21 @@ const ManifestClient = () => {
                 </Button>
               </div>
             ))}
+            {isScreenshotListLimited && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('app.generation.manifest.warning.screenshots_limited', {
+                  total: screenshots.length.toLocaleString(),
+                  visible: visibleScreenshots.length.toLocaleString()
+                })}
+              </p>
+            )}
+            {isScreenshotCapReached && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('app.generation.manifest.warning.screenshots_cap', {
+                  limit: MANIFEST_SCREENSHOT_LIMIT.toLocaleString()
+                })}
+              </p>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -1107,7 +1202,7 @@ const ManifestClient = () => {
           <CardContent className="space-y-4">
             <Textarea
               value={workspace}
-              onChange={event => setWorkspace(event.target.value)}
+              onChange={event => updateWorkspace(event.target.value)}
               placeholder={t('app.generation.manifest.workspace_placeholder')}
               className="min-h-[240px] font-mono text-xs"
               spellCheck={false}
@@ -1139,7 +1234,7 @@ const ManifestClient = () => {
                 type="button"
                 variant="outline"
                 icon={<FileJson className="h-4 w-4" />}
-                onClick={() => setWorkspace(manifestJson)}
+                onClick={() => updateWorkspace(manifestJson)}
               >
                 {t('app.generation.manifest.use_generated')}
               </Button>
@@ -1147,7 +1242,7 @@ const ManifestClient = () => {
                 type="button"
                 variant="ghost"
                 icon={<Trash2 className="h-4 w-4" />}
-                onClick={() => setWorkspace('')}
+                onClick={() => updateWorkspace('')}
               >
                 {t('public.clear')}
               </Button>
@@ -1280,17 +1375,19 @@ const ManifestClient = () => {
 const ManifestField = ({
   id,
   label,
+  limit = MANIFEST_FIELD_LIMIT,
   onChange,
   value
 }: {
   id: string
   label: string
+  limit?: number
   onChange: (value: string) => void
   value: string
 }) => (
   <div className="space-y-3">
     <Label htmlFor={id}>{label}</Label>
-    <Input id={id} value={value} onChange={event => onChange(event.target.value)} />
+    <Input id={id} value={value} onChange={event => onChange(event.target.value.slice(0, limit))} />
   </div>
 )
 

@@ -14,17 +14,23 @@ import {
   Tags,
   Trash2
 } from 'lucide-react'
-import { useDeferredValue, useMemo, useState } from 'react'
+import { useCallback, useDeferredValue, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
+import { InputCapNotice } from '@/components/ui/input-cap-notice'
 import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
+import {
+  createOutputPreview,
+  isOutputPreviewLimited,
+  OUTPUT_PREVIEW_CHARS
+} from '@/utils/outputPreview'
 
 const ROBOT_TARGETS = ['all', 'googlebot', 'bingbot', 'googlebot-news', 'custom'] as const
 const CONTENT_TYPES = ['html', 'pdf', 'image', 'api'] as const
@@ -32,6 +38,14 @@ const IMAGE_PREVIEWS = ['standard', 'none', 'large'] as const
 const OUTPUT_TYPES = ['html', 'headers', 'next', 'nginx', 'apache', 'json', 'csv'] as const
 const WORKSPACE_LIMIT = 60000
 const RULE_LIMIT = 140
+const OUTPUT_PREVIEW_RULE_LIMIT = 80
+const OUTPUT_PREVIEW_FINDING_LIMIT = 40
+const VISIBLE_FINDING_LIMIT = 22
+const VISIBLE_RULE_LIMIT = 42
+const ROBOTS_AGENT_LIMIT = 160
+const ROBOTS_URL_LIMIT = 2048
+const ROBOTS_NUMBER_LIMIT = 10
+const ROBOTS_DATE_LIMIT = 80
 
 type RobotTarget = (typeof ROBOT_TARGETS)[number]
 type ContentType = (typeof CONTENT_TYPES)[number]
@@ -640,11 +654,36 @@ export default function RobotsMetaClient() {
     [directives, draft, parsedRules]
   )
   const score = useMemo(() => getScore(findings), [findings])
-  const output = useMemo(
+  const outputPreviewRules = useMemo(
+    () => parsedRules.slice(0, OUTPUT_PREVIEW_RULE_LIMIT),
+    [parsedRules]
+  )
+  const outputPreviewFindings = useMemo(
+    () => findings.slice(0, OUTPUT_PREVIEW_FINDING_LIMIT),
+    [findings]
+  )
+  const outputPreviewSource = useMemo(
+    () => buildOutput(draft, directives, outputPreviewRules, outputPreviewFindings, outputType),
+    [directives, draft, outputPreviewFindings, outputPreviewRules, outputType]
+  )
+  const outputPreview = useMemo(
+    () => createOutputPreview(outputPreviewSource),
+    [outputPreviewSource]
+  )
+  const outputPreviewLimited = isOutputPreviewLimited(outputPreviewSource)
+  const outputPreviewUsesRules = outputType === 'json' || outputType === 'csv'
+  const outputPreviewUsesFindings = outputType === 'json'
+  const outputPreviewVisibleRows =
+    (outputPreviewUsesRules ? outputPreviewRules.length : 0) +
+    (outputPreviewUsesFindings ? outputPreviewFindings.length : 0)
+  const outputPreviewTotalRows =
+    (outputPreviewUsesRules ? parsedRules.length : 0) +
+    (outputPreviewUsesFindings ? findings.length : 0)
+  const outputPreviewRowsLimited = outputPreviewTotalRows > outputPreviewVisibleRows
+  const buildCurrentOutput = useCallback(
     () => buildOutput(draft, directives, parsedRules, findings, outputType),
     [directives, draft, findings, outputType, parsedRules]
   )
-  const csvOutput = useMemo(() => buildCsv(parsedRules), [parsedRules])
   const filteredFindings = useMemo(() => {
     const query = deferredAuditQuery.trim().toLowerCase()
     if (!query) return findings
@@ -663,6 +702,11 @@ export default function RobotsMetaClient() {
       return text.includes(query)
     })
   }, [deferredReferenceQuery, t])
+  const visibleFindings = useMemo(
+    () => filteredFindings.slice(0, VISIBLE_FINDING_LIMIT),
+    [filteredFindings]
+  )
+  const visibleParsedRules = useMemo(() => parsedRules.slice(0, VISIBLE_RULE_LIMIT), [parsedRules])
   const metrics = useMemo(
     () => ({
       agents: String(new Set(parsedRules.map(rule => rule.agent)).size || 1),
@@ -677,6 +721,29 @@ export default function RobotsMetaClient() {
 
   const updateDraft = <Key extends keyof RobotsDraft>(key: Key, value: RobotsDraft[Key]) => {
     setDraft(current => ({ ...current, [key]: value }))
+  }
+
+  const updateDraftText = (
+    key: Extract<
+      keyof RobotsDraft,
+      | 'canonicalUrl'
+      | 'customAgent'
+      | 'maxSnippet'
+      | 'maxVideoPreview'
+      | 'sitemapUrl'
+      | 'unavailableAfter'
+    >,
+    value: string
+  ) => {
+    const limit =
+      key === 'canonicalUrl' || key === 'sitemapUrl'
+        ? ROBOTS_URL_LIMIT
+        : key === 'customAgent'
+          ? ROBOTS_AGENT_LIMIT
+          : key === 'unavailableAfter'
+            ? ROBOTS_DATE_LIMIT
+            : ROBOTS_NUMBER_LIMIT
+    updateDraft(key, value.slice(0, limit))
   }
 
   const applyPreset = (preset: Preset) => {
@@ -814,8 +881,12 @@ export default function RobotsMetaClient() {
                   <Input
                     id="robots-custom-agent"
                     value={draft.customAgent}
-                    onChange={event => updateDraft('customAgent', event.target.value)}
+                    onChange={event => updateDraftText('customAgent', event.target.value)}
                     className="font-mono"
+                  />
+                  <InputCapNotice
+                    visible={draft.customAgent.length >= ROBOTS_AGENT_LIMIT}
+                    limit={ROBOTS_AGENT_LIMIT}
                   />
                 </div>
               ) : null}
@@ -826,8 +897,12 @@ export default function RobotsMetaClient() {
                 <Input
                   id="robots-canonical"
                   value={draft.canonicalUrl}
-                  onChange={event => updateDraft('canonicalUrl', event.target.value)}
+                  onChange={event => updateDraftText('canonicalUrl', event.target.value)}
                   className="font-mono"
+                />
+                <InputCapNotice
+                  visible={draft.canonicalUrl.length >= ROBOTS_URL_LIMIT}
+                  limit={ROBOTS_URL_LIMIT}
                 />
               </div>
               <div className="space-y-2 lg:col-span-2">
@@ -835,8 +910,12 @@ export default function RobotsMetaClient() {
                 <Input
                   id="robots-sitemap"
                   value={draft.sitemapUrl}
-                  onChange={event => updateDraft('sitemapUrl', event.target.value)}
+                  onChange={event => updateDraftText('sitemapUrl', event.target.value)}
                   className="font-mono"
+                />
+                <InputCapNotice
+                  visible={draft.sitemapUrl.length >= ROBOTS_URL_LIMIT}
+                  limit={ROBOTS_URL_LIMIT}
                 />
               </div>
               <div className="space-y-2">
@@ -846,9 +925,13 @@ export default function RobotsMetaClient() {
                 <Input
                   id="robots-max-snippet"
                   value={draft.maxSnippet}
-                  onChange={event => updateDraft('maxSnippet', event.target.value)}
+                  onChange={event => updateDraftText('maxSnippet', event.target.value)}
                   placeholder="160"
                   className="font-mono"
+                />
+                <InputCapNotice
+                  visible={draft.maxSnippet.length >= ROBOTS_NUMBER_LIMIT}
+                  limit={ROBOTS_NUMBER_LIMIT}
                 />
               </div>
               <div className="space-y-2">
@@ -858,9 +941,13 @@ export default function RobotsMetaClient() {
                 <Input
                   id="robots-max-video"
                   value={draft.maxVideoPreview}
-                  onChange={event => updateDraft('maxVideoPreview', event.target.value)}
+                  onChange={event => updateDraftText('maxVideoPreview', event.target.value)}
                   placeholder="30"
                   className="font-mono"
+                />
+                <InputCapNotice
+                  visible={draft.maxVideoPreview.length >= ROBOTS_NUMBER_LIMIT}
+                  limit={ROBOTS_NUMBER_LIMIT}
                 />
               </div>
               <div className="space-y-2">
@@ -888,9 +975,13 @@ export default function RobotsMetaClient() {
                 <Input
                   id="robots-unavailable-after"
                   value={draft.unavailableAfter}
-                  onChange={event => updateDraft('unavailableAfter', event.target.value)}
+                  onChange={event => updateDraftText('unavailableAfter', event.target.value)}
                   placeholder="31 Dec 2026 23:59:59 GMT"
                   className="font-mono"
+                />
+                <InputCapNotice
+                  visible={draft.unavailableAfter.length >= ROBOTS_DATE_LIMIT}
+                  limit={ROBOTS_DATE_LIMIT}
                 />
               </div>
             </div>
@@ -971,7 +1062,11 @@ export default function RobotsMetaClient() {
             </div>
 
             <div className="flex flex-wrap gap-2">
-              <Button type="button" onClick={() => copy(output)} className="w-full sm:w-auto">
+              <Button
+                type="button"
+                onClick={() => copy(buildCurrentOutput())}
+                className="w-full sm:w-auto"
+              >
                 <Copy className="h-4 w-4" />
                 {t('app.converter.robots_meta.copy_output')}
               </Button>
@@ -1005,6 +1100,7 @@ export default function RobotsMetaClient() {
               placeholder={t('app.converter.robots_meta.workspace_placeholder')}
               className="min-h-[420px] font-mono"
             />
+            <InputCapNotice visible={workspace.length >= WORKSPACE_LIMIT} limit={WORKSPACE_LIMIT} />
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
@@ -1042,29 +1138,37 @@ export default function RobotsMetaClient() {
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-tertiary)]" />
               <Input
                 value={auditQuery}
-                onChange={event => setAuditQuery(event.target.value)}
+                onChange={event => setAuditQuery(event.target.value.slice(0, 160))}
                 placeholder={t('app.converter.robots_meta.audit_search')}
                 className="pl-10"
               />
             </div>
             <div className="space-y-2">
-              {filteredFindings.slice(0, 22).map((finding, index) => (
+              {visibleFindings.map((finding, index) => (
                 <div
                   key={`${finding.key}:${finding.subject}:${index}`}
                   className={`rounded-xl border px-3 py-2 text-xs ${levelClass(finding.level)}`}
                 >
                   <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
-                    <span className="min-w-0 break-words">
+                    <span className="min-w-0 break-all leading-5">
                       <span className="font-semibold">{finding.subject}</span>
-                      <span className="mx-2">/</span>
+                      <span className="mx-2 inline-block">/</span>
                       {t(`app.converter.robots_meta.audit.${finding.key}`)}
                     </span>
-                    <span className="font-medium">
+                    <span className="shrink-0 font-medium">
                       {t(`app.converter.robots_meta.level.${finding.level}`)}
                     </span>
                   </div>
                 </div>
               ))}
+              {filteredFindings.length > visibleFindings.length && (
+                <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                  {t('public.rows_render_limited', {
+                    total: filteredFindings.length.toLocaleString(),
+                    visible: visibleFindings.length.toLocaleString()
+                  })}
+                </p>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -1095,12 +1199,28 @@ export default function RobotsMetaClient() {
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Textarea readOnly value={output} className="min-h-[320px] font-mono" />
+            <Textarea readOnly value={outputPreview} className="min-h-[320px] font-mono" />
+            {outputPreviewLimited && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('public.output_preview_limited', {
+                  total: outputPreviewSource.length.toLocaleString(),
+                  visible: OUTPUT_PREVIEW_CHARS.toLocaleString()
+                })}
+              </p>
+            )}
+            {outputPreviewRowsLimited && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('public.output_preview_rows_limited', {
+                  total: outputPreviewTotalRows.toLocaleString(),
+                  visible: outputPreviewVisibleRows.toLocaleString()
+                })}
+              </p>
+            )}
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => copy(output)}
+                onClick={() => copy(buildCurrentOutput())}
                 className="w-full sm:w-auto"
               >
                 <Copy className="h-4 w-4" />
@@ -1109,7 +1229,9 @@ export default function RobotsMetaClient() {
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => downloadText(output, 'robots-meta.txt', 'text/plain;charset=utf-8')}
+                onClick={() =>
+                  downloadText(buildCurrentOutput(), 'robots-meta.txt', 'text/plain;charset=utf-8')
+                }
                 className="w-full sm:w-auto"
               >
                 <Download className="h-4 w-4" />
@@ -1119,7 +1241,11 @@ export default function RobotsMetaClient() {
                 type="button"
                 variant="outline"
                 onClick={() =>
-                  downloadText(csvOutput, 'robots-meta-rules.csv', 'text/csv;charset=utf-8')
+                  downloadText(
+                    buildCsv(parsedRules),
+                    'robots-meta-rules.csv',
+                    'text/csv;charset=utf-8'
+                  )
                 }
                 className="w-full sm:w-auto"
               >
@@ -1142,7 +1268,7 @@ export default function RobotsMetaClient() {
           <CardContent>
             {parsedRules.length ? (
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {parsedRules.slice(0, 42).map(rule => (
+                {visibleParsedRules.map(rule => (
                   <div key={rule.id} className="glass-input min-w-0 rounded-xl p-3">
                     <div className="flex items-start justify-between gap-3">
                       <p className="break-all font-mono text-sm font-semibold text-[var(--text-primary)]">
@@ -1162,6 +1288,14 @@ export default function RobotsMetaClient() {
                     </p>
                   </div>
                 ))}
+                {parsedRules.length > visibleParsedRules.length && (
+                  <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)] md:col-span-2 xl:col-span-3">
+                    {t('public.rows_render_limited', {
+                      total: parsedRules.length.toLocaleString(),
+                      visible: visibleParsedRules.length.toLocaleString()
+                    })}
+                  </p>
+                )}
               </div>
             ) : (
               <div className="glass-input rounded-xl p-6 text-center text-sm text-[var(--text-secondary)]">
@@ -1185,7 +1319,7 @@ export default function RobotsMetaClient() {
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-tertiary)]" />
               <Input
                 value={referenceQuery}
-                onChange={event => setReferenceQuery(event.target.value)}
+                onChange={event => setReferenceQuery(event.target.value.slice(0, 160))}
                 placeholder={t('app.converter.robots_meta.reference_search')}
                 className="pl-10"
               />

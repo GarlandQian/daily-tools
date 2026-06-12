@@ -27,13 +27,30 @@ interface DecodedJwt {
   signature: string
 }
 
+interface ManualDecode {
+  decoded: DecodedJwt
+  token: string
+}
+
 interface JwtMetric {
   label: string
   tone?: 'error' | 'success' | 'warning'
   value: string
 }
 
+interface TextPreview {
+  isLimited: boolean
+  preview: string
+  total: number
+  visible: number
+}
+
 const MAX_JWT_INPUT_CHARS = 120000
+const MAX_JWT_LIVE_PARSE_CHARS = 30000
+const MAX_JWT_JSON_PREVIEW_CHARS = 60000
+const MAX_JWT_PART_PREVIEW_CHARS = 6000
+const jwtNumberFormatter = new Intl.NumberFormat()
+const EMPTY_DECODED_JWT: DecodedJwt = { error: null, header: null, payload: null, signature: '' }
 
 const SAMPLE_JWT =
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkRhaWx5IFRvb2xzIiwiaWF0IjoxNzA0MDY3MjAwLCJleHAiOjQxMDI0NDQ4MDB9.4T0IduLk0QPU97v0LvZ8G9FHUnInlnc8oYgcH4ilp9c'
@@ -60,6 +77,13 @@ const formatJson = (obj: unknown) => {
   }
 }
 
+const createTextPreview = (value: string, limit: number): TextPreview => ({
+  isLimited: value.length > limit,
+  preview: value.length > limit ? `${value.slice(0, limit)}\n...` : value,
+  total: value.length,
+  visible: Math.min(value.length, limit)
+})
+
 const formatDateTime = (timestampSeconds: unknown) => {
   if (typeof timestampSeconds !== 'number' || !Number.isFinite(timestampSeconds)) return null
   const date = new Date(timestampSeconds * 1000)
@@ -80,8 +104,6 @@ const formatRelative = (targetMillis: number, nowMillis: number) => {
   const value = Math.max(0, Math.round(absSeconds / unit.seconds))
   return diffSeconds >= 0 ? `+${value}${unit.suffix}` : `-${value}${unit.suffix}`
 }
-
-const byteLength = (value: string) => new TextEncoder().encode(value).length
 
 const decodeJwt = (value: string): DecodedJwt => {
   const token = value.trim()
@@ -121,15 +143,38 @@ export default function JwtClient() {
   const { copy } = useCopy()
 
   const [token, setToken] = useState('')
+  const [isInputCapped, setIsInputCapped] = useState(false)
+  const [manualDecode, setManualDecode] = useState<ManualDecode | null>(null)
+  const currentSafeToken = useMemo(() => token.slice(0, MAX_JWT_INPUT_CHARS), [token])
   const deferredToken = useDeferredValue(token)
   const safeToken = useMemo(() => deferredToken.slice(0, MAX_JWT_INPUT_CHARS), [deferredToken])
+  const deferredTokenIsCurrent = safeToken === currentSafeToken
+  const liveDecodeDeferred = safeToken.trim().length > MAX_JWT_LIVE_PARSE_CHARS
+  const currentLiveDecodeDeferred = currentSafeToken.trim().length > MAX_JWT_LIVE_PARSE_CHARS
 
-  const decoded = useMemo(() => decodeJwt(safeToken), [safeToken])
+  const liveDecoded = useMemo(
+    () => (liveDecodeDeferred ? EMPTY_DECODED_JWT : decodeJwt(safeToken)),
+    [liveDecodeDeferred, safeToken]
+  )
+  const manualDecodeMatchesCurrent = manualDecode?.token === currentSafeToken
+  const decoded = manualDecodeMatchesCurrent
+    ? manualDecode.decoded
+    : deferredTokenIsCurrent
+      ? liveDecoded
+      : EMPTY_DECODED_JWT
+  const hasDecodedCurrentToken =
+    manualDecodeMatchesCurrent || (deferredTokenIsCurrent && !liveDecodeDeferred)
   const now = useVisibleNow(Boolean(decoded.payload?.exp || decoded.payload?.nbf))
 
-  const headerJson = useMemo(() => formatJson(decoded.header), [decoded.header])
-  const payloadJson = useMemo(() => formatJson(decoded.payload), [decoded.payload])
-  const combinedJson = useMemo(
+  const headerJson = useMemo(
+    () => createTextPreview(formatJson(decoded.header), MAX_JWT_JSON_PREVIEW_CHARS),
+    [decoded.header]
+  )
+  const payloadJson = useMemo(
+    () => createTextPreview(formatJson(decoded.payload), MAX_JWT_JSON_PREVIEW_CHARS),
+    [decoded.payload]
+  )
+  const buildCombinedJson = useCallback(
     () =>
       formatJson({
         header: decoded.header ?? {},
@@ -183,7 +228,8 @@ export default function JwtClient() {
   }, [decoded.header, decoded.payload, decoded.signature, now, t])
 
   const status = useMemo(() => {
-    if (!safeToken.trim()) return null
+    if (!currentSafeToken.trim()) return null
+    if (!hasDecodedCurrentToken) return null
     if (decoded.error) {
       return {
         icon: AlertTriangle,
@@ -207,25 +253,61 @@ export default function JwtClient() {
       }
     }
     return { icon: ShieldCheck, tone: 'success' as const, text: t('app.encryption.jwt.valid') }
-  }, [decoded.error, decoded.payload, now, safeToken, t])
+  }, [currentSafeToken, decoded.error, decoded.payload, hasDecodedCurrentToken, now, t])
 
   const tokenParts = useMemo(() => {
-    const [header = '', payload = '', signature = ''] = safeToken.trim().split('.')
+    const [header = '', payload = '', signature = ''] = currentSafeToken.trim().split('.')
     return [
-      { label: t('app.encryption.jwt.header'), value: header },
-      { label: t('app.encryption.jwt.payload'), value: payload },
-      { label: t('app.encryption.jwt.signature'), value: signature }
+      {
+        label: t('app.encryption.jwt.header'),
+        ...createTextPreview(header, MAX_JWT_PART_PREVIEW_CHARS)
+      },
+      {
+        label: t('app.encryption.jwt.payload'),
+        ...createTextPreview(payload, MAX_JWT_PART_PREVIEW_CHARS)
+      },
+      {
+        label: t('app.encryption.jwt.signature'),
+        ...createTextPreview(signature, MAX_JWT_PART_PREVIEW_CHARS)
+      }
     ]
-  }, [safeToken, t])
+  }, [currentSafeToken, t])
 
-  const warning =
-    deferredToken.length > MAX_JWT_INPUT_CHARS
-      ? t('app.encryption.jwt.warning.truncated', { count: MAX_JWT_INPUT_CHARS })
-      : null
+  const warnings = useMemo(() => {
+    const messages: string[] = []
+
+    if (isInputCapped || deferredToken.length > MAX_JWT_INPUT_CHARS) {
+      messages.push(t('app.encryption.jwt.warning.truncated', { count: MAX_JWT_INPUT_CHARS }))
+    }
+
+    if (currentLiveDecodeDeferred) {
+      messages.push(
+        t('app.encryption.jwt.warning.live_decode_deferred', {
+          limit: jwtNumberFormatter.format(MAX_JWT_LIVE_PARSE_CHARS)
+        })
+      )
+    }
+
+    return messages
+  }, [currentLiveDecodeDeferred, deferredToken.length, isInputCapped, t])
+
+  const updateToken = useCallback((value: string) => {
+    const isCapped = value.length > MAX_JWT_INPUT_CHARS
+    setIsInputCapped(isCapped)
+    setToken(isCapped ? value.slice(0, MAX_JWT_INPUT_CHARS) : value)
+    setManualDecode(null)
+  }, [])
 
   const loadSample = useCallback(() => {
+    setIsInputCapped(false)
     setToken(SAMPLE_JWT)
+    setManualDecode(null)
   }, [])
+
+  const handleDecode = useCallback(() => {
+    if (!currentSafeToken.trim()) return
+    setManualDecode({ decoded: decodeJwt(currentSafeToken), token: currentSafeToken })
+  }, [currentSafeToken])
 
   return (
     <div className="flex size-full flex-col gap-5">
@@ -252,9 +334,18 @@ export default function JwtClient() {
               </Button>
               <Button
                 type="button"
+                variant="primary"
+                icon={<FileJson className="h-4 w-4" />}
+                onClick={handleDecode}
+                disabled={!currentSafeToken.trim()}
+              >
+                {t('app.encryption.jwt.decode')}
+              </Button>
+              <Button
+                type="button"
                 variant="ghost"
                 icon={<Trash2 className="h-4 w-4" />}
-                onClick={() => setToken('')}
+                onClick={() => updateToken('')}
               >
                 {t('public.clear')}
               </Button>
@@ -267,7 +358,7 @@ export default function JwtClient() {
             <Textarea
               id="jwt-token"
               value={token}
-              onChange={event => setToken(event.target.value)}
+              onChange={event => updateToken(event.target.value)}
               placeholder={t('app.encryption.jwt.placeholder')}
               rows={5}
               className="resize-none font-mono"
@@ -289,10 +380,17 @@ export default function JwtClient() {
             </div>
           )}
 
-          {warning && (
-            <p className="rounded-xl border border-[var(--warning)] bg-[var(--warning-subtle)] px-3 py-2 text-sm text-[var(--warning)]">
-              {warning}
-            </p>
+          {warnings.length > 0 && (
+            <div className="space-y-2">
+              {warnings.map(message => (
+                <p
+                  key={message}
+                  className="rounded-xl border border-[var(--warning)] bg-[var(--warning-subtle)] px-3 py-2 text-sm text-[var(--warning)]"
+                >
+                  {message}
+                </p>
+              ))}
+            </div>
           )}
 
           {decoded.header && decoded.payload && (
@@ -314,15 +412,25 @@ export default function JwtClient() {
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
             <JwtJsonCard
               copyLabel={t('public.copy')}
+              limitWarning={t('app.encryption.jwt.warning.json_preview_limited', {
+                total: jwtNumberFormatter.format(headerJson.total),
+                visible: jwtNumberFormatter.format(headerJson.visible)
+              })}
               title={t('app.encryption.jwt.header')}
-              value={headerJson}
-              onCopy={() => copy(headerJson)}
+              value={headerJson.preview}
+              isLimited={headerJson.isLimited}
+              onCopy={() => copy(formatJson(decoded.header))}
             />
             <JwtJsonCard
               copyLabel={t('public.copy')}
+              limitWarning={t('app.encryption.jwt.warning.json_preview_limited', {
+                total: jwtNumberFormatter.format(payloadJson.total),
+                visible: jwtNumberFormatter.format(payloadJson.visible)
+              })}
               title={t('app.encryption.jwt.payload')}
-              value={payloadJson}
-              onCopy={() => copy(payloadJson)}
+              value={payloadJson.preview}
+              isLimited={payloadJson.isLimited}
+              onCopy={() => copy(formatJson(decoded.payload))}
             />
           </div>
 
@@ -338,7 +446,7 @@ export default function JwtClient() {
                   size="sm"
                   variant="ghost"
                   icon={<Copy className="h-4 w-4" />}
-                  onClick={() => copy(combinedJson)}
+                  onClick={() => copy(buildCombinedJson())}
                 >
                   {t('app.encryption.jwt.copy_all_json')}
                 </Button>
@@ -352,12 +460,21 @@ export default function JwtClient() {
                       {part.label}
                     </span>
                     <span className="text-xs tabular-nums text-[var(--text-tertiary)]">
-                      {byteLength(part.value)} B
+                      {jwtNumberFormatter.format(part.visible)} /{' '}
+                      {jwtNumberFormatter.format(part.total)}
                     </span>
                   </div>
                   <p className="break-all font-mono text-xs text-[var(--text-primary)]">
-                    {part.value || '-'}
+                    {part.preview || '-'}
                   </p>
+                  {part.isLimited && (
+                    <p className="mt-2 rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs text-[var(--text-secondary)]">
+                      {t('app.encryption.jwt.warning.part_preview_limited', {
+                        total: jwtNumberFormatter.format(part.total),
+                        visible: jwtNumberFormatter.format(part.visible)
+                      })}
+                    </p>
+                  )}
                 </div>
               ))}
             </CardContent>
@@ -390,11 +507,15 @@ const JwtMetricCard = ({ metric }: { metric: JwtMetric }) => {
 
 const JwtJsonCard = ({
   copyLabel,
+  isLimited,
+  limitWarning,
   onCopy,
   title,
   value
 }: {
   copyLabel: string
+  isLimited: boolean
+  limitWarning: string
   onCopy: () => void
   title: string
   value: string
@@ -421,6 +542,11 @@ const JwtJsonCard = ({
         rows={14}
         className="min-h-[280px] flex-1 resize-none font-mono"
       />
+      {isLimited && (
+        <p className="mt-3 rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+          {limitWarning}
+        </p>
+      )}
     </CardContent>
   </Card>
 )

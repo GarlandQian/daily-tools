@@ -20,6 +20,7 @@ import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { InputCapNotice } from '@/components/ui/input-cap-notice'
 import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
@@ -96,6 +97,8 @@ const DEFAULT_DATA: OgFormData = {
 }
 
 const OG_WORKSPACE_LIMIT = 40000
+const OG_FIELD_LIMIT = 420
+const OG_DESCRIPTION_LIMIT = 1200
 
 const PRESETS: Record<OgPreset, OgFormData> = {
   tool: DEFAULT_DATA,
@@ -449,13 +452,18 @@ const OgMetaClient = () => {
   const { copy } = useCopy()
   const [formData, setFormData] = useState<OgFormData>(DEFAULT_DATA)
   const [workspace, setWorkspace] = useState(getDefaultWorkspace)
+  const [isWorkspaceCapped, setIsWorkspaceCapped] = useState(false)
   const deferredWorkspace = useDeferredValue(workspace)
 
   const tags = useMemo(() => buildMetaTags(formData), [formData])
   const jsonLd = useMemo(() => buildJsonLd(formData), [formData])
   const nextMetadata = useMemo(() => buildNextMetadata(formData), [formData])
   const combinedOutput = useMemo(() => `${tags}\n\n${jsonLd}`, [jsonLd, tags])
-  const parsed = useMemo(() => parseOgWorkspace(deferredWorkspace), [deferredWorkspace])
+  const parsed = useMemo(() => {
+    const next = parseOgWorkspace(deferredWorkspace)
+
+    return isWorkspaceCapped ? { ...next, capped: true } : next
+  }, [deferredWorkspace, isWorkspaceCapped])
   const findings = useMemo(
     () => buildOgFindings(formData, parsed, workspace),
     [formData, parsed, workspace]
@@ -490,30 +498,44 @@ const OgMetaClient = () => {
   ]
 
   const setField = (field: keyof OgFormData, value: string) => {
-    setFormData(prev => ({ ...prev, [field]: value }))
+    const limit = field === 'description' ? OG_DESCRIPTION_LIMIT : OG_FIELD_LIMIT
+    setFormData(prev => ({ ...prev, [field]: value.slice(0, limit) }) as OgFormData)
+  }
+
+  const updateWorkspace = (value: string) => {
+    const capped = value.length > OG_WORKSPACE_LIMIT
+
+    setIsWorkspaceCapped(capped)
+    setWorkspace(capped ? value.slice(0, OG_WORKSPACE_LIMIT) : value)
   }
 
   const handleReset = () => {
     setFormData(DEFAULT_DATA)
-    setWorkspace(getDefaultWorkspace())
+    updateWorkspace(getDefaultWorkspace())
   }
 
   const applyParsed = () => {
     setFormData(prev => ({
       ...prev,
-      author: parsed.author || prev.author,
-      description: parsed.description || parsed.twitterDescription || prev.description,
-      image: parsed.image || parsed.twitterImage || prev.image,
-      imageAlt: parsed.imageAlt || parsed.twitterImageAlt || prev.imageAlt,
-      locale: parsed.locale || prev.locale,
-      price: parsed.price || prev.price,
-      publishedTime: parsed.publishedTime || prev.publishedTime,
-      section: parsed.section || prev.section,
-      siteName: parsed.siteName || prev.siteName,
-      title: parsed.title || parsed.twitterTitle || prev.title,
-      twitter: parsed.twitterSite || prev.twitter,
+      author: (parsed.author || prev.author).slice(0, OG_FIELD_LIMIT),
+      description: (parsed.description || parsed.twitterDescription || prev.description).slice(
+        0,
+        OG_DESCRIPTION_LIMIT
+      ),
+      image: (parsed.image || parsed.twitterImage || prev.image).slice(0, OG_FIELD_LIMIT),
+      imageAlt: (parsed.imageAlt || parsed.twitterImageAlt || prev.imageAlt).slice(
+        0,
+        OG_FIELD_LIMIT
+      ),
+      locale: (parsed.locale || prev.locale).slice(0, OG_FIELD_LIMIT),
+      price: (parsed.price || prev.price).slice(0, OG_FIELD_LIMIT),
+      publishedTime: (parsed.publishedTime || prev.publishedTime).slice(0, OG_FIELD_LIMIT),
+      section: (parsed.section || prev.section).slice(0, OG_FIELD_LIMIT),
+      siteName: (parsed.siteName || prev.siteName).slice(0, OG_FIELD_LIMIT),
+      title: (parsed.title || parsed.twitterTitle || prev.title).slice(0, OG_FIELD_LIMIT),
+      twitter: (parsed.twitterSite || prev.twitter).slice(0, OG_FIELD_LIMIT),
       type: isOgType(parsed.type) ? parsed.type : prev.type,
-      url: parsed.canonical || prev.url
+      url: (parsed.canonical || prev.url).slice(0, OG_FIELD_LIMIT)
     }))
   }
 
@@ -583,6 +605,10 @@ const OgMetaClient = () => {
                   rows={3}
                   className="resize-none"
                   placeholder={t('app.generation.og.summary_placeholder')}
+                />
+                <InputCapNotice
+                  visible={formData.description.length >= OG_DESCRIPTION_LIMIT}
+                  limit={OG_DESCRIPTION_LIMIT}
                 />
               </div>
               <OgField
@@ -712,11 +738,12 @@ const OgMetaClient = () => {
           <CardContent className="space-y-4">
             <Textarea
               value={workspace}
-              onChange={event => setWorkspace(event.target.value)}
+              onChange={event => updateWorkspace(event.target.value)}
               placeholder={t('app.generation.og.workspace_placeholder')}
               className="min-h-[220px] font-mono text-xs"
               spellCheck={false}
             />
+            <InputCapNotice visible={isWorkspaceCapped} limit={OG_WORKSPACE_LIMIT} />
             <div className="grid grid-cols-3 gap-3">
               <OgMetric
                 label={t('app.generation.og.metric.meta_count')}
@@ -747,7 +774,7 @@ const OgMetaClient = () => {
                 type="button"
                 variant="outline"
                 icon={<Tags className="h-4 w-4" />}
-                onClick={() => setWorkspace(combinedOutput)}
+                onClick={() => updateWorkspace(combinedOutput)}
               >
                 {t('app.generation.og.use_generated')}
               </Button>
@@ -755,7 +782,7 @@ const OgMetaClient = () => {
                 type="button"
                 variant="ghost"
                 icon={<Trash2 className="h-4 w-4" />}
-                onClick={() => setWorkspace('')}
+                onClick={() => updateWorkspace('')}
               >
                 {t('public.clear')}
               </Button>
@@ -941,12 +968,14 @@ const OgMetaClient = () => {
 const OgField = ({
   id,
   label,
+  limit = OG_FIELD_LIMIT,
   onChange,
   placeholder,
   value
 }: {
   id: string
   label: string
+  limit?: number
   onChange: (value: string) => void
   placeholder: string
   value: string
@@ -956,7 +985,7 @@ const OgField = ({
     <Input
       id={id}
       value={value}
-      onChange={event => onChange(event.target.value)}
+      onChange={event => onChange(event.target.value.slice(0, limit))}
       placeholder={placeholder}
     />
   </div>

@@ -11,6 +11,11 @@ import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Slider } from '@/components/ui/slider'
 import { useCopy } from '@/hooks/useCopy'
+import {
+  createOutputPreview,
+  isOutputPreviewLimited,
+  OUTPUT_PREVIEW_CHARS
+} from '@/utils/outputPreview'
 
 type GradientOutput = 'css' | 'react' | 'tailwind' | 'variable'
 type GradientType = 'conic' | 'linear' | 'radial'
@@ -123,6 +128,7 @@ const createStop = (color: string, position: number): ColorStop => ({
 })
 
 const DEFAULT_STOPS = [createStop('#0ea5e9', 0), createStop('#22c55e', 100)]
+const MAX_GRADIENT_STOPS = 12
 
 const formatStops = (stops: GradientStopValue[]) =>
   [...stops]
@@ -174,11 +180,24 @@ const GradientClient = () => {
   const [stops, setStops] = useState<ColorStop[]>(DEFAULT_STOPS)
 
   const gradientCSS = useMemo(() => buildGradient(type, angle, stops), [angle, stops, type])
-  const output = getOutput(outputType, gradientCSS)
+  const outputPreviewSource = useMemo(
+    () => getOutput(outputType, gradientCSS),
+    [gradientCSS, outputType]
+  )
+  const outputPreview = useMemo(
+    () => createOutputPreview(outputPreviewSource),
+    [outputPreviewSource]
+  )
+  const outputPreviewLimited = isOutputPreviewLimited(outputPreviewSource)
+  const buildCurrentOutput = useCallback(
+    () => getOutput(outputType, gradientCSS),
+    [gradientCSS, outputType]
+  )
   const sortedStops = useMemo(() => [...stops].sort((a, b) => a.position - b.position), [stops])
 
   const addStop = useCallback(() => {
     setStops(prev => {
+      if (prev.length >= MAX_GRADIENT_STOPS) return prev
       const nextPosition = prev.length ? Math.round(100 / (prev.length + 1)) * prev.length : 50
       const nextColor = PALETTE[(prev.length * 3) % PALETTE.length]
       return [...prev, createStop(nextColor, Math.min(100, Math.max(0, nextPosition)))]
@@ -284,7 +303,7 @@ const GradientClient = () => {
               <Button
                 size="sm"
                 icon={<Copy className="h-3.5 w-3.5" />}
-                onClick={() => copy(output)}
+                onClick={() => copy(buildCurrentOutput())}
               >
                 {t('public.copy')}
               </Button>
@@ -389,7 +408,12 @@ const GradientClient = () => {
           <div className="flex flex-col gap-3">
             <div className="flex items-center justify-between">
               <Label>{t('app.generation.gradient.color_stops')}</Label>
-              <Button size="sm" icon={<Plus className="h-3.5 w-3.5" />} onClick={addStop}>
+              <Button
+                size="sm"
+                icon={<Plus className="h-3.5 w-3.5" />}
+                onClick={addStop}
+                disabled={stops.length >= MAX_GRADIENT_STOPS}
+              >
                 {t('public.add')}
               </Button>
             </div>
@@ -429,14 +453,26 @@ const GradientClient = () => {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-3">
           <CardTitle>CSS</CardTitle>
-          <Button size="sm" icon={<Copy className="h-3.5 w-3.5" />} onClick={() => copy(output)}>
+          <Button
+            size="sm"
+            icon={<Copy className="h-3.5 w-3.5" />}
+            onClick={() => copy(buildCurrentOutput())}
+          >
             {t('public.copy')}
           </Button>
         </CardHeader>
         <CardContent>
           <div className="glass-input whitespace-pre-wrap break-all rounded-lg p-4 font-mono text-sm text-[var(--text-primary)]">
-            {output}
+            {outputPreview}
           </div>
+          {outputPreviewLimited ? (
+            <p className="mt-3 text-xs leading-5 text-amber-600 dark:text-amber-300">
+              {t('public.output_preview_limited', {
+                total: outputPreviewSource.length.toLocaleString(),
+                visible: OUTPUT_PREVIEW_CHARS.toLocaleString()
+              })}
+            </p>
+          ) : null}
         </CardContent>
       </Card>
     </div>

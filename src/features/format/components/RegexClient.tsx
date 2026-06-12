@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
+import { InputCapNotice } from '@/components/ui/input-cap-notice'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
@@ -28,7 +29,9 @@ interface HighlightSegment {
 
 const MAX_REGEX_INPUT_CHARS = 5000
 const MAX_REGEX_PATTERN_CHARS = 500
+const MAX_REGEX_REPLACEMENT_CHARS = 2000
 const MAX_REGEX_MATCHES = 500
+const MAX_REGEX_RENDERED_MATCHES = 120
 const SUSPICIOUS_REGEX_INPUT_CHARS = 1000
 const SUSPICIOUS_NESTED_QUANTIFIER = /\([^)]*[+*][^)]*\)[+*?{]/
 
@@ -110,12 +113,35 @@ const buildHighlightSegments = (
   return segments.length ? segments : [{ key: 'empty', text: source, highlighted: false }]
 }
 
+const formatMatchesJson = (matches: MatchResult[]) =>
+  JSON.stringify(
+    matches.map(match => ({
+      index: match.index,
+      match: match.match,
+      captures: match.captures
+    })),
+    null,
+    2
+  )
+
+const formatMatchesCsv = (matches: MatchResult[]) => {
+  const escapeCell = (value: string | number) => `"${String(value).replaceAll('"', '""')}"`
+  return [
+    ['index', 'match', 'captures'].map(escapeCell).join(','),
+    ...matches.map(match =>
+      [match.index, match.match, match.captures.join('|')].map(escapeCell).join(',')
+    )
+  ].join('\n')
+}
+
 const RegexClient = () => {
   const { t } = useTranslation()
   const { copy } = useCopy()
   const [pattern, setPattern] = useState('')
   const [flags, setFlags] = useState<string[]>(['g'])
   const [testText, setTestText] = useState('')
+  const [isPatternCapped, setIsPatternCapped] = useState(false)
+  const [isTestTextCapped, setIsTestTextCapped] = useState(false)
   const [replacement, setReplacement] = useState('')
   const deferredPattern = useDeferredValue(pattern)
   const deferredFlags = useDeferredValue(flags)
@@ -124,6 +150,24 @@ const RegexClient = () => {
 
   const { evaluatedText, matches, highlightedSegments, error, replacementPreview, warning } =
     useMemo(() => {
+      const inputWarnings: string[] = []
+
+      if (isPatternCapped || deferredPattern.length > MAX_REGEX_PATTERN_CHARS) {
+        inputWarnings.push(
+          t('app.format.regex.warning.pattern_too_long', {
+            count: MAX_REGEX_PATTERN_CHARS
+          })
+        )
+      }
+
+      if (isTestTextCapped || deferredTestText.length > MAX_REGEX_INPUT_CHARS) {
+        inputWarnings.push(
+          t('app.format.regex.warning.input_truncated', {
+            count: MAX_REGEX_INPUT_CHARS
+          })
+        )
+      }
+
       if (!deferredPattern || !deferredTestText) {
         return {
           evaluatedText: deferredTestText,
@@ -131,20 +175,21 @@ const RegexClient = () => {
           highlightedSegments: buildHighlightSegments(deferredTestText, []),
           error: null as string | null,
           replacementPreview: deferredTestText,
-          warning: null as string | null
+          warning: inputWarnings.length ? inputWarnings.join(' ') : null
         }
       }
 
-      if (deferredPattern.length > MAX_REGEX_PATTERN_CHARS) {
+      if (
+        inputWarnings.length &&
+        (isPatternCapped || deferredPattern.length > MAX_REGEX_PATTERN_CHARS)
+      ) {
         return {
           evaluatedText: deferredTestText,
           matches: [] as MatchResult[],
           highlightedSegments: buildHighlightSegments(deferredTestText, []),
           error: null,
           replacementPreview: deferredTestText,
-          warning: t('app.format.regex.warning.pattern_too_long', {
-            count: MAX_REGEX_PATTERN_CHARS
-          })
+          warning: inputWarnings.join(' ')
         }
       }
 
@@ -156,12 +201,19 @@ const RegexClient = () => {
         const safeTestText = deferredTestText.slice(0, safeInputLimit)
         const warnings: string[] = []
 
-        if (deferredTestText.length > safeInputLimit) {
+        if (
+          (isTestTextCapped || deferredTestText.length > safeInputLimit) &&
+          safeInputLimit !== MAX_REGEX_INPUT_CHARS
+        ) {
           warnings.push(
             t('app.format.regex.warning.input_truncated', {
               count: safeInputLimit
             })
           )
+        }
+
+        if (inputWarnings.length) {
+          warnings.unshift(...inputWarnings)
         }
 
         if (hasSuspiciousPattern && deferredTestText.length > SUSPICIOUS_REGEX_INPUT_CHARS) {
@@ -233,30 +285,18 @@ const RegexClient = () => {
           warning: null
         }
       }
-    }, [deferredFlags, deferredPattern, deferredReplacement, deferredTestText, t])
+    }, [
+      deferredFlags,
+      deferredPattern,
+      deferredReplacement,
+      deferredTestText,
+      isPatternCapped,
+      isTestTextCapped,
+      t
+    ])
 
-  const matchJson = useMemo(
-    () =>
-      JSON.stringify(
-        matches.map(match => ({
-          index: match.index,
-          match: match.match,
-          captures: match.captures
-        })),
-        null,
-        2
-      ),
-    [matches]
-  )
-  const matchCsv = useMemo(() => {
-    const escapeCell = (value: string | number) => `"${String(value).replaceAll('"', '""')}"`
-    return [
-      ['index', 'match', 'captures'].map(escapeCell).join(','),
-      ...matches.map(match =>
-        [match.index, match.match, match.captures.join('|')].map(escapeCell).join(',')
-      )
-    ].join('\n')
-  }, [matches])
+  const visibleMatches = useMemo(() => matches.slice(0, MAX_REGEX_RENDERED_MATCHES), [matches])
+  const isMatchTableLimited = matches.length > visibleMatches.length
   const stats = useMemo(() => {
     const uniqueMatches = new Set(matches.map(match => match.match)).size
     const captureCount = matches.reduce((total, match) => total + match.captures.length, 0)
@@ -273,7 +313,25 @@ const RegexClient = () => {
     }
   }, [evaluatedText.length, matches])
 
+  const updatePattern = useCallback((value: string) => {
+    const capped = value.length > MAX_REGEX_PATTERN_CHARS
+    setIsPatternCapped(capped)
+    setPattern(capped ? value.slice(0, MAX_REGEX_PATTERN_CHARS) : value)
+  }, [])
+
+  const updateTestText = useCallback((value: string) => {
+    const capped = value.length > MAX_REGEX_INPUT_CHARS
+    setIsTestTextCapped(capped)
+    setTestText(capped ? value.slice(0, MAX_REGEX_INPUT_CHARS) : value)
+  }, [])
+
+  const updateReplacement = useCallback((value: string) => {
+    setReplacement(value.slice(0, MAX_REGEX_REPLACEMENT_CHARS))
+  }, [])
+
   const handleClear = useCallback(() => {
+    setIsPatternCapped(false)
+    setIsTestTextCapped(false)
     setPattern('')
     setFlags(['g'])
     setTestText('')
@@ -292,6 +350,8 @@ const RegexClient = () => {
   const loadSample = (sampleId: string) => {
     const sample = regexSamples.find(item => item.id === sampleId)
     if (!sample) return
+    setIsPatternCapped(false)
+    setIsTestTextCapped(false)
     setPattern(sample.pattern)
     setFlags(sample.flags)
     setTestText(sample.text)
@@ -347,7 +407,7 @@ const RegexClient = () => {
                 <input
                   id="regex-pattern"
                   value={pattern}
-                  onChange={event => setPattern(event.target.value)}
+                  onChange={event => updatePattern(event.target.value)}
                   placeholder={t('app.format.regex.pattern_placeholder')}
                   className="min-w-0 flex-1 bg-transparent px-1 font-mono text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
                 />
@@ -376,7 +436,7 @@ const RegexClient = () => {
               <Textarea
                 id="regex-test"
                 value={testText}
-                onChange={event => setTestText(event.target.value)}
+                onChange={event => updateTestText(event.target.value)}
                 placeholder={t('app.format.regex.test_placeholder')}
                 rows={5}
                 className="font-mono"
@@ -387,13 +447,18 @@ const RegexClient = () => {
               <Input
                 id="regex-replacement"
                 value={replacement}
-                onChange={event => setReplacement(event.target.value)}
+                onChange={event => updateReplacement(event.target.value)}
                 placeholder="$1"
+                maxLength={MAX_REGEX_REPLACEMENT_CHARS}
                 className="font-mono"
               />
               <p className="text-xs leading-5 text-[var(--text-secondary)]">
                 {t('app.format.regex.replacement_hint')}
               </p>
+              <InputCapNotice
+                visible={replacement.length >= MAX_REGEX_REPLACEMENT_CHARS}
+                limit={MAX_REGEX_REPLACEMENT_CHARS}
+              />
             </div>
           </div>
 
@@ -476,11 +541,15 @@ const RegexClient = () => {
                 size="sm"
                 variant="ghost"
                 icon={<Copy className="h-4 w-4" />}
-                onClick={() => copy(matchJson)}
+                onClick={() => copy(formatMatchesJson(matches))}
               >
                 JSON
               </Button>
-              <Button size="sm" icon={<Copy className="h-4 w-4" />} onClick={() => copy(matchCsv)}>
+              <Button
+                size="sm"
+                icon={<Copy className="h-4 w-4" />}
+                onClick={() => copy(formatMatchesCsv(matches))}
+              >
                 CSV
               </Button>
             </div>
@@ -497,8 +566,8 @@ const RegexClient = () => {
                 </tr>
               </thead>
               <tbody>
-                {matches.length > 0 ? (
-                  matches.map(match => (
+                {visibleMatches.length > 0 ? (
+                  visibleMatches.map(match => (
                     <tr key={match.key} className="border-t border-[var(--border-subtle)]">
                       <td className="px-3 py-2 font-mono text-[var(--text-secondary)]">
                         {match.index}
@@ -521,6 +590,14 @@ const RegexClient = () => {
               </tbody>
             </table>
           </div>
+          {isMatchTableLimited && (
+            <p className="mt-3 rounded-lg border border-[var(--warning)] bg-[var(--warning-subtle)] px-3 py-2 text-sm text-[var(--warning)]">
+              {t('app.format.regex.warning.rows_limited', {
+                total: matches.length,
+                visible: visibleMatches.length
+              })}
+            </p>
+          )}
         </CardContent>
       </Card>
     </div>

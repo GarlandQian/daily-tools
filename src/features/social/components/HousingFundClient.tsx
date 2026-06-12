@@ -23,6 +23,8 @@ const parseAmount = (value: string) => {
 }
 
 const commonRatePresets = ['5', '7', '10', '12'] as const
+const TEXT_FIELD_LIMIT = 80
+const NUMBER_FIELD_LIMIT = 24
 
 const HousingFundClient = () => {
   const { i18n, t } = useTranslation()
@@ -171,8 +173,9 @@ const HousingFundClient = () => {
                   <Input
                     id="housing-custom-city"
                     value={customCity}
-                    onChange={event => setCustomCity(event.target.value)}
+                    onChange={event => setCustomCity(event.target.value.slice(0, TEXT_FIELD_LIMIT))}
                     placeholder={t('app.social.region.city_placeholder')}
+                    maxLength={TEXT_FIELD_LIMIT}
                   />
                 </Field>
               )}
@@ -192,7 +195,7 @@ const HousingFundClient = () => {
               min="0"
               type="number"
               value={monthlyBase}
-              onChange={event => setMonthlyBase(event.target.value)}
+              onChange={event => setMonthlyBase(event.target.value.slice(0, NUMBER_FIELD_LIMIT))}
             />
           </Field>
 
@@ -205,7 +208,7 @@ const HousingFundClient = () => {
                 step="0.1"
                 type="number"
                 value={employeeRate}
-                onChange={event => setEmployeeRate(event.target.value)}
+                onChange={event => setEmployeeRate(event.target.value.slice(0, NUMBER_FIELD_LIMIT))}
               />
             </Field>
             <Field id="housing-employer-rate" label={t('app.social.housing_fund.employer_rate')}>
@@ -216,7 +219,7 @@ const HousingFundClient = () => {
                 step="0.1"
                 type="number"
                 value={employerRate}
-                onChange={event => setEmployerRate(event.target.value)}
+                onChange={event => setEmployerRate(event.target.value.slice(0, NUMBER_FIELD_LIMIT))}
               />
             </Field>
           </div>
@@ -267,7 +270,7 @@ const HousingFundClient = () => {
                 min="0"
                 type="number"
                 value={months}
-                onChange={event => setMonths(event.target.value)}
+                onChange={event => setMonths(event.target.value.slice(0, NUMBER_FIELD_LIMIT))}
               />
             </Field>
             <Field id="housing-interest" label={t('app.social.housing_fund.annual_interest')}>
@@ -278,7 +281,9 @@ const HousingFundClient = () => {
                 step="0.1"
                 type="number"
                 value={annualInterestRate}
-                onChange={event => setAnnualInterestRate(event.target.value)}
+                onChange={event =>
+                  setAnnualInterestRate(event.target.value.slice(0, NUMBER_FIELD_LIMIT))
+                }
               />
             </Field>
           </div>
@@ -290,7 +295,7 @@ const HousingFundClient = () => {
               min="0"
               type="number"
               value={currentBalance}
-              onChange={event => setCurrentBalance(event.target.value)}
+              onChange={event => setCurrentBalance(event.target.value.slice(0, NUMBER_FIELD_LIMIT))}
             />
           </Field>
         </CardContent>

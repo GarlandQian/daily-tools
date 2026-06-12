@@ -27,6 +27,11 @@ import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
+import {
+  createOutputPreview,
+  isOutputPreviewLimited,
+  OUTPUT_PREVIEW_CHARS
+} from '@/utils/outputPreview'
 
 const ALGORITHMS = ['br', 'gzip', 'zstd', 'deflate', 'identity'] as const
 const CONTENT_TYPES = [
@@ -44,6 +49,7 @@ const CACHE_SCOPES = ['cdn', 'origin', 'browser', 'private'] as const
 const OUTPUT_TYPES = ['headers', 'nginx', 'apache', 'cloudflare', 'json', 'csv'] as const
 const WORKSPACE_LIMIT = 50000
 const HEADER_LIMIT = 160
+const ROUTE_PATTERN_FIELD_LIMIT = 240
 
 type Algorithm = (typeof ALGORITHMS)[number]
 type ContentType = (typeof CONTENT_TYPES)[number]
@@ -263,7 +269,7 @@ const parseHeaders = (input: string): ParsedHeaders => {
     if (lower === 'vary') parsed.vary.push(...splitTokens(value))
   })
 
-  if (input.length > WORKSPACE_LIMIT) parsed.errors.push('truncated')
+  if (input.length >= WORKSPACE_LIMIT) parsed.errors.push('truncated')
   return parsed
 }
 
@@ -512,8 +518,13 @@ export default function CompressionHeadersClient() {
   const findings = useMemo(() => auditCompression(draft, parsed), [draft, parsed])
   const score = useMemo(() => getScore(findings), [findings])
   const ratio = useMemo(() => compressionRatio(draft), [draft])
-  const output = useMemo(() => buildOutput(draft, outputType), [draft, outputType])
-  const csvOutput = useMemo(() => buildOutput(draft, 'csv'), [draft])
+  const outputPreviewSource = useMemo(() => buildOutput(draft, outputType), [draft, outputType])
+  const outputPreview = useMemo(
+    () => createOutputPreview(outputPreviewSource),
+    [outputPreviewSource]
+  )
+  const outputPreviewLimited = isOutputPreviewLimited(outputPreviewSource)
+  const buildCurrentOutput = useCallback(() => buildOutput(draft, outputType), [draft, outputType])
   const filteredFindings = useMemo(() => {
     const query = deferredAuditQuery.trim().toLowerCase()
     if (!query) return findings
@@ -689,7 +700,13 @@ export default function CompressionHeadersClient() {
                 <Input
                   id="compression-route"
                   value={draft.routePattern}
-                  onChange={event => updateDraft('routePattern', event.target.value.slice(0, 160))}
+                  onChange={event =>
+                    updateDraft(
+                      'routePattern',
+                      event.target.value.slice(0, ROUTE_PATTERN_FIELD_LIMIT)
+                    )
+                  }
+                  maxLength={ROUTE_PATTERN_FIELD_LIMIT}
                   className="font-mono"
                   spellCheck={false}
                 />
@@ -876,7 +893,7 @@ export default function CompressionHeadersClient() {
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-tertiary)]" />
               <Input
                 value={auditQuery}
-                onChange={event => setAuditQuery(event.target.value)}
+                onChange={event => setAuditQuery(event.target.value.slice(0, 160))}
                 placeholder={t('app.converter.compression_headers.audit_search')}
                 className="pl-10"
               />
@@ -888,12 +905,12 @@ export default function CompressionHeadersClient() {
                   className={`rounded-xl border px-3 py-2 text-xs ${levelClass(finding.level)}`}
                 >
                   <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
-                    <span className="min-w-0 break-words">
+                    <span className="min-w-0 break-all leading-5">
                       <span className="font-semibold">{finding.subject}</span>
-                      <span className="mx-2">/</span>
+                      <span className="mx-2 inline-block">/</span>
                       {t(`app.converter.compression_headers.audit.${finding.key}`)}
                     </span>
-                    <span className="font-medium">
+                    <span className="shrink-0 font-medium">
                       {t(`app.converter.compression_headers.level.${finding.level}`)}
                     </span>
                   </div>
@@ -933,12 +950,20 @@ export default function CompressionHeadersClient() {
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Textarea readOnly value={output} className="min-h-[320px] font-mono" />
+            <Textarea readOnly value={outputPreview} className="min-h-[320px] font-mono" />
+            {outputPreviewLimited && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('public.output_preview_limited', {
+                  total: outputPreviewSource.length.toLocaleString(),
+                  visible: OUTPUT_PREVIEW_CHARS.toLocaleString()
+                })}
+              </p>
+            )}
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => copy(output)}
+                onClick={() => copy(buildCurrentOutput())}
                 className="w-full sm:w-auto"
               >
                 <Copy className="h-4 w-4" />
@@ -948,7 +973,11 @@ export default function CompressionHeadersClient() {
                 type="button"
                 variant="outline"
                 onClick={() =>
-                  downloadText(output, 'compression-headers.txt', 'text/plain;charset=utf-8')
+                  downloadText(
+                    buildCurrentOutput(),
+                    'compression-headers.txt',
+                    'text/plain;charset=utf-8'
+                  )
                 }
                 className="w-full sm:w-auto"
               >
@@ -959,7 +988,11 @@ export default function CompressionHeadersClient() {
                 type="button"
                 variant="outline"
                 onClick={() =>
-                  downloadText(csvOutput, 'compression-headers.csv', 'text/csv;charset=utf-8')
+                  downloadText(
+                    buildOutput(draft, 'csv'),
+                    'compression-headers.csv',
+                    'text/csv;charset=utf-8'
+                  )
                 }
                 className="w-full sm:w-auto"
               >
@@ -986,7 +1019,7 @@ export default function CompressionHeadersClient() {
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-tertiary)]" />
               <Input
                 value={parsedQuery}
-                onChange={event => setParsedQuery(event.target.value)}
+                onChange={event => setParsedQuery(event.target.value.slice(0, 160))}
                 placeholder={t('app.converter.compression_headers.parsed_search')}
                 className="pl-10"
               />

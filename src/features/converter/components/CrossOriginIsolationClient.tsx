@@ -13,15 +13,21 @@ import {
   Sparkles,
   Trash2
 } from 'lucide-react'
-import { useDeferredValue, useMemo, useState } from 'react'
+import { useCallback, useDeferredValue, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { InputCapNotice } from '@/components/ui/input-cap-notice'
 import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
+import {
+  createOutputPreview,
+  isOutputPreviewLimited,
+  OUTPUT_PREVIEW_CHARS
+} from '@/utils/outputPreview'
 
 const COOP_VALUES = [
   'unsafe-none',
@@ -34,6 +40,7 @@ const CORP_VALUES = ['same-origin', 'same-site', 'cross-origin'] as const
 const OUTPUT_TYPES = ['raw', 'next', 'nginx', 'apache', 'cloudflare', 'json'] as const
 const WORKSPACE_LIMIT = 28000
 const PARSED_ROW_LIMIT = 140
+const PARSED_RENDER_LIMIT = 48
 
 type CoopValue = (typeof COOP_VALUES)[number]
 type CoepValue = (typeof COEP_VALUES)[number]
@@ -410,8 +417,19 @@ export default function CrossOriginIsolationClient() {
   const [workspace, setWorkspace] = useState(PRESETS[0].workspace)
   const deferredWorkspace = useDeferredValue(workspace)
 
-  const output = useMemo(() => buildOutput(draft, outputType), [draft, outputType])
+  const outputPreviewSource = useMemo(() => buildOutput(draft, outputType), [draft, outputType])
+  const outputPreview = useMemo(
+    () => createOutputPreview(outputPreviewSource),
+    [outputPreviewSource]
+  )
+  const outputPreviewLimited = isOutputPreviewLimited(outputPreviewSource)
+  const buildCurrentOutput = useCallback(() => buildOutput(draft, outputType), [draft, outputType])
   const parsedHeaders = useMemo(() => parseWorkspace(deferredWorkspace), [deferredWorkspace])
+  const visibleParsedHeaders = useMemo(
+    () => parsedHeaders.slice(0, PARSED_RENDER_LIMIT),
+    [parsedHeaders]
+  )
+  const parsedHeadersLimited = parsedHeaders.length > visibleParsedHeaders.length
   const findings = useMemo(() => auditIsolation(draft, parsedHeaders), [draft, parsedHeaders])
   const metrics = useMemo(() => {
     const risks = findings.filter(finding => finding.level !== 'good').length
@@ -426,7 +444,7 @@ export default function CrossOriginIsolationClient() {
       risks: String(risks)
     }
   }, [draft, findings, parsedHeaders, t])
-  const exportJson = useMemo(
+  const buildExportJson = useCallback(
     () =>
       JSON.stringify(
         {
@@ -443,7 +461,7 @@ export default function CrossOriginIsolationClient() {
       ),
     [draft, findings, outputType, parsedHeaders]
   )
-  const exportCsv = useMemo(
+  const buildExportCsv = useCallback(
     () =>
       [
         ['header', 'value', 'valid', 'source', 'raw'],
@@ -686,13 +704,25 @@ export default function CrossOriginIsolationClient() {
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Textarea readOnly value={output} className="min-h-[240px] font-mono" />
+            <Textarea readOnly value={outputPreview} className="min-h-[240px] font-mono" />
+            {outputPreviewLimited && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('public.output_preview_limited', {
+                  total: outputPreviewSource.length.toLocaleString(),
+                  visible: OUTPUT_PREVIEW_CHARS.toLocaleString()
+                })}
+              </p>
+            )}
             <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-              <Button type="button" onClick={() => copy(output)}>
+              <Button type="button" onClick={() => copy(buildCurrentOutput())}>
                 <Copy className="h-4 w-4" />
                 {t('public.copy')}
               </Button>
-              <Button type="button" variant="outline" onClick={() => setWorkspace(output)}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setWorkspace(buildCurrentOutput())}
+              >
                 <Search className="h-4 w-4" />
                 {t('app.converter.cross_origin_isolation.use_output')}
               </Button>
@@ -707,10 +737,10 @@ export default function CrossOriginIsolationClient() {
                 {findings.slice(0, 10).map((finding, index) => (
                   <div
                     key={`${finding.key}:${finding.subject}:${index}`}
-                    className={`rounded-xl border px-3 py-2 text-xs ${getFindingClass(finding.level)}`}
+                    className={`min-w-0 break-all rounded-xl border px-3 py-2 text-xs leading-5 ${getFindingClass(finding.level)}`}
                   >
                     <span className="font-semibold">{finding.subject}</span>
-                    <span className="mx-2">/</span>
+                    <span className="mx-2 inline-block">/</span>
                     {t(`app.converter.cross_origin_isolation.audit.${finding.key}`)}
                   </div>
                 ))}
@@ -732,7 +762,7 @@ export default function CrossOriginIsolationClient() {
               </CardDescription>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button type="button" variant="outline" onClick={() => copy(exportJson)}>
+              <Button type="button" variant="outline" onClick={() => copy(buildExportJson())}>
                 <Copy className="h-4 w-4" />
                 {t('app.converter.cross_origin_isolation.copy_json')}
               </Button>
@@ -740,7 +770,11 @@ export default function CrossOriginIsolationClient() {
                 type="button"
                 variant="outline"
                 onClick={() =>
-                  downloadText(exportCsv, 'cross-origin-isolation.csv', 'text/csv;charset=utf-8')
+                  downloadText(
+                    buildExportCsv(),
+                    'cross-origin-isolation.csv',
+                    'text/csv;charset=utf-8'
+                  )
                 }
               >
                 <Download className="h-4 w-4" />
@@ -760,6 +794,7 @@ export default function CrossOriginIsolationClient() {
             placeholder={t('app.converter.cross_origin_isolation.workspace_placeholder')}
             className="min-h-[180px] font-mono"
           />
+          <InputCapNotice visible={workspace.length >= WORKSPACE_LIMIT} limit={WORKSPACE_LIMIT} />
 
           <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
             <div className="glass-input rounded-xl p-3">
@@ -792,40 +827,50 @@ export default function CrossOriginIsolationClient() {
           </div>
 
           {parsedHeaders.length ? (
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {parsedHeaders.map((row, index) => (
-                <div
-                  key={`${row.header}:${row.value}:${index}`}
-                  className="glass-input rounded-xl p-3"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="break-all font-mono text-sm font-semibold text-[var(--text-primary)]">
-                        {row.header}
-                      </p>
-                      <p className="mt-1 text-xs text-[var(--text-secondary)]">{row.source}</p>
+            <>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {visibleParsedHeaders.map((row, index) => (
+                  <div
+                    key={`${row.header}:${row.value}:${index}`}
+                    className="glass-input rounded-xl p-3"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="break-all font-mono text-sm font-semibold text-[var(--text-primary)]">
+                          {row.header}
+                        </p>
+                        <p className="mt-1 text-xs text-[var(--text-secondary)]">{row.source}</p>
+                      </div>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-xs ${
+                          row.valid
+                            ? 'bg-emerald-500/10 text-emerald-700'
+                            : 'bg-red-500/10 text-red-600'
+                        }`}
+                      >
+                        {row.valid
+                          ? t('app.converter.cross_origin_isolation.valid')
+                          : t('app.converter.cross_origin_isolation.invalid')}
+                      </span>
                     </div>
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-xs ${
-                        row.valid
-                          ? 'bg-emerald-500/10 text-emerald-700'
-                          : 'bg-red-500/10 text-red-600'
-                      }`}
-                    >
-                      {row.valid
-                        ? t('app.converter.cross_origin_isolation.valid')
-                        : t('app.converter.cross_origin_isolation.invalid')}
-                    </span>
+                    <p className="mt-3 break-all font-mono text-sm text-[var(--text-primary)]">
+                      {row.value}
+                    </p>
+                    <p className="mt-3 line-clamp-3 break-all font-mono text-xs text-[var(--text-tertiary)]">
+                      {row.raw}
+                    </p>
                   </div>
-                  <p className="mt-3 break-all font-mono text-sm text-[var(--text-primary)]">
-                    {row.value}
-                  </p>
-                  <p className="mt-3 line-clamp-3 break-all font-mono text-xs text-[var(--text-tertiary)]">
-                    {row.raw}
-                  </p>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+              {parsedHeadersLimited && (
+                <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                  {t('public.output_preview_rows_limited', {
+                    total: parsedHeaders.length.toLocaleString(),
+                    visible: visibleParsedHeaders.length.toLocaleString()
+                  })}
+                </p>
+              )}
+            </>
           ) : (
             <div className="glass-input rounded-xl p-6 text-center text-sm text-[var(--text-secondary)]">
               {t('app.converter.cross_origin_isolation.empty')}

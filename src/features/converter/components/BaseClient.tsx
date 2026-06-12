@@ -10,7 +10,7 @@ import {
   Table2,
   Trash2
 } from 'lucide-react'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useDeferredValue, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
@@ -43,6 +43,7 @@ const BIGINT_ZERO = BigInt(0)
 const BIGINT_TWO = BigInt(2)
 const BIGINT_ONE = BigInt(1)
 const MAX_BASE_INPUT_DIGITS = 10000
+const MAX_BATCH_INPUT_CHARS = 60000
 const MAX_BATCH_ROWS = 120
 const baseNumberFormatter = new Intl.NumberFormat()
 
@@ -186,6 +187,7 @@ const BaseClient = () => {
   const [batchInputBase, setBatchInputBase] = useState<BatchInputBase>('auto')
   const [batchOutputBase, setBatchOutputBase] = useState<BatchOutputBase>('16')
   const [exportFormat, setExportFormat] = useState<ExportFormat>('summary')
+  const deferredBatchInput = useDeferredValue(batchInput)
 
   const updateAllBases = useCallback(
     (value: string, fromBase: number) => {
@@ -319,7 +321,7 @@ const BaseClient = () => {
 
   const batchResults = useMemo<BatchResult[]>(() => {
     const outputBase = batchOutputBase === 'custom' ? customBase : Number(batchOutputBase)
-    return batchInput
+    return deferredBatchInput
       .split(/\r?\n/)
       .map(item => item.trim())
       .filter(Boolean)
@@ -336,9 +338,10 @@ const BaseClient = () => {
         if (parsed === null) return { input, output: t('app.converter.base.invalid'), valid: false }
         return { input, output: formatInteger(parsed, outputBase), valid: true }
       })
-  }, [batchInput, batchInputBase, batchOutputBase, customBase, t])
+  }, [batchInputBase, batchOutputBase, customBase, deferredBatchInput, t])
 
   const validBatchCount = batchResults.filter(item => item.valid).length
+  const isBatchInputCapped = batchInput.length >= MAX_BATCH_INPUT_CHARS
   const exportText = useMemo(() => {
     if (exportFormat === 'json') return JSON.stringify(batchResults, null, 2)
     if (exportFormat === 'csv') {
@@ -587,11 +590,18 @@ const BaseClient = () => {
           <div className="space-y-4">
             <Textarea
               value={batchInput}
-              onChange={event => setBatchInput(event.target.value)}
+              onChange={event => setBatchInput(event.target.value.slice(0, MAX_BATCH_INPUT_CHARS))}
               rows={9}
               className="font-mono"
               placeholder="0b1010&#10;0xff&#10;2026"
             />
+            {isBatchInputCapped && (
+              <p className="text-xs text-[var(--warning)]" role="status">
+                {t('app.converter.base.warning.batch_truncated', {
+                  limit: formatBaseNumber(MAX_BATCH_INPUT_CHARS)
+                })}
+              </p>
+            )}
             <div className="grid gap-3 sm:grid-cols-3">
               <div className="space-y-2">
                 <Label>{t('app.converter.base.input_base')}</Label>

@@ -22,6 +22,7 @@ import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
+import { collectBoundedNonEmptyLines } from '@/utils/textScan'
 
 interface Conversion {
   label: string
@@ -34,6 +35,8 @@ type SeparatorMode = 'auto' | 'space' | 'underscore' | 'dash' | 'dot' | 'slash'
 
 const MAX_CASE_INPUT_CHARS = 50000
 const MAX_BATCH_LINES = 160
+const MAX_CASE_SEARCH_CHARS = 160
+const MAX_CASE_AFFIX_CHARS = 80
 const caseNumberFormatter = new Intl.NumberFormat()
 
 const formatCaseNumber = (value: number) => caseNumberFormatter.format(value)
@@ -138,6 +141,73 @@ const buildConversions = (
 const csvEscape = (value: string) =>
   /[",\n]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value
 
+const CASE_WORD_PATTERN = /[\p{L}\p{N}]+/gu
+
+const scanCaseStats = (value: string, outputs: number) => {
+  let lines = value ? 1 : 0
+
+  for (let index = 0; index < value.length; index += 1) {
+    const char = value[index]
+
+    if (char === '\r') {
+      lines += 1
+      if (value[index + 1] === '\n') index += 1
+    } else if (char === '\n') {
+      lines += 1
+    }
+  }
+
+  CASE_WORD_PATTERN.lastIndex = 0
+  let words = 0
+
+  while (CASE_WORD_PATTERN.exec(value)) {
+    words += 1
+  }
+
+  return {
+    characters: value.length,
+    lines,
+    outputs,
+    words
+  }
+}
+
+const buildExportText = (
+  exportFormat: ExportFormat,
+  conversions: Conversion[],
+  input: string,
+  prefix: string,
+  separatorMode: SeparatorMode,
+  suffix: string
+) => {
+  if (exportFormat === 'json') {
+    return JSON.stringify(
+      {
+        conversions,
+        input,
+        options: { prefix, separatorMode, suffix }
+      },
+      null,
+      2
+    )
+  }
+
+  if (exportFormat === 'csv') {
+    return [
+      'label,value',
+      ...conversions.map(item => [item.label, item.value].map(csvEscape).join(','))
+    ].join('\n')
+  }
+
+  if (exportFormat === 'typescript') {
+    return `export const names = {\n${conversions
+      .map(item => `  ${camelCase(item.label)}: ${JSON.stringify(item.value)},`)
+      .join('\n')}\n} as const`
+  }
+
+  return conversions.map(item => `${item.label}: ${item.value}`).join('\n')
+}
+
 const downloadText = (content: string, filename: string, type: string) => {
   const blob = new Blob([content], { type })
   const url = URL.createObjectURL(blob)
@@ -153,6 +223,7 @@ const CaseClient = () => {
   const { copy } = useCopy()
 
   const [input, setInput] = useState('')
+  const [isInputCapped, setIsInputCapped] = useState(false)
   const [prefix, setPrefix] = useState('')
   const [suffix, setSuffix] = useState('')
   const [search, setSearch] = useState('')
@@ -160,7 +231,7 @@ const CaseClient = () => {
   const [exportFormat, setExportFormat] = useState<ExportFormat>('text')
   const deferredInput = useDeferredValue(input)
   const deferredSearch = useDeferredValue(search)
-  const isInputTruncated = deferredInput.length > MAX_CASE_INPUT_CHARS
+  const isInputTruncated = isInputCapped || deferredInput.length > MAX_CASE_INPUT_CHARS
   const safeInput = useMemo(
     () =>
       deferredInput.length > MAX_CASE_INPUT_CHARS
@@ -168,6 +239,12 @@ const CaseClient = () => {
         : deferredInput,
     [deferredInput]
   )
+
+  const updateInput = (value: string) => {
+    const capped = value.length > MAX_CASE_INPUT_CHARS
+    setIsInputCapped(capped)
+    setInput(capped ? value.slice(0, MAX_CASE_INPUT_CHARS) : value)
+  }
 
   const conversions = useMemo<Conversion[]>(() => {
     if (!safeInput.trim()) return []
@@ -186,11 +263,7 @@ const CaseClient = () => {
   }, [conversions, deferredSearch, t])
 
   const batchRows = useMemo(() => {
-    const lines = safeInput
-      .split(/\r?\n/)
-      .map(line => line.trim())
-      .filter(Boolean)
-      .slice(0, MAX_BATCH_LINES)
+    const lines = collectBoundedNonEmptyLines(safeInput, MAX_BATCH_LINES).lines
 
     return lines.map(line => ({
       input: line,
@@ -199,50 +272,15 @@ const CaseClient = () => {
   }, [prefix, safeInput, separatorMode, suffix])
 
   const stats = useMemo(() => {
-    const words = lowerCase(safeInput).split(/\s+/).filter(Boolean)
-    return {
-      characters: safeInput.length,
-      lines: safeInput ? safeInput.split(/\r?\n/).length : 0,
-      outputs: conversions.length,
-      words: words.length
-    }
+    return scanCaseStats(safeInput, conversions.length)
   }, [conversions.length, safeInput])
 
-  const exportText = useMemo(() => {
-    if (exportFormat === 'json') {
-      return JSON.stringify(
-        {
-          conversions,
-          input: safeInput,
-          options: { prefix, separatorMode, suffix }
-        },
-        null,
-        2
-      )
-    }
-
-    if (exportFormat === 'csv') {
-      return [
-        'label,value',
-        ...conversions.map(item => [item.label, item.value].map(csvEscape).join(','))
-      ].join('\n')
-    }
-
-    if (exportFormat === 'typescript') {
-      return `export const names = {\n${conversions
-        .map(item => `  ${camelCase(item.label)}: ${JSON.stringify(item.value)},`)
-        .join('\n')}\n} as const`
-    }
-
-    return conversions.map(item => `${item.label}: ${item.value}`).join('\n')
-  }, [conversions, exportFormat, prefix, safeInput, separatorMode, suffix])
-
   const copyAll = () => {
-    void copy(exportText)
+    void copy(buildExportText(exportFormat, conversions, safeInput, prefix, separatorMode, suffix))
   }
 
   const handleClear = () => {
-    setInput('')
+    updateInput('')
     setSearch('')
     setPrefix('')
     setSuffix('')
@@ -275,7 +313,14 @@ const CaseClient = () => {
                 disabled={!conversions.length}
                 onClick={() =>
                   downloadText(
-                    exportText,
+                    buildExportText(
+                      exportFormat,
+                      conversions,
+                      safeInput,
+                      prefix,
+                      separatorMode,
+                      suffix
+                    ),
                     `case-conversions.${exportFormat === 'json' ? 'json' : exportFormat === 'csv' ? 'csv' : exportFormat === 'typescript' ? 'ts' : 'txt'}`,
                     exportFormat === 'json'
                       ? 'application/json;charset=utf-8'
@@ -312,7 +357,7 @@ const CaseClient = () => {
           </div>
           <Textarea
             value={input}
-            onChange={event => setInput(event.target.value)}
+            onChange={event => updateInput(event.target.value)}
             placeholder={t('app.format.case.placeholder')}
             rows={4}
             className="font-mono"
@@ -326,8 +371,9 @@ const CaseClient = () => {
               <Input
                 id="case-search"
                 value={search}
-                onChange={event => setSearch(event.target.value)}
+                onChange={event => setSearch(event.target.value.slice(0, MAX_CASE_SEARCH_CHARS))}
                 placeholder={t('app.format.case.search_placeholder')}
+                maxLength={MAX_CASE_SEARCH_CHARS}
               />
             </div>
             <div className="space-y-2">
@@ -365,8 +411,9 @@ const CaseClient = () => {
               <Input
                 id="case-prefix"
                 value={prefix}
-                onChange={event => setPrefix(event.target.value)}
+                onChange={event => setPrefix(event.target.value.slice(0, MAX_CASE_AFFIX_CHARS))}
                 placeholder="APP_"
+                maxLength={MAX_CASE_AFFIX_CHARS}
                 className="font-mono"
               />
             </div>
@@ -375,8 +422,9 @@ const CaseClient = () => {
               <Input
                 id="case-suffix"
                 value={suffix}
-                onChange={event => setSuffix(event.target.value)}
+                onChange={event => setSuffix(event.target.value.slice(0, MAX_CASE_AFFIX_CHARS))}
                 placeholder="_ID"
+                maxLength={MAX_CASE_AFFIX_CHARS}
                 className="font-mono"
               />
             </div>

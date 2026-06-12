@@ -10,7 +10,7 @@ import {
   RotateCcw,
   ScissorsLineDashed
 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useDeferredValue, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
@@ -21,6 +21,7 @@ import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
+import { collectBoundedTokens } from '@/utils/textScan'
 
 type ExportFormat = 'json' | 'csv' | 'txt'
 
@@ -59,7 +60,9 @@ interface SubnetPreview {
 
 const PREFIX_PRESETS = [8, 10, 12, 16, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32]
 const MAX_BATCH_ADDRESSES = 200
+const MAX_BATCH_INPUT_CHARS = 50000
 const MAX_SUBNET_PREVIEW = 32
+const MAX_CIDR_ADDRESS_CHARS = 64
 const cidrNumberFormatter = new Intl.NumberFormat()
 
 const parseIpv4 = (value: string) => {
@@ -275,11 +278,18 @@ const CidrClient = () => {
   const [batchInput, setBatchInput] = useState(
     '192.168.10.1\n192.168.10.99\n192.168.11.2\n10.0.0.1'
   )
+  const [isBatchInputCapped, setIsBatchInputCapped] = useState(false)
   const [splitPrefix, setSplitPrefix] = useState(26)
   const [rangeStart, setRangeStart] = useState('192.168.10.0')
   const [rangeEnd, setRangeEnd] = useState('192.168.10.255')
   const [exportFormat, setExportFormat] = useState<ExportFormat>('json')
   const [showOnlyMatches, setShowOnlyMatches] = useState(false)
+  const deferredBatchInput = useDeferredValue(batchInput)
+  const safeBatchInput = useMemo(
+    () => deferredBatchInput.slice(0, MAX_BATCH_INPUT_CHARS),
+    [deferredBatchInput]
+  )
+  const batchInputLimited = isBatchInputCapped || batchInput.length > MAX_BATCH_INPUT_CHARS
 
   const result = useMemo(() => calculateCidr(address, prefix), [address, prefix])
   const candidateStatus = useMemo(() => {
@@ -300,38 +310,39 @@ const CidrClient = () => {
   )
   const batchChecks = useMemo<BatchCheck[]>(() => {
     if (!result) return []
-    return batchInput
-      .split(/\r?\n|,|\s+/)
-      .map(item => item.trim())
-      .filter(Boolean)
-      .slice(0, MAX_BATCH_ADDRESSES)
-      .map(item => {
-        const parsed = parseIpv4(item)
-        if (parsed === null) {
-          return { address: item, classification: 'invalid', inRange: false, valid: false }
-        }
-        return {
-          address: intToIpv4(parsed),
-          classification: classifyIpv4(parsed),
-          inRange: containsAddress(item, result.network, prefix) ?? false,
-          valid: true
-        }
-      })
-  }, [batchInput, prefix, result])
-  const visibleBatchChecks = showOnlyMatches
-    ? batchChecks.filter(item => item.valid && item.inRange)
-    : batchChecks
+    return collectBoundedTokens(safeBatchInput, MAX_BATCH_ADDRESSES, /[\s,]/u).tokens.map(item => {
+      const parsed = parseIpv4(item)
+      if (parsed === null) {
+        return { address: item, classification: 'invalid', inRange: false, valid: false }
+      }
+      return {
+        address: intToIpv4(parsed),
+        classification: classifyIpv4(parsed),
+        inRange: containsAddress(item, result.network, prefix) ?? false,
+        valid: true
+      }
+    })
+  }, [prefix, result, safeBatchInput])
+  const batchStats = useMemo(() => {
+    let invalid = 0
+    let matches = 0
+    const visible: BatchCheck[] = []
+
+    for (const item of batchChecks) {
+      const isMatch = item.valid && item.inRange
+      if (!item.valid) invalid += 1
+      if (isMatch) matches += 1
+      if (!showOnlyMatches || isMatch) visible.push(item)
+    }
+
+    return { invalid, matches, visible }
+  }, [batchChecks, showOnlyMatches])
+  const visibleBatchChecks = batchStats.visible
   const rangeCidrs = useMemo(
     () => summarizeRangeToCidrs(rangeStart, rangeEnd),
     [rangeEnd, rangeStart]
   )
   const usableSamples = useMemo(() => (result ? getUsableSamples(result) : []), [result])
-  const batchExport = useMemo(
-    () => buildBatchExport(batchChecks, result, exportFormat),
-    [batchChecks, exportFormat, result]
-  )
-  const matchCount = batchChecks.filter(item => item.valid && item.inRange).length
-  const invalidBatchCount = batchChecks.filter(item => !item.valid).length
 
   const formattedCounts = useMemo(
     () =>
@@ -365,11 +376,17 @@ const CidrClient = () => {
     setSplitPrefix(current => Math.max(nextPrefix, current))
   }
 
+  const updateBatchInput = (value: string) => {
+    const capped = value.length > MAX_BATCH_INPUT_CHARS
+    setIsBatchInputCapped(capped)
+    setBatchInput(capped ? value.slice(0, MAX_BATCH_INPUT_CHARS) : value)
+  }
+
   const handleReset = () => {
     setAddress('192.168.10.42')
     setPrefix(24)
     setCandidate('192.168.10.99')
-    setBatchInput('192.168.10.1\n192.168.10.99\n192.168.11.2\n10.0.0.1')
+    updateBatchInput('192.168.10.1\n192.168.10.99\n192.168.11.2\n10.0.0.1')
     setSplitPrefix(26)
     setRangeStart('192.168.10.0')
     setRangeEnd('192.168.10.255')
@@ -417,11 +434,11 @@ const CidrClient = () => {
             />
             <CidrMetric
               label={t('app.converter.cidr.metric.matches')}
-              value={formatInteger(matchCount)}
+              value={formatInteger(batchStats.matches)}
             />
             <CidrMetric
               label={t('app.converter.cidr.metric.invalid')}
-              value={formatInteger(invalidBatchCount)}
+              value={formatInteger(batchStats.invalid)}
             />
             <CidrMetric
               label={t('app.converter.cidr.metric.subnets')}
@@ -435,8 +452,9 @@ const CidrClient = () => {
               <Input
                 id="cidr-address"
                 value={address}
-                onChange={event => setAddress(event.target.value)}
+                onChange={event => setAddress(event.target.value.slice(0, MAX_CIDR_ADDRESS_CHARS))}
                 placeholder="192.168.1.10"
+                maxLength={MAX_CIDR_ADDRESS_CHARS}
                 className="font-mono"
               />
             </div>
@@ -555,8 +573,11 @@ const CidrClient = () => {
                 <Input
                   id="cidr-candidate"
                   value={candidate}
-                  onChange={event => setCandidate(event.target.value)}
+                  onChange={event =>
+                    setCandidate(event.target.value.slice(0, MAX_CIDR_ADDRESS_CHARS))
+                  }
                   placeholder="192.168.10.99"
+                  maxLength={MAX_CIDR_ADDRESS_CHARS}
                   className="font-mono"
                 />
                 {candidateStatus !== null && (
@@ -638,7 +659,7 @@ const CidrClient = () => {
                   disabled={!batchChecks.length}
                   onClick={() =>
                     downloadText(
-                      batchExport,
+                      buildBatchExport(batchChecks, result, exportFormat),
                       `cidr-batch.${exportFormat}`,
                       exportFormat === 'json'
                         ? 'application/json;charset=utf-8'
@@ -653,11 +674,18 @@ const CidrClient = () => {
             <CardContent className="space-y-4">
               <Textarea
                 value={batchInput}
-                onChange={event => setBatchInput(event.target.value)}
+                onChange={event => updateBatchInput(event.target.value)}
                 rows={8}
                 className="font-mono"
                 placeholder={t('app.converter.cidr.batch_placeholder')}
               />
+              {batchInputLimited && (
+                <p className="rounded-lg border border-[var(--warning)] bg-[var(--warning-subtle)] px-3 py-2 text-sm text-[var(--warning)]">
+                  {t('app.converter.cidr.batch_input_truncated', {
+                    limit: formatInteger(MAX_BATCH_INPUT_CHARS)
+                  })}
+                </p>
+              )}
               <div className="flex flex-wrap items-center gap-3">
                 <Select
                   value={exportFormat}
@@ -674,7 +702,11 @@ const CidrClient = () => {
                     label={t('app.converter.cidr.only_matches')}
                   />
                 </div>
-                <Button type="button" variant="ghost" onClick={() => copy(batchExport)}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => copy(buildBatchExport(batchChecks, result, exportFormat))}
+                >
                   {t('public.copy')}
                 </Button>
               </div>
@@ -737,7 +769,8 @@ const CidrClient = () => {
             <Input
               id="cidr-range-start"
               value={rangeStart}
-              onChange={event => setRangeStart(event.target.value)}
+              onChange={event => setRangeStart(event.target.value.slice(0, MAX_CIDR_ADDRESS_CHARS))}
+              maxLength={MAX_CIDR_ADDRESS_CHARS}
               className="font-mono"
             />
           </div>
@@ -746,7 +779,8 @@ const CidrClient = () => {
             <Input
               id="cidr-range-end"
               value={rangeEnd}
-              onChange={event => setRangeEnd(event.target.value)}
+              onChange={event => setRangeEnd(event.target.value.slice(0, MAX_CIDR_ADDRESS_CHARS))}
+              maxLength={MAX_CIDR_ADDRESS_CHARS}
               className="font-mono"
             />
           </div>

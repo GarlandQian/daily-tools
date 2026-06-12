@@ -1,6 +1,5 @@
 'use client'
 
-import dayjs from 'dayjs'
 import { AnimatePresence, motion } from 'framer-motion'
 import { CalendarClock, CalendarDays, Copy, RotateCcw } from 'lucide-react'
 import { useMemo, useState } from 'react'
@@ -14,7 +13,16 @@ import { Progress } from '@/components/ui/progress'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { useCopy } from '@/hooks/useCopy'
 
-import { calcRetires, type calcRetiresParams, type calcRetiresReturnType } from '../utils'
+import {
+  calcRetires,
+  type calcRetiresParams,
+  type calcRetiresReturnType,
+  diffLocalDays,
+  diffLocalMonths,
+  formatChineseLocalDate,
+  formatEnglishLongDate,
+  formatLocalDate
+} from '../utils'
 import { formatInteger } from '../utils/formatters'
 
 const RetiresClient = () => {
@@ -67,27 +75,25 @@ const RetiresClient = () => {
 
   const stats = useMemo(() => {
     if (!retirement || !birth) return null
-    const birthDay = dayjs(birth)
-    const retireDay = dayjs(retirement.retirementDate)
-    const now = dayjs()
+    const now = new Date()
 
-    const totalDays = retireDay.diff(birthDay, 'day')
-    const elapsedDays = now.diff(birthDay, 'day')
-    const remainingDays = retireDay.diff(now, 'day')
+    const totalDays = diffLocalDays(birth, retirement.retirementDate)
+    const elapsedDays = diffLocalDays(birth, now)
+    const remainingDays = diffLocalDays(now, retirement.retirementDate)
 
     let percent = (elapsedDays / totalDays) * 100
     if (percent < 0) percent = 0
     if (percent > 100) percent = 100
 
     return {
-      birthDateStr: birthDay.format('YYYY-MM-DD'),
+      birthDateStr: formatLocalDate(birth),
       percent: percent.toFixed(2),
       delayMonths: retirement.delayMonths,
-      remainingMonths: Math.max(0, retireDay.diff(now, 'month')),
+      remainingMonths: Math.max(0, diffLocalMonths(now, retirement.retirementDate)),
       remainingDays: remainingDays > 0 ? remainingDays : 0,
-      retireYear: retireDay.year(),
-      retireDateStr: retireDay.format('YYYY-MM-DD'),
-      standardRetireDateStr: dayjs(retirement.standardRetirementDate).format('YYYY-MM-DD')
+      retireYear: retirement.retirementDate.getFullYear(),
+      retireDateStr: formatLocalDate(retirement.retirementDate),
+      standardRetireDateStr: formatLocalDate(retirement.standardRetirementDate)
     }
   }, [retirement, birth])
 
@@ -118,8 +124,8 @@ const RetiresClient = () => {
     if (!retirement) return ''
     const dateStr =
       i18n.language === 'cn'
-        ? dayjs(retirement.retirementDate).format('YYYY年MM月DD日')
-        : dayjs(retirement.retirementDate).format('MMMM D, YYYY')
+        ? formatChineseLocalDate(retirement.retirementDate)
+        : formatEnglishLongDate(retirement.retirementDate)
     const monthPart =
       retirement.newRetirementPolicy && retirement.baseRetirementMonth
         ? t('app.social.retires.summary.months', {
@@ -392,13 +398,13 @@ const TimelineRow = ({
   label: string
   value: string
 }) => (
-  <div className="flex min-w-0 items-center justify-between gap-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--glass-input-bg)] px-3 py-2.5">
+  <div className="flex min-w-0 flex-col items-start gap-1.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--glass-input-bg)] px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
     <div className="flex min-w-0 items-center gap-2">
       <CalendarDays className="h-4 w-4 shrink-0 text-[var(--text-tertiary)]" aria-hidden="true" />
-      <span className="truncate text-sm text-[var(--text-secondary)]">{label}</span>
+      <span className="break-words text-sm leading-5 text-[var(--text-secondary)]">{label}</span>
     </div>
     <span
-      className={`shrink-0 font-mono text-sm font-semibold ${
+      className={`font-mono text-sm font-semibold leading-5 ${
         emphasized ? 'text-[var(--primary)]' : 'text-[var(--text-primary)]'
       }`}
     >

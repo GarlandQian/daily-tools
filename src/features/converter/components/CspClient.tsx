@@ -12,22 +12,31 @@ import {
   Sparkles,
   Trash2
 } from 'lucide-react'
-import { useDeferredValue, useMemo, useState } from 'react'
+import { useCallback, useDeferredValue, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { InputCapNotice } from '@/components/ui/input-cap-notice'
 import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
+import {
+  createOutputPreview,
+  isOutputPreviewLimited,
+  OUTPUT_PREVIEW_CHARS
+} from '@/utils/outputPreview'
 
 const DIRECTIVE_GROUPS = ['all', 'fetch', 'document', 'navigation', 'reporting', 'upgrade'] as const
 const OUTPUT_TYPES = ['header', 'report_only', 'meta', 'nginx', 'next', 'json'] as const
 const POLICY_LIMIT = 32000
 const REPORT_LIMIT = 32000
+const POLICY_ROW_LIMIT = 160
+const OUTPUT_PREVIEW_ROW_LIMIT = 80
 const REPORT_ROW_LIMIT = 80
+const REPORT_RENDER_LIMIT = 48
 
 type DirectiveGroup = (typeof DIRECTIVE_GROUPS)[number]
 type OutputType = (typeof OUTPUT_TYPES)[number]
@@ -256,11 +265,13 @@ const parsePolicy = (policy: string): DirectiveRow[] => {
     const normalized = name.toLowerCase()
     if (seen.has(normalized)) {
       rows.push({ name: `${normalized}#duplicate`, values })
+      if (rows.length >= POLICY_ROW_LIMIT) break
       continue
     }
 
     seen.add(normalized)
     rows.push({ name: normalized, values })
+    if (rows.length >= POLICY_ROW_LIMIT) break
   }
 
   return rows
@@ -424,11 +435,24 @@ export default function CspClient() {
 
   const rows = useMemo(() => parsePolicy(deferredPolicy), [deferredPolicy])
   const findings = useMemo(() => auditPolicy(rows), [rows])
-  const output = useMemo(
+  const outputPreviewRows = useMemo(() => rows.slice(0, OUTPUT_PREVIEW_ROW_LIMIT), [rows])
+  const outputPreviewSource = useMemo(
+    () => buildOutput(deferredPolicy, outputPreviewRows, outputType),
+    [deferredPolicy, outputPreviewRows, outputType]
+  )
+  const outputPreview = useMemo(
+    () => createOutputPreview(outputPreviewSource),
+    [outputPreviewSource]
+  )
+  const outputPreviewLimited = isOutputPreviewLimited(outputPreviewSource)
+  const outputPreviewRowsLimited = rows.length > outputPreviewRows.length
+  const buildCurrentOutput = useCallback(
     () => buildOutput(deferredPolicy, rows, outputType),
     [deferredPolicy, outputType, rows]
   )
   const reports = useMemo(() => parseReports(deferredReportInput), [deferredReportInput])
+  const visibleReports = useMemo(() => reports.slice(0, REPORT_RENDER_LIMIT), [reports])
+  const reportsLimited = reports.length > visibleReports.length
   const filteredDirectives = useMemo(() => {
     const normalized = deferredQuery.trim().toLowerCase()
 
@@ -520,7 +544,7 @@ export default function CspClient() {
                 type="button"
                 size="sm"
                 icon={<Copy className="h-4 w-4" />}
-                onClick={() => copy(output)}
+                onClick={() => copy(buildCurrentOutput())}
               >
                 {t('public.copy')}
               </Button>
@@ -579,7 +603,7 @@ export default function CspClient() {
                 <Input
                   id="csp-search"
                   value={query}
-                  onChange={event => setQuery(event.target.value)}
+                  onChange={event => setQuery(event.target.value.slice(0, 160))}
                   placeholder="script, frame, report"
                   className="pl-10"
                 />
@@ -698,6 +722,7 @@ export default function CspClient() {
               rows={10}
               className="min-h-[210px] resize-y font-mono"
             />
+            <InputCapNotice visible={policy.length >= POLICY_LIMIT} limit={POLICY_LIMIT} />
 
             <div className="space-y-2">
               <p className="text-sm font-medium text-[var(--text-primary)]">
@@ -723,11 +748,27 @@ export default function CspClient() {
               {t('app.converter.csp.output_preview')}
             </div>
             <Textarea
-              value={output}
+              value={outputPreview}
               readOnly
               rows={8}
               className="min-h-[180px] resize-none font-mono"
             />
+            {outputPreviewLimited && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('public.output_preview_limited', {
+                  total: outputPreviewSource.length.toLocaleString(),
+                  visible: OUTPUT_PREVIEW_CHARS.toLocaleString()
+                })}
+              </p>
+            )}
+            {outputPreviewRowsLimited && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('public.output_preview_rows_limited', {
+                  total: rows.length.toLocaleString(),
+                  visible: outputPreviewRows.length.toLocaleString()
+                })}
+              </p>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -786,6 +827,7 @@ export default function CspClient() {
                 rows={9}
                 className="min-h-[220px] resize-y font-mono"
               />
+              <InputCapNotice visible={reportInput.length >= REPORT_LIMIT} limit={REPORT_LIMIT} />
             </div>
             <div className="grid grid-cols-2 gap-3 self-start">
               <CspMetric
@@ -800,29 +842,39 @@ export default function CspClient() {
           </div>
 
           {reports.length ? (
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {reports.map(row => (
-                <div
-                  key={`${row.directive}:${row.blocked}:${row.document}`}
-                  className="glass-input rounded-xl p-3"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <p className="break-all font-mono text-sm font-semibold text-[var(--text-primary)]">
-                      {row.directive}
+            <>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {visibleReports.map(row => (
+                  <div
+                    key={`${row.directive}:${row.blocked}:${row.document}`}
+                    className="glass-input rounded-xl p-3"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="break-all font-mono text-sm font-semibold text-[var(--text-primary)]">
+                        {row.directive}
+                      </p>
+                      <span className="rounded-full bg-[var(--primary-subtle)] px-2 py-0.5 text-xs text-[var(--primary)]">
+                        x{row.count}
+                      </span>
+                    </div>
+                    <p className="mt-2 break-all font-mono text-xs leading-5 text-[var(--text-secondary)]">
+                      {row.blocked}
                     </p>
-                    <span className="rounded-full bg-[var(--primary-subtle)] px-2 py-0.5 text-xs text-[var(--primary)]">
-                      x{row.count}
-                    </span>
+                    <p className="mt-2 break-all text-xs leading-5 text-[var(--text-tertiary)]">
+                      {row.document}
+                    </p>
                   </div>
-                  <p className="mt-2 break-all font-mono text-xs leading-5 text-[var(--text-secondary)]">
-                    {row.blocked}
-                  </p>
-                  <p className="mt-2 break-all text-xs leading-5 text-[var(--text-tertiary)]">
-                    {row.document}
-                  </p>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+              {reportsLimited && (
+                <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                  {t('public.output_preview_rows_limited', {
+                    total: reports.length.toLocaleString(),
+                    visible: visibleReports.length.toLocaleString()
+                  })}
+                </p>
+              )}
+            </>
           ) : (
             <div className="glass-input rounded-xl p-6 text-center text-sm text-[var(--text-secondary)]">
               {t('app.converter.csp.reports_empty')}

@@ -1,8 +1,5 @@
 'use client'
 
-import dayjs from 'dayjs'
-import timezone from 'dayjs/plugin/timezone'
-import utc from 'dayjs/plugin/utc'
 import {
   CalendarClock,
   Clock,
@@ -25,24 +22,38 @@ import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
 import { useVisibleNow } from '@/hooks/useVisibleNow'
+import { collectBoundedNonEmptyLines } from '@/utils/textScan'
 
 type TimestampUnit = 'seconds' | 'milliseconds'
 type TimestampInputUnit = 'auto' | TimestampUnit
 
-interface BatchRow {
+interface BatchParsedRow {
   input: string
   iso: string
   local: string
   milliseconds: number
-  relative: string
   seconds: number
   unit: TimestampUnit
 }
 
-dayjs.extend(utc)
-dayjs.extend(timezone)
+interface BatchRow extends BatchParsedRow {
+  relative: string
+}
+
+interface ParsedTimestamp {
+  milliseconds: number
+  unit: TimestampUnit
+}
+
+interface ParsedDatetime {
+  milliseconds: number
+  seconds: number
+}
 
 const MAX_BATCH_ROWS = 80
+const MAX_BATCH_INPUT_CHARS = 50000
+const MAX_TIMESTAMP_INPUT_CHARS = 32
+const MAX_DATETIME_INPUT_CHARS = 32
 
 const TIMEZONE_OPTIONS = [
   'Asia/Shanghai',
@@ -56,9 +67,150 @@ const TIMEZONE_OPTIONS = [
   'Australia/Sydney'
 ]
 
+const zoneFormatters = new Map<string, Intl.DateTimeFormat>()
+const padDatePart = (value: number) => String(value).padStart(2, '0')
 const getBrowserTimezone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
-const formatDateTimeLocal = (date: dayjs.ConfigType) => dayjs(date).format('YYYY-MM-DDTHH:mm:ss')
+const isValidMilliseconds = (milliseconds: number) =>
+  Number.isFinite(milliseconds) && !Number.isNaN(new Date(milliseconds).getTime())
+
+const getZoneFormatter = (zone: string) => {
+  const cached = zoneFormatters.get(zone)
+  if (cached) return cached
+
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    day: '2-digit',
+    hour: '2-digit',
+    hour12: false,
+    hourCycle: 'h23',
+    minute: '2-digit',
+    month: '2-digit',
+    second: '2-digit',
+    timeZone: zone,
+    year: 'numeric'
+  })
+  zoneFormatters.set(zone, formatter)
+  return formatter
+}
+
+const getZoneParts = (milliseconds: number, zone: string) => {
+  const values = Object.fromEntries(
+    getZoneFormatter(zone)
+      .formatToParts(new Date(milliseconds))
+      .map(part => [part.type, part.value])
+  )
+
+  return {
+    day: Number(values.day),
+    hour: Number(values.hour),
+    minute: Number(values.minute),
+    month: Number(values.month),
+    second: Number(values.second),
+    year: Number(values.year)
+  }
+}
+
+const formatZoneDate = (milliseconds: number, zone: string) => {
+  const parts = getZoneParts(milliseconds, zone)
+  return `${parts.year}-${padDatePart(parts.month)}-${padDatePart(parts.day)} ${padDatePart(parts.hour)}:${padDatePart(parts.minute)}:${padDatePart(parts.second)}`
+}
+
+const getZoneOffsetMinutes = (milliseconds: number, zone: string) => {
+  const parts = getZoneParts(milliseconds, zone)
+  const zonedAsUtc = Date.UTC(
+    parts.year,
+    parts.month - 1,
+    parts.day,
+    parts.hour,
+    parts.minute,
+    parts.second
+  )
+  return Math.round((zonedAsUtc - milliseconds) / 60000)
+}
+
+const formatZoneOffset = (milliseconds: number, zone: string) => {
+  const offsetMinutes = getZoneOffsetMinutes(milliseconds, zone)
+  const sign = offsetMinutes >= 0 ? '+' : '-'
+  const absoluteMinutes = Math.abs(offsetMinutes)
+  const hours = Math.floor(absoluteMinutes / 60)
+  const minutes = absoluteMinutes % 60
+  return `${sign}${padDatePart(hours)}:${padDatePart(minutes)}`
+}
+
+const formatLocalDateTime = (milliseconds: number, separator = ' ') => {
+  const date = new Date(milliseconds)
+  return `${date.getFullYear()}-${padDatePart(date.getMonth() + 1)}-${padDatePart(date.getDate())}${separator}${padDatePart(date.getHours())}:${padDatePart(date.getMinutes())}:${padDatePart(date.getSeconds())}`
+}
+
+const formatUtcDateTime = (milliseconds: number, separator = ' ') => {
+  const date = new Date(milliseconds)
+  return `${date.getUTCFullYear()}-${padDatePart(date.getUTCMonth() + 1)}-${padDatePart(date.getUTCDate())}${separator}${padDatePart(date.getUTCHours())}:${padDatePart(date.getUTCMinutes())}:${padDatePart(date.getUTCSeconds())}`
+}
+
+const formatDateTimeLocal = (milliseconds: number) => formatLocalDateTime(milliseconds, 'T')
 const getCurrentDateTimeLocal = () => formatDateTimeLocal(Date.now())
+
+const parseDatetimeLocalParts = (value: string) => {
+  const match = value.match(/^(\d{4,6})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/u)
+  if (!match) return null
+
+  const [, year, month, day, hour, minute, second = '0'] = match
+  const parts = {
+    day: Number(day),
+    hour: Number(hour),
+    minute: Number(minute),
+    month: Number(month),
+    second: Number(second),
+    year: Number(year)
+  }
+  if (
+    !Number.isInteger(parts.year) ||
+    parts.month < 1 ||
+    parts.month > 12 ||
+    parts.day < 1 ||
+    parts.day > 31 ||
+    parts.hour < 0 ||
+    parts.hour > 23 ||
+    parts.minute < 0 ||
+    parts.minute > 59 ||
+    parts.second < 0 ||
+    parts.second > 59
+  ) {
+    return null
+  }
+
+  const utcGuess = Date.UTC(
+    parts.year,
+    parts.month - 1,
+    parts.day,
+    parts.hour,
+    parts.minute,
+    parts.second
+  )
+  const guessedDate = new Date(utcGuess)
+  if (
+    guessedDate.getUTCFullYear() !== parts.year ||
+    guessedDate.getUTCMonth() !== parts.month - 1 ||
+    guessedDate.getUTCDate() !== parts.day
+  ) {
+    return null
+  }
+
+  return { parts, utcGuess }
+}
+
+const zonedDateTimeToMilliseconds = (value: string, zone: string) => {
+  const parsed = parseDatetimeLocalParts(value)
+  if (!parsed) return null
+
+  const firstOffset = getZoneOffsetMinutes(parsed.utcGuess, zone)
+  let milliseconds = parsed.utcGuess - firstOffset * 60000
+  const secondOffset = getZoneOffsetMinutes(milliseconds, zone)
+  if (secondOffset !== firstOffset) {
+    milliseconds = parsed.utcGuess - secondOffset * 60000
+  }
+
+  return isValidMilliseconds(milliseconds) ? milliseconds : null
+}
 
 const parseTimestamp = (value: string, unit: TimestampInputUnit) => {
   const trimmed = value.trim()
@@ -70,21 +222,19 @@ const parseTimestamp = (value: string, unit: TimestampInputUnit) => {
   const resolvedUnit =
     unit === 'auto' ? (Math.abs(timestamp) >= 100000000000 ? 'milliseconds' : 'seconds') : unit
   const milliseconds = resolvedUnit === 'seconds' ? timestamp * 1000 : timestamp
-  const date = dayjs(milliseconds)
 
-  if (!date.isValid()) return null
-  return { date, milliseconds, unit: resolvedUnit }
+  if (!isValidMilliseconds(milliseconds)) return null
+  return { milliseconds, unit: resolvedUnit } satisfies ParsedTimestamp
 }
 
 const parseDateInput = (value: string, zone: string) => {
   if (!value) return null
-  const parsed = dayjs.tz(value, zone)
-  if (!parsed.isValid()) return null
+  const milliseconds = zonedDateTimeToMilliseconds(value, zone)
+  if (milliseconds === null) return null
   return {
-    date: parsed,
-    milliseconds: parsed.valueOf(),
-    seconds: Math.floor(parsed.valueOf() / 1000)
-  }
+    milliseconds,
+    seconds: Math.floor(milliseconds / 1000)
+  } satisfies ParsedDatetime
 }
 
 const formatRelative = (targetMilliseconds: number, nowMilliseconds: number) => {
@@ -101,34 +251,37 @@ const formatRelative = (targetMilliseconds: number, nowMilliseconds: number) => 
   return diffSeconds >= 0 ? `+${value}${unit.suffix}` : `-${value}${unit.suffix}`
 }
 
-const formatZoneDate = (milliseconds: number, zone: string) =>
-  dayjs(milliseconds).tz(zone).format('YYYY-MM-DD HH:mm:ss')
+const parseBatch = (value: string, unit: TimestampInputUnit, zone: string) => {
+  const collected = collectBoundedNonEmptyLines(value, MAX_BATCH_ROWS)
 
-const parseBatch = (
-  value: string,
-  unit: TimestampInputUnit,
-  zone: string,
-  nowMilliseconds: number
-): BatchRow[] =>
-  value
-    .split(/\r?\n/u)
-    .map(item => item.trim())
-    .filter(Boolean)
-    .slice(0, MAX_BATCH_ROWS)
-    .map(input => {
-      const parsed = parseTimestamp(input, unit)
-      if (!parsed) return null
-      return {
-        input,
-        iso: parsed.date.toISOString(),
-        local: formatZoneDate(parsed.milliseconds, zone),
-        milliseconds: parsed.milliseconds,
-        relative: formatRelative(parsed.milliseconds, nowMilliseconds),
-        seconds: Math.floor(parsed.milliseconds / 1000),
-        unit: parsed.unit
-      }
-    })
-    .filter((row): row is BatchRow => Boolean(row))
+  return {
+    limited: collected.limited,
+    rows: collected.lines
+      .map(input => {
+        const parsed = parseTimestamp(input, unit)
+        if (!parsed) return null
+        return {
+          input,
+          iso: new Date(parsed.milliseconds).toISOString(),
+          local: formatZoneDate(parsed.milliseconds, zone),
+          milliseconds: parsed.milliseconds,
+          seconds: Math.floor(parsed.milliseconds / 1000),
+          unit: parsed.unit
+        }
+      })
+      .filter((row): row is BatchParsedRow => Boolean(row))
+  }
+}
+
+const buildBatchCsv = (rows: BatchRow[]) =>
+  [
+    'input,unit,seconds,milliseconds,local,iso,relative',
+    ...rows.map(row =>
+      [row.input, row.unit, row.seconds, row.milliseconds, row.local, row.iso, row.relative]
+        .map(value => `"${String(value).replaceAll('"', '""')}"`)
+        .join(',')
+    )
+  ].join('\n')
 
 const TimestampClient = () => {
   const { t } = useTranslation()
@@ -142,7 +295,13 @@ const TimestampClient = () => {
   const [inputTimestamp, setInputTimestamp] = useState('')
   const [inputDatetime, setInputDatetime] = useState('')
   const [batchInput, setBatchInput] = useState('1704067200\n1704067200000\n4102444800')
+  const [isBatchInputCapped, setIsBatchInputCapped] = useState(false)
   const deferredBatchInput = useDeferredValue(batchInput)
+  const safeBatchInput = useMemo(
+    () => deferredBatchInput.slice(0, MAX_BATCH_INPUT_CHARS),
+    [deferredBatchInput]
+  )
+  const batchInputLimited = isBatchInputCapped || batchInput.length > MAX_BATCH_INPUT_CHARS
 
   const isPaused = pausedTimestamp !== null
   const liveTimestamp = useVisibleNow(!isPaused)
@@ -162,16 +321,15 @@ const TimestampClient = () => {
 
   const currentFormats = useMemo(() => {
     if (!hasCurrentTime) return null
-    const local = dayjs(currentTimestamp)
-    const zoned = dayjs(currentTimestamp).tz(displayZone)
+    const date = new Date(currentTimestamp)
     return {
-      iso: local.toISOString(),
-      local: local.format('YYYY-MM-DD HH:mm:ss'),
-      offset: zoned.format('Z'),
-      rfc: local.toDate().toUTCString(),
+      iso: date.toISOString(),
+      local: formatLocalDateTime(currentTimestamp),
+      offset: formatZoneOffset(currentTimestamp, displayZone),
+      rfc: date.toUTCString(),
       unix: String(currentSeconds),
-      utc: local.utc().format('YYYY-MM-DD HH:mm:ss'),
-      zone: zoned.format('YYYY-MM-DD HH:mm:ss')
+      utc: formatUtcDateTime(currentTimestamp),
+      zone: formatZoneDate(currentTimestamp, displayZone)
     }
   }, [currentSeconds, currentTimestamp, displayZone, hasCurrentTime])
 
@@ -184,15 +342,15 @@ const TimestampClient = () => {
     return [
       {
         label: t('app.converter.timestamp.local'),
-        value: convertedDate.date.format('YYYY-MM-DD HH:mm:ss')
+        value: formatLocalDateTime(convertedDate.milliseconds)
       },
-      { label: 'UTC', value: convertedDate.date.utc().format('YYYY-MM-DD HH:mm:ss') },
+      { label: 'UTC', value: formatUtcDateTime(convertedDate.milliseconds) },
       {
         label: t('app.converter.timestamp.zone_time'),
         value: formatZoneDate(convertedDate.milliseconds, displayZone)
       },
-      { label: 'ISO 8601', value: convertedDate.date.toISOString() },
-      { label: 'RFC 1123', value: convertedDate.date.toDate().toUTCString() },
+      { label: 'ISO 8601', value: new Date(convertedDate.milliseconds).toISOString() },
+      { label: 'RFC 1123', value: new Date(convertedDate.milliseconds).toUTCString() },
       {
         label: t('app.converter.timestamp.relative'),
         value: formatRelative(convertedDate.milliseconds, nowForDerived)
@@ -209,33 +367,28 @@ const TimestampClient = () => {
     return [
       { label: t('app.converter.timestamp.seconds'), value: convertedTimestamp.seconds },
       { label: t('app.converter.timestamp.milliseconds'), value: convertedTimestamp.milliseconds },
-      { label: 'ISO 8601', value: convertedTimestamp.date.toISOString() },
-      { label: 'UTC', value: convertedTimestamp.date.utc().format('YYYY-MM-DD HH:mm:ss') },
+      { label: 'ISO 8601', value: new Date(convertedTimestamp.milliseconds).toISOString() },
+      { label: 'UTC', value: formatUtcDateTime(convertedTimestamp.milliseconds) },
       {
         label: t('app.converter.timestamp.zone_time'),
-        value: convertedTimestamp.date.tz(displayZone).format('YYYY-MM-DD HH:mm:ss')
+        value: formatZoneDate(convertedTimestamp.milliseconds, displayZone)
       }
     ]
   }, [convertedTimestamp, displayZone, t])
 
+  const batchParsed = useMemo(
+    () => parseBatch(safeBatchInput, timestampUnit, displayZone),
+    [displayZone, safeBatchInput, timestampUnit]
+  )
   const batchRows = useMemo(
-    () => parseBatch(deferredBatchInput, timestampUnit, displayZone, nowForDerived),
-    [deferredBatchInput, displayZone, nowForDerived, timestampUnit]
-  )
-  const batchTruncated =
-    deferredBatchInput.split(/\r?\n/u).filter(item => item.trim()).length > MAX_BATCH_ROWS
-  const batchCsv = useMemo(
     () =>
-      [
-        'input,unit,seconds,milliseconds,local,iso,relative',
-        ...batchRows.map(row =>
-          [row.input, row.unit, row.seconds, row.milliseconds, row.local, row.iso, row.relative]
-            .map(value => `"${String(value).replaceAll('"', '""')}"`)
-            .join(',')
-        )
-      ].join('\n'),
-    [batchRows]
+      batchParsed.rows.map(row => ({
+        ...row,
+        relative: formatRelative(row.milliseconds, nowForDerived)
+      })),
+    [batchParsed.rows, nowForDerived]
   )
+  const batchTruncated = batchParsed.limited
 
   const currentSummary = useMemo(() => {
     if (!currentFormats) return ''
@@ -260,6 +413,12 @@ const TimestampClient = () => {
 
   const fillCurrentDateTime = useCallback(() => {
     setInputDatetime(getCurrentDateTimeLocal())
+  }, [])
+
+  const updateBatchInput = useCallback((value: string) => {
+    const capped = value.length > MAX_BATCH_INPUT_CHARS
+    setIsBatchInputCapped(capped)
+    setBatchInput(capped ? value.slice(0, MAX_BATCH_INPUT_CHARS) : value)
   }, [])
 
   const togglePaused = useCallback(() => {
@@ -418,8 +577,11 @@ const TimestampClient = () => {
                 id="timestamp-input"
                 inputMode="numeric"
                 value={inputTimestamp}
-                onChange={event => setInputTimestamp(event.target.value)}
+                onChange={event =>
+                  setInputTimestamp(event.target.value.slice(0, MAX_TIMESTAMP_INPUT_CHARS))
+                }
                 placeholder={t('app.converter.timestamp.input_ts')}
+                maxLength={MAX_TIMESTAMP_INPUT_CHARS}
                 className="h-12 font-mono text-base"
               />
             </div>
@@ -500,7 +662,10 @@ const TimestampClient = () => {
                 type="datetime-local"
                 step={1}
                 value={inputDatetime}
-                onChange={event => setInputDatetime(event.target.value)}
+                onChange={event =>
+                  setInputDatetime(event.target.value.slice(0, MAX_DATETIME_INPUT_CHARS))
+                }
+                maxLength={MAX_DATETIME_INPUT_CHARS}
                 className="h-12 text-base"
               />
               <p className="text-xs text-[var(--text-tertiary)]">
@@ -560,7 +725,7 @@ const TimestampClient = () => {
               variant="ghost"
               icon={<Copy className="h-4 w-4" />}
               disabled={!batchRows.length}
-              onClick={() => copy(batchCsv)}
+              onClick={() => copy(buildBatchCsv(batchRows))}
             >
               {t('app.converter.timestamp.copy_csv')}
             </Button>
@@ -569,16 +734,27 @@ const TimestampClient = () => {
         <CardContent className="space-y-4">
           <Textarea
             value={batchInput}
-            onChange={event => setBatchInput(event.target.value)}
+            onChange={event => updateBatchInput(event.target.value)}
             rows={4}
             className="resize-none font-mono"
             placeholder={t('app.converter.timestamp.batch_placeholder')}
           />
 
-          {batchTruncated && (
-            <p className="rounded-xl border border-[var(--warning)] bg-[var(--warning-subtle)] px-3 py-2 text-sm text-[var(--warning)]">
-              {t('app.converter.timestamp.batch_truncated', { limit: MAX_BATCH_ROWS })}
-            </p>
+          {(batchInputLimited || batchTruncated) && (
+            <div className="space-y-2">
+              {batchInputLimited && (
+                <p className="rounded-xl border border-[var(--warning)] bg-[var(--warning-subtle)] px-3 py-2 text-sm text-[var(--warning)]">
+                  {t('app.converter.timestamp.batch_input_truncated', {
+                    limit: MAX_BATCH_INPUT_CHARS
+                  })}
+                </p>
+              )}
+              {batchTruncated && (
+                <p className="rounded-xl border border-[var(--warning)] bg-[var(--warning-subtle)] px-3 py-2 text-sm text-[var(--warning)]">
+                  {t('app.converter.timestamp.batch_truncated', { limit: MAX_BATCH_ROWS })}
+                </p>
+              )}
+            </div>
           )}
 
           <div className="glass-clip overflow-auto rounded-xl border border-[var(--border-base)]">

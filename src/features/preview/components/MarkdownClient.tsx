@@ -13,7 +13,7 @@ import {
   PanelLeft
 } from 'lucide-react'
 import dynamic from 'next/dynamic'
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useDeferredValue, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
@@ -47,8 +47,9 @@ interface MarkdownStats {
   words: number
 }
 
-const MAX_MARKDOWN_PREVIEW_CHARS = 200000
+const MAX_MARKDOWN_PREVIEW_CHARS = 80000
 const MAX_MARKDOWN_ANALYSIS_CHARS = 120000
+const MAX_MARKDOWN_TOC_ROWS = 160
 const markdownPreviewNumberFormatter = new Intl.NumberFormat()
 const MARKDOWN_EXPORTS: MarkdownExport[] = ['markdown', 'plain', 'html', 'json']
 const VIEW_OPTIONS: MarkdownView[] = ['split', 'editor', 'preview']
@@ -179,12 +180,18 @@ const MarkdownClient = () => {
   const previewRef = useRef<HTMLDivElement>(null)
   const defaultMarkdown = t('app.preview.markdown.sample')
   const [input, setInput] = useState(defaultMarkdown)
+  const [isInputCapped, setIsInputCapped] = useState(false)
   const [view, setView] = useState<MarkdownView>('split')
   const [exportType, setExportType] = useState<MarkdownExport>('markdown')
   const [wordsPerMinute, setWordsPerMinute] = useState(220)
   const deferredInput = useDeferredValue(input)
+  const updateInput = useCallback((value: string) => {
+    const capped = value.length > MAX_MARKDOWN_ANALYSIS_CHARS
+    setIsInputCapped(capped)
+    setInput(capped ? value.slice(0, MAX_MARKDOWN_ANALYSIS_CHARS) : value)
+  }, [])
   const isPreviewTruncated = deferredInput.length > MAX_MARKDOWN_PREVIEW_CHARS
-  const isAnalysisTruncated = deferredInput.length > MAX_MARKDOWN_ANALYSIS_CHARS
+  const isAnalysisTruncated = isInputCapped || deferredInput.length > MAX_MARKDOWN_ANALYSIS_CHARS
   const previewContent = isPreviewTruncated
     ? deferredInput.slice(0, MAX_MARKDOWN_PREVIEW_CHARS)
     : deferredInput
@@ -195,11 +202,17 @@ const MarkdownClient = () => {
     () => analyzeMarkdown(analysisContent, wordsPerMinute),
     [analysisContent, wordsPerMinute]
   )
+  const visibleHeadings = useMemo(
+    () => stats.headings.slice(0, MAX_MARKDOWN_TOC_ROWS),
+    [stats.headings]
+  )
+  const hiddenHeadingCount = Math.max(0, stats.headings.length - visibleHeadings.length)
   const renderedHtml = () => previewRef.current?.innerHTML.trim() ?? ''
-  const exportContent = useMemo(() => {
+  const buildExportContent = () => {
     if (exportType === 'markdown') return input
     if (exportType === 'plain') return stats.plainText
     if (exportType === 'json') {
+      const toc = stats.headings.slice(0, MAX_MARKDOWN_TOC_ROWS)
       return JSON.stringify(
         {
           stats: {
@@ -213,31 +226,29 @@ const MarkdownClient = () => {
             tables: stats.tables,
             words: stats.words
           },
-          toc: stats.headings.map(heading => ({
+          toc: toc.map(heading => ({
             id: heading.id,
             level: heading.level,
             line: heading.line,
             text: heading.text
-          }))
+          })),
+          tocCapped: toc.length < stats.headings.length,
+          tocVisibleCount: toc.length
         },
         null,
         2
       )
     }
     return ''
-  }, [exportType, input, stats])
-
-  useEffect(() => {
-    setInput(defaultMarkdown)
-  }, [defaultMarkdown])
+  }
 
   const handleCopyExport = () => {
-    const content = exportType === 'html' ? renderedHtml() : exportContent
+    const content = exportType === 'html' ? renderedHtml() : buildExportContent()
     void copy(content)
   }
 
   const handleDownload = () => {
-    const content = exportType === 'html' ? renderedHtml() : exportContent
+    const content = exportType === 'html' ? renderedHtml() : buildExportContent()
     const meta = {
       html: { filename: 'markdown-preview.html', type: 'text/html;charset=utf-8' },
       json: { filename: 'markdown-summary.json', type: 'application/json;charset=utf-8' },
@@ -248,7 +259,7 @@ const MarkdownClient = () => {
   }
 
   const applySample = (key: keyof typeof MARKDOWN_SAMPLES) => {
-    setInput(MARKDOWN_SAMPLES[key])
+    updateInput(MARKDOWN_SAMPLES[key])
     setView('split')
   }
 
@@ -271,7 +282,7 @@ const MarkdownClient = () => {
               <Button
                 size="sm"
                 icon={<Paintbrush className="h-3.5 w-3.5" />}
-                onClick={() => setInput(defaultMarkdown)}
+                onClick={() => updateInput(defaultMarkdown)}
               >
                 {t('app.preview.markdown.sample.default')}
               </Button>
@@ -279,7 +290,7 @@ const MarkdownClient = () => {
                 size="sm"
                 variant="ghost"
                 icon={<Eraser className="h-3.5 w-3.5" />}
-                onClick={() => setInput('')}
+                onClick={() => updateInput('')}
               >
                 {t('public.clear')}
               </Button>
@@ -411,7 +422,7 @@ const MarkdownClient = () => {
             <CardContent className="flex-1 overflow-hidden">
               <Textarea
                 value={input}
-                onChange={e => setInput(e.target.value)}
+                onChange={e => updateInput(e.target.value)}
                 className="h-full resize-none font-mono text-sm"
                 placeholder={t('app.preview.markdown.placeholder')}
               />
@@ -427,7 +438,7 @@ const MarkdownClient = () => {
             <CardContent className="flex-1 overflow-auto">
               <div
                 ref={previewRef}
-                className="markdown-preview text-sm leading-relaxed text-[var(--text-primary)] [content-visibility:auto] [&_a]:text-[var(--primary)] [&_a]:underline [&_blockquote]:border-l-4 [&_blockquote]:border-[var(--primary)] [&_blockquote]:pl-4 [&_blockquote]:italic [&_blockquote]:text-[var(--text-secondary)] [&_code]:rounded [&_code]:bg-[var(--bg-muted)] [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-xs [&_em]:italic [&_h1]:mb-4 [&_h1]:mt-2 [&_h1]:text-2xl [&_h1]:font-bold [&_h2]:mb-3 [&_h2]:mt-4 [&_h2]:text-xl [&_h2]:font-semibold [&_h3]:mb-2 [&_h3]:mt-3 [&_h3]:text-lg [&_h3]:font-semibold [&_hr]:my-4 [&_hr]:border-[var(--border-base)] [&_li]:mb-1 [&_ol]:mb-3 [&_ol]:list-decimal [&_ol]:pl-6 [&_p]:mb-3 [&_pre]:mb-3 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:bg-[var(--bg-muted)] [&_pre]:p-4 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_strong]:font-bold [&_table]:mb-3 [&_table]:w-full [&_table]:border-collapse [&_td]:border [&_td]:border-[var(--border-base)] [&_td]:px-3 [&_td]:py-2 [&_th]:border [&_th]:border-[var(--border-base)] [&_th]:bg-[var(--bg-muted)] [&_th]:px-3 [&_th]:py-2 [&_th]:text-left [&_ul]:mb-3 [&_ul]:list-disc [&_ul]:pl-6"
+                className="markdown-preview max-w-full break-words text-sm leading-relaxed text-[var(--text-primary)] [content-visibility:auto] [overflow-wrap:anywhere] [&_a]:break-words [&_a]:text-[var(--primary)] [&_a]:underline [&_a]:[overflow-wrap:anywhere] [&_blockquote]:border-l-4 [&_blockquote]:border-[var(--primary)] [&_blockquote]:pl-4 [&_blockquote]:italic [&_blockquote]:text-[var(--text-secondary)] [&_code]:break-words [&_code]:rounded [&_code]:bg-[var(--bg-muted)] [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-xs [&_code]:[overflow-wrap:anywhere] [&_em]:italic [&_h1]:mb-4 [&_h1]:mt-2 [&_h1]:text-2xl [&_h1]:font-bold [&_h2]:mb-3 [&_h2]:mt-4 [&_h2]:text-xl [&_h2]:font-semibold [&_h3]:mb-2 [&_h3]:mt-3 [&_h3]:text-lg [&_h3]:font-semibold [&_hr]:my-4 [&_hr]:border-[var(--border-base)] [&_li]:mb-1 [&_ol]:mb-3 [&_ol]:list-decimal [&_ol]:pl-6 [&_p]:mb-3 [&_pre]:mb-3 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:bg-[var(--bg-muted)] [&_pre]:p-4 [&_pre]:[overflow-wrap:normal] [&_pre_code]:break-normal [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:whitespace-pre [&_pre_code]:[overflow-wrap:normal] [&_strong]:font-bold [&_table]:mb-3 [&_table]:w-full [&_table]:max-w-full [&_table]:border-collapse [&_td]:break-words [&_td]:border [&_td]:border-[var(--border-base)] [&_td]:px-3 [&_td]:py-2 [&_td]:[overflow-wrap:anywhere] [&_th]:break-words [&_th]:border [&_th]:border-[var(--border-base)] [&_th]:bg-[var(--bg-muted)] [&_th]:px-3 [&_th]:py-2 [&_th]:text-left [&_th]:[overflow-wrap:anywhere] [&_ul]:mb-3 [&_ul]:list-disc [&_ul]:pl-6"
               >
                 <MarkdownRenderer content={previewContent} />
               </div>
@@ -448,7 +459,15 @@ const MarkdownClient = () => {
           <CardContent className="min-h-0 flex-1 overflow-auto">
             {stats.headings.length > 0 ? (
               <div className="space-y-2">
-                {stats.headings.map(heading => (
+                {hiddenHeadingCount > 0 && (
+                  <p className="rounded-xl border border-[var(--warning)] bg-[var(--warning-subtle)] px-3 py-2 text-xs text-[var(--warning)]">
+                    {t('app.preview.markdown.toc_limited', {
+                      total: stats.headings.length,
+                      visible: visibleHeadings.length
+                    })}
+                  </p>
+                )}
+                {visibleHeadings.map(heading => (
                   <button
                     key={`${heading.line}-${heading.id}`}
                     type="button"

@@ -12,22 +12,30 @@ import {
   ShieldCheck,
   Trash2
 } from 'lucide-react'
-import { useDeferredValue, useMemo, useState } from 'react'
+import { useCallback, useDeferredValue, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { InputCapNotice } from '@/components/ui/input-cap-notice'
 import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
+import {
+  createOutputPreview,
+  isOutputPreviewLimited,
+  OUTPUT_PREVIEW_CHARS
+} from '@/utils/outputPreview'
 
 const ATTRIBUTE_GROUPS = ['all', 'security', 'scope', 'lifetime', 'client'] as const
 const OUTPUT_TYPES = ['raw', 'next', 'express', 'nginx', 'document', 'json'] as const
 const SAME_SITE_VALUES = ['Lax', 'Strict', 'None'] as const
+const COOKIE_ATTRIBUTE_LIMIT = 24
 const COOKIE_INPUT_LIMIT = 28000
 const COOKIE_ROW_LIMIT = 120
+const COOKIE_RENDER_LIMIT = 48
 
 type AttributeGroup = (typeof ATTRIBUTE_GROUPS)[number]
 type OutputType = (typeof OUTPUT_TYPES)[number]
@@ -232,7 +240,7 @@ const parseCookieLine = (line: string): ParsedCookie | null => {
 
   const attributes: ParsedCookie['attributes'] = {}
 
-  for (const segment of attributeSegments) {
+  for (const segment of attributeSegments.slice(0, COOKIE_ATTRIBUTE_LIMIT)) {
     const attributeSeparator = segment.indexOf('=')
     if (attributeSeparator === -1) {
       attributes[segment.toLowerCase()] = true
@@ -400,8 +408,19 @@ export default function CookieClient() {
   const deferredWorkspace = useDeferredValue(workspace)
 
   const generatedHeader = useMemo(() => buildSetCookie(draft), [draft])
-  const output = useMemo(() => buildOutput(draft, outputType), [draft, outputType])
+  const outputPreviewSource = useMemo(() => buildOutput(draft, outputType), [draft, outputType])
+  const outputPreview = useMemo(
+    () => createOutputPreview(outputPreviewSource),
+    [outputPreviewSource]
+  )
+  const outputPreviewLimited = isOutputPreviewLimited(outputPreviewSource)
+  const buildCurrentOutput = useCallback(() => buildOutput(draft, outputType), [draft, outputType])
   const parsedCookies = useMemo(() => parseCookieWorkspace(deferredWorkspace), [deferredWorkspace])
+  const visibleParsedCookies = useMemo(
+    () => parsedCookies.slice(0, COOKIE_RENDER_LIMIT),
+    [parsedCookies]
+  )
+  const parsedCookiesLimited = parsedCookies.length > visibleParsedCookies.length
   const findings = useMemo(() => auditCookies(parsedCookies), [parsedCookies])
   const filteredAttributes = useMemo(() => {
     const normalized = deferredQuery.trim().toLowerCase()
@@ -428,7 +447,7 @@ export default function CookieClient() {
 
     return { dangerous, httpOnly, persistent, secure, total: parsedCookies.length }
   }, [findings, parsedCookies])
-  const exportJson = useMemo(
+  const buildExportJson = useCallback(
     () =>
       JSON.stringify(
         {
@@ -441,7 +460,7 @@ export default function CookieClient() {
       ),
     [findings, metrics, parsedCookies]
   )
-  const exportCsv = useMemo(
+  const buildExportCsv = useCallback(
     () =>
       [
         'name,value,secure,httpOnly,sameSite,path,domain,maxAge',
@@ -512,7 +531,7 @@ export default function CookieClient() {
                 type="button"
                 size="sm"
                 icon={<Copy className="h-4 w-4" />}
-                onClick={() => copy(output)}
+                onClick={() => copy(buildCurrentOutput())}
               >
                 {t('public.copy')}
               </Button>
@@ -662,11 +681,19 @@ export default function CookieClient() {
               </Button>
             </div>
             <Textarea
-              value={output}
+              value={outputPreview}
               readOnly
               rows={8}
               className="min-h-[190px] resize-none font-mono"
             />
+            {outputPreviewLimited && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('public.output_preview_limited', {
+                  total: outputPreviewSource.length.toLocaleString(),
+                  visible: OUTPUT_PREVIEW_CHARS.toLocaleString()
+                })}
+              </p>
+            )}
           </CardContent>
         </Card>
 
@@ -694,6 +721,10 @@ export default function CookieClient() {
               onChange={event => setWorkspace(event.target.value.slice(0, COOKIE_INPUT_LIMIT))}
               rows={10}
               className="min-h-[220px] resize-y font-mono"
+            />
+            <InputCapNotice
+              visible={workspace.length >= COOKIE_INPUT_LIMIT}
+              limit={COOKIE_INPUT_LIMIT}
             />
 
             <div className="space-y-2">
@@ -739,7 +770,7 @@ export default function CookieClient() {
                 size="sm"
                 variant="ghost"
                 icon={<Copy className="h-4 w-4" />}
-                onClick={() => copy(exportJson)}
+                onClick={() => copy(buildExportJson())}
               >
                 {t('app.converter.cookie.copy_json')}
               </Button>
@@ -749,7 +780,11 @@ export default function CookieClient() {
                 variant="ghost"
                 icon={<Download className="h-4 w-4" />}
                 onClick={() =>
-                  downloadText(exportCsv, 'daily-tools-cookies.csv', 'text/csv;charset=utf-8')
+                  downloadText(
+                    buildExportCsv(),
+                    'daily-tools-cookies.csv',
+                    'text/csv;charset=utf-8'
+                  )
                 }
               >
                 {t('app.converter.cookie.download_csv')}
@@ -766,7 +801,7 @@ export default function CookieClient() {
                 <Input
                   id="cookie-search"
                   value={query}
-                  onChange={event => setQuery(event.target.value)}
+                  onChange={event => setQuery(event.target.value.slice(0, 160))}
                   placeholder="Secure, SameSite, Max-Age"
                   className="pl-10"
                 />
@@ -815,33 +850,45 @@ export default function CookieClient() {
           </div>
 
           {parsedCookies.length ? (
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {parsedCookies.map(cookie => (
-                <div key={cookie.raw} className="glass-input rounded-xl p-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <p className="break-all font-mono text-sm font-semibold text-[var(--text-primary)]">
-                      {cookie.name}
-                    </p>
-                    <span className="rounded-full bg-[var(--primary-subtle)] px-2 py-0.5 text-xs text-[var(--primary)]">
-                      {Object.keys(cookie.attributes).length}
-                    </span>
-                  </div>
-                  <p className="mt-2 break-all font-mono text-xs leading-5 text-[var(--text-secondary)]">
-                    {cookie.value || '-'}
-                  </p>
-                  <div className="mt-3 flex flex-wrap gap-1.5">
-                    {Object.keys(cookie.attributes).map(attribute => (
-                      <span
-                        key={attribute}
-                        className="rounded-full bg-[var(--bg-muted)] px-2 py-0.5 text-xs text-[var(--text-secondary)]"
-                      >
-                        {attribute}
+            <>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {visibleParsedCookies.map(cookie => (
+                  <div key={cookie.raw} className="glass-input rounded-xl p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="break-all font-mono text-sm font-semibold text-[var(--text-primary)]">
+                        {cookie.name}
+                      </p>
+                      <span className="rounded-full bg-[var(--primary-subtle)] px-2 py-0.5 text-xs text-[var(--primary)]">
+                        {Object.keys(cookie.attributes).length}
                       </span>
-                    ))}
+                    </div>
+                    <p className="mt-2 break-all font-mono text-xs leading-5 text-[var(--text-secondary)]">
+                      {cookie.value || '-'}
+                    </p>
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                      {Object.keys(cookie.attributes)
+                        .slice(0, COOKIE_ATTRIBUTE_LIMIT)
+                        .map(attribute => (
+                          <span
+                            key={attribute}
+                            className="rounded-full bg-[var(--bg-muted)] px-2 py-0.5 text-xs text-[var(--text-secondary)]"
+                          >
+                            {attribute}
+                          </span>
+                        ))}
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+              {parsedCookiesLimited && (
+                <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                  {t('public.output_preview_rows_limited', {
+                    total: parsedCookies.length.toLocaleString(),
+                    visible: visibleParsedCookies.length.toLocaleString()
+                  })}
+                </p>
+              )}
+            </>
           ) : (
             <div className="glass-input rounded-xl p-6 text-center text-sm text-[var(--text-secondary)]">
               {t('app.converter.cookie.empty')}

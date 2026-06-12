@@ -73,6 +73,7 @@ interface ParsedGridWorkspace {
   minTrack: number | null
   mode: GridMode | null
   rows: number | null
+  scanLimited: boolean
   sources: GridImportSource[]
   templateColumns: string
 }
@@ -187,6 +188,11 @@ const AREA_DEFINITIONS: Record<Exclude<AreaPreset, 'none'>, AreaDefinition> = {
 
 const OUTPUT_TABS: OutputTab[] = ['css', 'tailwind', 'html', 'react', 'json']
 const PREVIEW_ITEM_LIMIT = 36
+const GRID_AREA_RENDER_LIMIT = 24
+const GRID_FINDING_RENDER_LIMIT = 48
+const GRID_AREA_SCAN_LIMIT = 120
+const GRID_AREA_CELL_SCAN_LIMIT = 48
+const GRID_ITEM_SCAN_LIMIT = 240
 const MAX_GRID_WORKSPACE_CHARS = 60000
 const GRID_WORKSPACE_SAMPLE = `.grid {
   display: grid;
@@ -241,19 +247,109 @@ const extractCssDeclaration = (source: string, property: string) => {
   return match?.[1]?.trim() ?? ''
 }
 
-const extractAreaRows = (value: string) =>
-  Array.from(value.matchAll(/"([^"]+)"/gu))
-    .map(match => match[1]?.trim() ?? '')
-    .filter(Boolean)
+const extractAreaRows = (value: string) => {
+  const rows: string[] = []
+  const pattern = /"([^"]+)"/gu
+  let limited = false
+
+  let match: RegExpExecArray | null
+  while ((match = pattern.exec(value))) {
+    if (rows.length >= GRID_AREA_SCAN_LIMIT) {
+      limited = true
+      break
+    }
+    const row = match[1]?.trim() ?? ''
+    if (row) rows.push(row)
+    if (match[0] === '') pattern.lastIndex += 1
+  }
+
+  return { limited, rows }
+}
+
+const countPattern = (source: string, pattern: RegExp, limit: number) => {
+  let count = 0
+  let limited = false
+  pattern.lastIndex = 0
+
+  let match: RegExpExecArray | null
+  while ((match = pattern.exec(source))) {
+    if (count >= limit) {
+      limited = true
+      break
+    }
+    count += 1
+    if (match[0] === '') pattern.lastIndex += 1
+  }
+
+  return { count, limited }
+}
+
+const findLastPattern = (source: string, pattern: RegExp) => {
+  let last = ''
+  let count = 0
+  let limited = false
+  pattern.lastIndex = 0
+
+  let match: RegExpExecArray | null
+  while ((match = pattern.exec(source))) {
+    if (count >= GRID_ITEM_SCAN_LIMIT) {
+      limited = true
+      break
+    }
+    last = match[0] ?? last
+    count += 1
+    if (match[0] === '') pattern.lastIndex += 1
+  }
+
+  return { last, limited }
+}
+
+const collectAreaCells = (row: string) => {
+  const cells: string[] = []
+  let limited = false
+  let tokenStart = -1
+
+  for (let index = 0; index <= row.length; index += 1) {
+    const char = row[index]
+    const isDelimiter = index === row.length || /\s/u.test(char ?? '')
+
+    if (!isDelimiter) {
+      if (tokenStart < 0) tokenStart = index
+      continue
+    }
+
+    if (tokenStart < 0) continue
+    if (cells.length >= GRID_AREA_CELL_SCAN_LIMIT) {
+      limited = true
+      break
+    }
+
+    const cell = row.slice(tokenStart, index)
+    if (cell) cells.push(cell)
+    tokenStart = -1
+  }
+
+  return { cells, limited }
+}
 
 const analyzeAreaRows = (rows: string[]) => {
   const issues: string[] = []
-  if (rows.length === 0) return issues
-  const cells = rows.map(row => row.split(/\s+/u).filter(Boolean))
+  if (rows.length === 0) return { issues, limited: false }
+  let limited = false
+  const cells = rows.map(row => {
+    const result = collectAreaCells(row)
+    if (result.limited) limited = true
+    return result.cells
+  })
   const width = cells[0]?.length ?? 0
   if (cells.some(row => row.length !== width)) issues.push('uneven')
 
-  const names = new Set(cells.flat().filter(name => name !== '.'))
+  const names = new Set<string>()
+  cells.forEach(row => {
+    row.forEach(name => {
+      if (name !== '.') names.add(name)
+    })
+  })
   names.forEach(name => {
     const positions: Array<{ column: number; row: number }> = []
     cells.forEach((row, rowIndex) => {
@@ -272,7 +368,7 @@ const analyzeAreaRows = (rows: string[]) => {
     }
   })
 
-  return Array.from(new Set(issues))
+  return { issues: Array.from(new Set(issues)), limited }
 }
 
 const getTemplateColumnCount = (template: string) => {
@@ -323,18 +419,21 @@ const parseGridWorkspace = (input: string): ParsedGridWorkspace => {
   const sources = new Set<GridImportSource>()
   const templateColumns = extractCssDeclaration(source, 'grid-template-columns')
   const areaDeclaration = extractCssDeclaration(source, 'grid-template-areas')
-  const areaRows = extractAreaRows(areaDeclaration)
+  const areaRowResult = extractAreaRows(areaDeclaration)
+  const areaAnalysis = analyzeAreaRows(areaRowResult.rows)
   const tailwindColumns = source.match(/\bgrid-cols-(\d+)\b/u)?.[1]
   const tailwindAuto = source.match(
     /\bgrid-cols-\[repeat\((auto-fit|auto-fill),minmax\(min\((\d+)px,100%\),1fr\)\)\]/u
   )
-  const tailwindGapMatches = Array.from(source.matchAll(/\bgap-(?:\[(?:\d+)px\]|\d+)\b/gu))
-  const tailwindGap = tailwindGapMatches[tailwindGapMatches.length - 1]?.[0] ?? ''
+  const tailwindGapResult = findLastPattern(source, /\bgap-(?:\[(?:\d+)px\]|\d+)\b/gu)
   const templateMode = parseTemplateMode(templateColumns)
-  const itemCount = Math.max(
-    (source.match(/class=["'][^"']*(?:grid__item|grid-item|card|tile)[^"']*["']/giu) ?? []).length,
-    (source.match(/<article\b/giu) ?? []).length
+  const classItemCount = countPattern(
+    source,
+    /class=["'][^"']*(?:grid__item|grid-item|card|tile)[^"']*["']/giu,
+    GRID_ITEM_SCAN_LIMIT
   )
+  const articleItemCount = countPattern(source, /<article\b/giu, GRID_ITEM_SCAN_LIMIT)
+  const itemCount = Math.max(classItemCount.count, articleItemCount.count)
 
   if (templateColumns || areaDeclaration || extractCssDeclaration(source, 'display') === 'grid')
     sources.add('css')
@@ -358,12 +457,13 @@ const parseGridWorkspace = (input: string): ParsedGridWorkspace => {
 
   return {
     align: normalizeAlign(extractCssDeclaration(source, 'align-items')),
-    areaIssues: analyzeAreaRows(areaRows),
-    areaRows,
+    areaIssues: areaAnalysis.issues,
+    areaRows: areaRowResult.rows,
     capped: input.length > MAX_GRID_WORKSPACE_CHARS,
     columns: tailwindColumns ? Number(tailwindColumns) : tailwindAuto ? null : templateMode.columns,
     flow,
-    gap: tailwindGapToPx(tailwindGap) ?? pxToNumber(extractCssDeclaration(source, 'gap')),
+    gap:
+      tailwindGapToPx(tailwindGapResult.last) ?? pxToNumber(extractCssDeclaration(source, 'gap')),
     hasMinWidthZero:
       /min-width\s*:\s*0\b/iu.test(source) ||
       source.includes('[&>*]:min-w-0') ||
@@ -378,6 +478,12 @@ const parseGridWorkspace = (input: string): ParsedGridWorkspace => {
         ? (tailwindAuto[1] as GridMode)
         : templateMode.mode,
     rows: pxToNumber(extractCssDeclaration(source, 'grid-auto-rows')),
+    scanLimited:
+      areaRowResult.limited ||
+      areaAnalysis.limited ||
+      tailwindGapResult.limited ||
+      classItemCount.limited ||
+      articleItemCount.limited,
     sources: Array.from(sources),
     templateColumns
   }
@@ -401,6 +507,8 @@ const buildGridFindings = (state: GridState, parsed: ParsedGridWorkspace) => {
       level: 'warn',
       subject: String(MAX_GRID_WORKSPACE_CHARS)
     })
+  if (parsed.scanLimited)
+    findings.push({ key: 'scan_limited', level: 'warn', subject: String(GRID_ITEM_SCAN_LIMIT) })
   if (parsed.sources.length === 0)
     findings.push({ key: 'workspace_empty', level: 'warn', subject: 'grid' })
   if (flow === 'row-dense')
@@ -658,6 +766,13 @@ const GridBuilderClient = () => {
   const previewTemplate = useMemo(() => getTemplate(grid, areaDefinition), [areaDefinition, grid])
   const parsedWorkspace = useMemo(() => parseGridWorkspace(deferredWorkspace), [deferredWorkspace])
   const findings = useMemo(() => buildGridFindings(grid, parsedWorkspace), [grid, parsedWorkspace])
+  const visibleAreaRows = useMemo(
+    () => parsedWorkspace.areaRows.slice(0, GRID_AREA_RENDER_LIMIT),
+    [parsedWorkspace.areaRows]
+  )
+  const areaRowsLimited = parsedWorkspace.areaRows.length > visibleAreaRows.length
+  const visibleFindings = useMemo(() => findings.slice(0, GRID_FINDING_RENDER_LIMIT), [findings])
+  const findingsLimited = findings.length > visibleFindings.length
   const findingsCsv = useMemo(() => buildFindingsCsv(findings), [findings])
   const css = useMemo(() => buildGridCss(grid, areaDefinition), [areaDefinition, grid])
   const tailwind = useMemo(() => buildTailwind(grid, areaDefinition), [areaDefinition, grid])
@@ -703,6 +818,12 @@ const GridBuilderClient = () => {
     setGrid(prev => ({ ...prev, ...patch }))
   }
 
+  const updateWorkspace = useCallback((value: string) => {
+    setWorkspace(
+      value.length > MAX_GRID_WORKSPACE_CHARS ? value.slice(0, MAX_GRID_WORKSPACE_CHARS) : value
+    )
+  }, [])
+
   const applyPreset = (key: string) => {
     const preset = GRID_PRESETS.find(item => item.key === key)
     if (preset) setGrid(preset.state)
@@ -711,7 +832,7 @@ const GridBuilderClient = () => {
   const reset = () => {
     setGrid(DEFAULT_GRID)
     setOutputTab('css')
-    setWorkspace(GRID_WORKSPACE_SAMPLE)
+    updateWorkspace(GRID_WORKSPACE_SAMPLE)
   }
 
   const applyParsedWorkspace = useCallback(() => {
@@ -965,9 +1086,7 @@ const GridBuilderClient = () => {
           <CardContent className="space-y-4">
             <Textarea
               value={workspace}
-              onChange={event =>
-                setWorkspace(event.target.value.slice(0, MAX_GRID_WORKSPACE_CHARS))
-              }
+              onChange={event => updateWorkspace(event.target.value)}
               placeholder={t('app.generation.grid.workspace_placeholder')}
               className="min-h-[240px] font-mono text-xs"
               spellCheck={false}
@@ -1013,7 +1132,7 @@ const GridBuilderClient = () => {
                 type="button"
                 variant="outline"
                 icon={<FileSearch className="h-4 w-4" />}
-                onClick={() => setWorkspace(css)}
+                onClick={() => updateWorkspace(css)}
               >
                 {t('app.generation.grid.use_generated')}
               </Button>
@@ -1041,7 +1160,7 @@ const GridBuilderClient = () => {
                 )}
                 {parsedWorkspace.areaRows.length > 0 && (
                   <div className="mt-2 space-y-1">
-                    {parsedWorkspace.areaRows.map(row => (
+                    {visibleAreaRows.map(row => (
                       <p
                         key={row}
                         className="break-all font-mono text-xs text-[var(--text-tertiary)]"
@@ -1049,6 +1168,14 @@ const GridBuilderClient = () => {
                         {row}
                       </p>
                     ))}
+                    {areaRowsLimited && (
+                      <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                        {t('public.output_preview_rows_limited', {
+                          total: parsedWorkspace.areaRows.length.toLocaleString(),
+                          visible: visibleAreaRows.length.toLocaleString()
+                        })}
+                      </p>
+                    )}
                   </div>
                 )}
               </div>
@@ -1092,7 +1219,7 @@ const GridBuilderClient = () => {
               </Button>
             </div>
             <div className="space-y-2">
-              {findings.map(finding => (
+              {visibleFindings.map(finding => (
                 <GridFindingRow
                   key={`${finding.key}-${finding.subject}`}
                   finding={finding}
@@ -1100,6 +1227,14 @@ const GridBuilderClient = () => {
                   levelLabel={t(`app.generation.grid.level.${finding.level}`)}
                 />
               ))}
+              {findingsLimited && (
+                <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                  {t('public.output_preview_rows_limited', {
+                    total: findings.length.toLocaleString(),
+                    visible: visibleFindings.length.toLocaleString()
+                  })}
+                </p>
+              )}
             </div>
           </CardContent>
         </Card>

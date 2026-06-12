@@ -13,18 +13,25 @@ import {
   Sparkles,
   Trash2
 } from 'lucide-react'
-import { useDeferredValue, useMemo, useState } from 'react'
+import { useCallback, useDeferredValue, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { InputCapNotice } from '@/components/ui/input-cap-notice'
 import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
+import {
+  createOutputPreview,
+  isOutputPreviewLimited,
+  OUTPUT_PREVIEW_CHARS
+} from '@/utils/outputPreview'
 
 const OUTPUT_TYPES = ['raw', 'next', 'nginx', 'apache', 'cloudflare', 'json'] as const
+const HSTS_DIRECTIVE_LIMIT = 24
 const HSTS_INPUT_LIMIT = 28000
 const HSTS_ROW_LIMIT = 140
 const ONE_YEAR_SECONDS = 31536000
@@ -242,7 +249,9 @@ const parseHstsValue = (value: string) => {
     const [rawName, rawValue = ''] = directive.split('=')
     const name = rawName.trim().toLowerCase()
 
-    if (seen.has(name)) duplicateDirectives.push(name)
+    if (seen.has(name) && duplicateDirectives.length < HSTS_DIRECTIVE_LIMIT) {
+      duplicateDirectives.push(name)
+    }
     seen.add(name)
 
     if (name === 'max-age') {
@@ -261,7 +270,7 @@ const parseHstsValue = (value: string) => {
       continue
     }
 
-    unknownDirectives.push(rawName.trim())
+    if (unknownDirectives.length < HSTS_DIRECTIVE_LIMIT) unknownDirectives.push(rawName.trim())
   }
 
   return {
@@ -437,7 +446,13 @@ export default function HstsClient() {
   const deferredWorkspace = useDeferredValue(workspace)
 
   const maxAge = useMemo(() => normalizeMaxAge(draft.maxAge), [draft.maxAge])
-  const output = useMemo(() => buildOutput(draft, outputType), [draft, outputType])
+  const outputPreviewSource = useMemo(() => buildOutput(draft, outputType), [draft, outputType])
+  const outputPreview = useMemo(
+    () => createOutputPreview(outputPreviewSource),
+    [outputPreviewSource]
+  )
+  const outputPreviewLimited = isOutputPreviewLimited(outputPreviewSource)
+  const buildCurrentOutput = useCallback(() => buildOutput(draft, outputType), [draft, outputType])
   const parsedRows = useMemo(() => parseWorkspace(deferredWorkspace), [deferredWorkspace])
   const findings = useMemo(() => auditDraft(draft, parsedRows), [draft, parsedRows])
   const metrics = useMemo(() => {
@@ -457,7 +472,7 @@ export default function HstsClient() {
       risks: String(riskCount)
     }
   }, [draft.includeSubDomains, draft.preload, findings, maxAge, parsedRows, t])
-  const exportJson = useMemo(
+  const buildExportJson = useCallback(
     () =>
       JSON.stringify(
         {
@@ -477,7 +492,7 @@ export default function HstsClient() {
       ),
     [draft, findings, maxAge, outputType, parsedRows]
   )
-  const exportCsv = useMemo(
+  const buildExportCsv = useCallback(
     () =>
       [
         ['source', 'maxAge', 'includeSubDomains', 'preload', 'valid', 'unknownDirectives', 'raw'],
@@ -720,13 +735,25 @@ export default function HstsClient() {
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Textarea readOnly value={output} className="min-h-[240px] font-mono" />
+            <Textarea readOnly value={outputPreview} className="min-h-[240px] font-mono" />
+            {outputPreviewLimited && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('public.output_preview_limited', {
+                  total: outputPreviewSource.length.toLocaleString(),
+                  visible: OUTPUT_PREVIEW_CHARS.toLocaleString()
+                })}
+              </p>
+            )}
             <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-              <Button type="button" onClick={() => copy(output)}>
+              <Button type="button" onClick={() => copy(buildCurrentOutput())}>
                 <Copy className="h-4 w-4" />
                 {t('public.copy')}
               </Button>
-              <Button type="button" variant="outline" onClick={() => setWorkspace(output)}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setWorkspace(buildCurrentOutput())}
+              >
                 <Search className="h-4 w-4" />
                 {t('app.converter.hsts.use_output')}
               </Button>
@@ -741,10 +768,10 @@ export default function HstsClient() {
                 {findings.slice(0, 10).map((finding, index) => (
                   <div
                     key={`${finding.key}:${finding.subject}:${index}`}
-                    className={`rounded-xl border px-3 py-2 text-xs ${getFindingClass(finding.level)}`}
+                    className={`min-w-0 break-all rounded-xl border px-3 py-2 text-xs leading-5 ${getFindingClass(finding.level)}`}
                   >
                     <span className="font-semibold">{finding.subject}</span>
-                    <span className="mx-2">/</span>
+                    <span className="mx-2 inline-block">/</span>
                     {t(`app.converter.hsts.audit.${finding.key}`)}
                   </div>
                 ))}
@@ -762,7 +789,7 @@ export default function HstsClient() {
               <CardDescription>{t('app.converter.hsts.workspace_hint')}</CardDescription>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button type="button" variant="outline" onClick={() => copy(exportJson)}>
+              <Button type="button" variant="outline" onClick={() => copy(buildExportJson())}>
                 <Copy className="h-4 w-4" />
                 {t('app.converter.hsts.copy_json')}
               </Button>
@@ -770,7 +797,7 @@ export default function HstsClient() {
                 type="button"
                 variant="outline"
                 onClick={() =>
-                  downloadText(exportCsv, 'hsts-headers.csv', 'text/csv;charset=utf-8')
+                  downloadText(buildExportCsv(), 'hsts-headers.csv', 'text/csv;charset=utf-8')
                 }
               >
                 <Download className="h-4 w-4" />
@@ -790,6 +817,7 @@ export default function HstsClient() {
             placeholder={t('app.converter.hsts.workspace_placeholder')}
             className="min-h-[180px] font-mono"
           />
+          <InputCapNotice visible={workspace.length >= HSTS_INPUT_LIMIT} limit={HSTS_INPUT_LIMIT} />
 
           <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
             <div className="glass-input rounded-xl p-3">
@@ -856,10 +884,10 @@ export default function HstsClient() {
                         preload
                       </span>
                     ) : null}
-                    {row.unknownDirectives.map(directive => (
+                    {row.unknownDirectives.slice(0, HSTS_DIRECTIVE_LIMIT).map(directive => (
                       <span
                         key={directive}
-                        className="rounded-full bg-amber-500/10 px-2 py-0.5 text-xs text-amber-700"
+                        className="inline-block min-w-0 max-w-full break-all rounded-full bg-amber-500/10 px-2 py-0.5 text-xs leading-5 text-amber-700"
                       >
                         {directive}
                       </span>

@@ -16,9 +16,8 @@ import {
   Sparkles,
   Trash2
 } from 'lucide-react'
-import { useCallback, useDeferredValue, useMemo, useState } from 'react'
+import { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import YAML from 'yaml'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -28,6 +27,12 @@ import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
+import {
+  createOutputPreview,
+  isOutputPreviewLimited,
+  OUTPUT_PREVIEW_CHARS,
+  OUTPUT_PREVIEW_ROWS
+} from '@/utils/outputPreview'
 
 const PACKAGE_MANAGERS = ['pnpm', 'npm', 'yarn', 'bun'] as const
 const APP_TYPES = ['next', 'vite', 'node', 'worker'] as const
@@ -42,6 +47,8 @@ const OUTPUT_TYPES = [
 ] as const
 const WORKSPACE_LIMIT = 80000
 const SERVICE_RENDER_LIMIT = 80
+const BUILD_CONTEXT_FIELD_LIMIT = 320
+type YamlModule = typeof import('yaml')
 
 type PackageManager = (typeof PACKAGE_MANAGERS)[number]
 type AppType = (typeof APP_TYPES)[number]
@@ -402,12 +409,22 @@ const imageUsesLatest = (image: string) => {
   return !lastPart.includes(':') || /:latest$/iu.test(trimmed)
 }
 
-const stringifyCompose = (value: unknown) =>
-  YAML.stringify(value, {
-    aliasDuplicateObjects: false,
-    indent: 2,
-    lineWidth: 110
-  }).trim()
+const EMPTY_PARSED_COMPOSE: ParsedCompose = {
+  capped: false,
+  errors: [],
+  networks: 0,
+  services: [],
+  volumes: 0
+}
+
+const stringifyCompose = (yaml: YamlModule, value: unknown) =>
+  yaml
+    .stringify(value, {
+      aliasDuplicateObjects: false,
+      indent: 2,
+      lineWidth: 110
+    })
+    .trim()
 
 const envMapFromDraft = (draft: ComposeDraft) => {
   const env: Record<string, string> = {}
@@ -565,12 +582,13 @@ const defaultStartCommand = (draft: ComposeDraft) => {
   return `${draft.packageManager} start`
 }
 
-const buildComposeYaml = (draft: ComposeDraft) => stringifyCompose(buildComposeObject(draft))
+const buildComposeYaml = (yaml: YamlModule, draft: ComposeDraft) =>
+  stringifyCompose(yaml, buildComposeObject(draft))
 
-const buildOverride = (draft: ComposeDraft) => {
+const buildOverride = (yaml: YamlModule, draft: ComposeDraft) => {
   const serviceName = serviceSlug(draft.appServiceName, 'web')
   const manager = draft.packageManager
-  return stringifyCompose({
+  return stringifyCompose(yaml, {
     services: {
       [serviceName]: {
         command: draft.appType === 'vite' ? `${manager} dev --host 0.0.0.0` : `${manager} dev`,
@@ -721,14 +739,14 @@ const serviceFromEntry = ([name, value]: [string, unknown]): ParsedService => {
   }
 }
 
-const parseCompose = (input: string): ParsedCompose => {
-  const source = input.length > WORKSPACE_LIMIT ? input.slice(0, WORKSPACE_LIMIT) : input
+const parseCompose = (yaml: YamlModule, input: string): ParsedCompose => {
+  const source = input.length >= WORKSPACE_LIMIT ? input.slice(0, WORKSPACE_LIMIT) : input
   const errors: string[] = []
   try {
-    const value = YAML.parse(source) as unknown
+    const value = yaml.parse(source) as unknown
     if (!value || typeof value !== 'object') {
       return {
-        capped: input.length > WORKSPACE_LIMIT,
+        capped: input.length >= WORKSPACE_LIMIT,
         errors: ['empty'],
         networks: 0,
         services: [],
@@ -747,7 +765,7 @@ const parseCompose = (input: string): ParsedCompose => {
     const volumes =
       root.volumes && typeof root.volumes === 'object' ? Object.keys(root.volumes).length : 0
     return {
-      capped: input.length > WORKSPACE_LIMIT,
+      capped: input.length >= WORKSPACE_LIMIT,
       errors,
       networks,
       services,
@@ -755,7 +773,7 @@ const parseCompose = (input: string): ParsedCompose => {
     }
   } catch {
     return {
-      capped: input.length > WORKSPACE_LIMIT,
+      capped: input.length >= WORKSPACE_LIMIT,
       errors: ['invalid_yaml'],
       networks: 0,
       services: [],
@@ -851,13 +869,14 @@ const buildMarkdown = (draft: ComposeDraft, parsed: ParsedCompose, findings: Fin
   ].join('\n')
 
 const buildOutput = (
+  yaml: YamlModule,
   draft: ComposeDraft,
   parsed: ParsedCompose,
   findings: Finding[],
   outputType: OutputType
 ) => {
-  if (outputType === 'compose') return buildComposeYaml(draft)
-  if (outputType === 'override') return buildOverride(draft)
+  if (outputType === 'compose') return buildComposeYaml(yaml, draft)
+  if (outputType === 'override') return buildOverride(yaml, draft)
   if (outputType === 'env') return buildEnvExample(draft)
   if (outputType === 'dockerfile') return buildDockerfile(draft)
   if (outputType === 'dockerignore') return buildDockerignore()
@@ -910,17 +929,63 @@ export default function DockerComposeClient() {
   const [workspace, setWorkspace] = useState(PRESETS[0]?.workspace ?? '')
   const [outputType, setOutputType] = useState<OutputType>('compose')
   const [auditQuery, setAuditQuery] = useState('')
+  const [yamlModule, setYamlModule] = useState<YamlModule | null>(null)
 
   const deferredWorkspace = useDeferredValue(workspace)
   const deferredAuditQuery = useDeferredValue(auditQuery)
 
-  const parsed = useMemo(() => parseCompose(deferredWorkspace), [deferredWorkspace])
-  const findings = useMemo(() => auditCompose(draft, parsed), [draft, parsed])
-  const output = useMemo(
-    () => buildOutput(draft, parsed, findings, outputType),
-    [draft, findings, outputType, parsed]
+  useEffect(() => {
+    let isCurrent = true
+    void import('yaml').then(module => {
+      if (isCurrent) setYamlModule(module)
+    })
+
+    return () => {
+      isCurrent = false
+    }
+  }, [])
+
+  const isYamlReady = Boolean(yamlModule)
+  const parsed = useMemo(
+    () => (yamlModule ? parseCompose(yamlModule, deferredWorkspace) : EMPTY_PARSED_COMPOSE),
+    [deferredWorkspace, yamlModule]
   )
-  const csvOutput = useMemo(
+  const findings = useMemo(() => auditCompose(draft, parsed), [draft, parsed])
+  const outputPreviewParsed = useMemo<ParsedCompose>(
+    () => ({
+      ...parsed,
+      errors: parsed.errors.slice(0, OUTPUT_PREVIEW_ROWS),
+      services: parsed.services.slice(0, OUTPUT_PREVIEW_ROWS)
+    }),
+    [parsed]
+  )
+  const outputPreviewFindings = useMemo(() => findings.slice(0, OUTPUT_PREVIEW_ROWS), [findings])
+  const outputPreviewSource = useMemo(
+    () =>
+      yamlModule
+        ? buildOutput(yamlModule, draft, outputPreviewParsed, outputPreviewFindings, outputType)
+        : '',
+    [draft, outputPreviewFindings, outputPreviewParsed, outputType, yamlModule]
+  )
+  const outputPreview = useMemo(
+    () => createOutputPreview(outputPreviewSource),
+    [outputPreviewSource]
+  )
+  const outputPreviewLimited = isOutputPreviewLimited(outputPreviewSource)
+  const outputPreviewUsesParsedRows = outputType === 'markdown' || outputType === 'json'
+  const outputPreviewUsesFindings = outputType === 'markdown' || outputType === 'json'
+  const outputPreviewVisibleRows =
+    (outputPreviewUsesParsedRows ? outputPreviewParsed.services.length : 0) +
+    (outputPreviewUsesFindings ? outputPreviewFindings.length : 0)
+  const outputPreviewTotalRows =
+    (outputPreviewUsesParsedRows ? parsed.services.length : 0) +
+    (outputPreviewUsesFindings ? findings.length : 0)
+  const outputPreviewRowsLimited = outputPreviewTotalRows > outputPreviewVisibleRows
+  const buildCurrentOutput = useCallback(
+    () => (yamlModule ? buildOutput(yamlModule, draft, parsed, findings, outputType) : ''),
+    [draft, findings, outputType, parsed, yamlModule]
+  )
+  const buildCurrentCsv = useCallback(
     () =>
       [
         ['project', 'services', 'volumes', 'networks', 'warnings', 'critical']
@@ -1183,7 +1248,13 @@ export default function DockerComposeClient() {
                 <Input
                   id="compose-context"
                   value={draft.buildContext}
-                  onChange={event => updateDraft('buildContext', event.target.value.slice(0, 160))}
+                  onChange={event =>
+                    updateDraft(
+                      'buildContext',
+                      event.target.value.slice(0, BUILD_CONTEXT_FIELD_LIMIT)
+                    )
+                  }
+                  maxLength={BUILD_CONTEXT_FIELD_LIMIT}
                   className="font-mono"
                   spellCheck={false}
                 />
@@ -1443,7 +1514,8 @@ export default function DockerComposeClient() {
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => setWorkspace(output)}
+                disabled={!isYamlReady}
+                onClick={() => setWorkspace(buildCurrentOutput())}
                 className="w-full sm:w-auto"
               >
                 <FileCode2 className="h-4 w-4" />
@@ -1479,7 +1551,7 @@ export default function DockerComposeClient() {
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-tertiary)]" />
               <Input
                 value={auditQuery}
-                onChange={event => setAuditQuery(event.target.value)}
+                onChange={event => setAuditQuery(event.target.value.slice(0, 160))}
                 placeholder={t('app.generation.docker_compose.audit_search')}
                 className="pl-10"
               />
@@ -1491,12 +1563,12 @@ export default function DockerComposeClient() {
                   className={`rounded-xl border px-3 py-2 text-xs ${levelClass(finding.level)}`}
                 >
                   <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
-                    <span className="min-w-0 break-words">
+                    <span className="min-w-0 break-all leading-5">
                       <span className="font-semibold">{finding.subject}</span>
-                      <span className="mx-2">/</span>
+                      <span className="mx-2 inline-block">/</span>
                       {t(`app.generation.docker_compose.audit.${finding.key}`)}
                     </span>
-                    <span className="font-medium">
+                    <span className="shrink-0 font-medium">
                       {t(`app.generation.docker_compose.level.${finding.level}`)}
                     </span>
                   </div>
@@ -1513,7 +1585,11 @@ export default function DockerComposeClient() {
                 <CardTitle className="text-base">
                   {t('app.generation.docker_compose.output')}
                 </CardTitle>
-                <CardDescription>{t('app.generation.docker_compose.output_hint')}</CardDescription>
+                <CardDescription>
+                  {isYamlReady
+                    ? t('app.generation.docker_compose.output_hint')
+                    : t('public.loading')}
+                </CardDescription>
               </div>
               <div className="w-full space-y-2 lg:w-56">
                 <Label htmlFor="compose-output">
@@ -1534,12 +1610,33 @@ export default function DockerComposeClient() {
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Textarea readOnly value={output} className="min-h-[430px] font-mono" />
+            <Textarea
+              readOnly
+              value={isYamlReady ? outputPreview : t('public.loading')}
+              className="min-h-[430px] font-mono"
+            />
+            {outputPreviewLimited && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('public.output_preview_limited', {
+                  total: outputPreviewSource.length.toLocaleString(),
+                  visible: OUTPUT_PREVIEW_CHARS.toLocaleString()
+                })}
+              </p>
+            )}
+            {outputPreviewRowsLimited && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('public.output_preview_rows_limited', {
+                  total: outputPreviewTotalRows.toLocaleString(),
+                  visible: outputPreviewVisibleRows.toLocaleString()
+                })}
+              </p>
+            )}
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => copy(output)}
+                disabled={!isYamlReady}
+                onClick={() => copy(buildCurrentOutput())}
                 className="w-full sm:w-auto"
               >
                 <Copy className="h-4 w-4" />
@@ -1548,9 +1645,10 @@ export default function DockerComposeClient() {
               <Button
                 type="button"
                 variant="outline"
+                disabled={!isYamlReady}
                 onClick={() =>
                   downloadText(
-                    output,
+                    buildCurrentOutput(),
                     getOutputFilename(draft, outputType),
                     'text/plain;charset=utf-8'
                   )
@@ -1563,8 +1661,13 @@ export default function DockerComposeClient() {
               <Button
                 type="button"
                 variant="outline"
+                disabled={!isYamlReady}
                 onClick={() =>
-                  downloadText(csvOutput, 'docker-compose-audit.csv', 'text/csv;charset=utf-8')
+                  downloadText(
+                    buildCurrentCsv(),
+                    'docker-compose-audit.csv',
+                    'text/csv;charset=utf-8'
+                  )
                 }
                 className="w-full sm:w-auto"
               >

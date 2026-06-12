@@ -15,23 +15,35 @@ import {
   Sparkles,
   Trash2
 } from 'lucide-react'
-import { useDeferredValue, useMemo, useState } from 'react'
+import { useCallback, useDeferredValue, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
+import { InputCapNotice } from '@/components/ui/input-cap-notice'
 import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
+import {
+  createOutputPreview,
+  isOutputPreviewLimited,
+  OUTPUT_PREVIEW_CHARS
+} from '@/utils/outputPreview'
 
 const STATUS_CODES = ['301', '302', '303', '307', '308'] as const
 const MATCH_TYPES = ['exact', 'prefix', 'wildcard', 'regex'] as const
 const OUTPUT_TYPES = ['nginx', 'apache', 'next', 'cloudflare', 'netlify', 'json'] as const
 const RULE_INPUT_LIMIT = 36000
 const RULE_LIMIT = 220
+const OUTPUT_PREVIEW_RULE_LIMIT = 80
+const VISIBLE_FINDING_LIMIT = 18
+const VISIBLE_RULE_LIMIT = 42
+const DRAFT_HOST_LIMIT = 253
+const DRAFT_PATH_LIMIT = 2048
+const DRAFT_TARGET_LIMIT = 2048
 
 type RedirectStatus = (typeof STATUS_CODES)[number]
 type MatchType = (typeof MATCH_TYPES)[number]
@@ -384,6 +396,21 @@ const getScore = (findings: Finding[]) => {
 
 const escapeCsv = (value: boolean | number | string) => `"${String(value).replaceAll('"', '""')}"`
 const escapeConfig = (value: string) => value.replaceAll('"', '\\"')
+const buildRulesCsv = (rules: RedirectRule[]) =>
+  [
+    ['status', 'host', 'from', 'to', 'matchType', 'preserveQuery', 'valid'],
+    ...rules.map(rule => [
+      rule.status,
+      rule.host,
+      rule.from,
+      rule.to,
+      rule.matchType,
+      String(rule.preserveQuery),
+      String(rule.valid)
+    ])
+  ]
+    .map(row => row.map(escapeCsv).join(','))
+    .join('\n')
 
 const levelClass = (level: FindingLevel) => {
   if (level === 'danger') return 'border-red-300/50 bg-red-500/10 text-red-600'
@@ -502,25 +529,20 @@ export default function RedirectRulesClient() {
   const rules = useMemo(() => parseRules(deferredWorkspace), [deferredWorkspace])
   const findings = useMemo(() => auditRules(rules), [rules])
   const score = useMemo(() => getScore(findings), [findings])
-  const output = useMemo(() => buildOutput(rules, outputType), [outputType, rules])
-  const csvOutput = useMemo(
-    () =>
-      [
-        ['status', 'host', 'from', 'to', 'matchType', 'preserveQuery', 'valid'],
-        ...rules.map(rule => [
-          rule.status,
-          rule.host,
-          rule.from,
-          rule.to,
-          rule.matchType,
-          String(rule.preserveQuery),
-          String(rule.valid)
-        ])
-      ]
-        .map(row => row.map(escapeCsv).join(','))
-        .join('\n'),
-    [rules]
+  const visibleFindings = useMemo(() => findings.slice(0, VISIBLE_FINDING_LIMIT), [findings])
+  const visibleRules = useMemo(() => rules.slice(0, VISIBLE_RULE_LIMIT), [rules])
+  const outputPreviewRules = useMemo(() => rules.slice(0, OUTPUT_PREVIEW_RULE_LIMIT), [rules])
+  const outputPreviewSource = useMemo(
+    () => buildOutput(outputPreviewRules, outputType),
+    [outputPreviewRules, outputType]
   )
+  const outputPreview = useMemo(
+    () => createOutputPreview(outputPreviewSource),
+    [outputPreviewSource]
+  )
+  const outputPreviewLimited = isOutputPreviewLimited(outputPreviewSource)
+  const outputPreviewRowsLimited = rules.length > outputPreviewRules.length
+  const buildCurrentOutput = useCallback(() => buildOutput(rules, outputType), [outputType, rules])
   const metrics = useMemo(
     () => ({
       critical: String(findings.filter(item => item.level === 'danger').length),
@@ -550,6 +572,15 @@ export default function RedirectRulesClient() {
 
   const updateDraft = <Key extends keyof RedirectDraft>(key: Key, value: RedirectDraft[Key]) => {
     setDraft(current => ({ ...current, [key]: value }))
+  }
+
+  const updateDraftText = (
+    key: Extract<keyof RedirectDraft, 'from' | 'host' | 'to'>,
+    value: string
+  ) => {
+    const limit =
+      key === 'host' ? DRAFT_HOST_LIMIT : key === 'from' ? DRAFT_PATH_LIMIT : DRAFT_TARGET_LIMIT
+    updateDraft(key, value.slice(0, limit))
   }
 
   const applyPreset = (preset: Preset) => {
@@ -690,8 +721,12 @@ export default function RedirectRulesClient() {
                 <Input
                   id="redirect-host"
                   value={draft.host}
-                  onChange={event => updateDraft('host', event.target.value)}
+                  onChange={event => updateDraftText('host', event.target.value)}
                   className="font-mono"
+                />
+                <InputCapNotice
+                  visible={draft.host.length >= DRAFT_HOST_LIMIT}
+                  limit={DRAFT_HOST_LIMIT}
                 />
               </div>
               <div className="space-y-2">
@@ -699,8 +734,12 @@ export default function RedirectRulesClient() {
                 <Input
                   id="redirect-from"
                   value={draft.from}
-                  onChange={event => updateDraft('from', event.target.value)}
+                  onChange={event => updateDraftText('from', event.target.value)}
                   className="font-mono"
+                />
+                <InputCapNotice
+                  visible={draft.from.length >= DRAFT_PATH_LIMIT}
+                  limit={DRAFT_PATH_LIMIT}
                 />
               </div>
               <div className="space-y-2 md:col-span-2">
@@ -708,8 +747,12 @@ export default function RedirectRulesClient() {
                 <Input
                   id="redirect-to"
                   value={draft.to}
-                  onChange={event => updateDraft('to', event.target.value)}
+                  onChange={event => updateDraftText('to', event.target.value)}
                   className="font-mono"
+                />
+                <InputCapNotice
+                  visible={draft.to.length >= DRAFT_TARGET_LIMIT}
+                  limit={DRAFT_TARGET_LIMIT}
                 />
               </div>
             </div>
@@ -755,8 +798,12 @@ export default function RedirectRulesClient() {
               placeholder={t('app.converter.redirect_rules.workspace_placeholder')}
               className="min-h-[360px] font-mono"
             />
+            <InputCapNotice
+              visible={workspace.length >= RULE_INPUT_LIMIT}
+              limit={RULE_INPUT_LIMIT}
+            />
             <div className="flex flex-wrap gap-2">
-              <Button type="button" variant="outline" onClick={() => copy(output)}>
+              <Button type="button" variant="outline" onClick={() => copy(buildCurrentOutput())}>
                 <Copy className="h-4 w-4" />
                 {t('app.converter.redirect_rules.copy_output')}
               </Button>
@@ -778,23 +825,31 @@ export default function RedirectRulesClient() {
             </div>
           </CardHeader>
           <CardContent className="space-y-2">
-            {findings.slice(0, 18).map((finding, index) => (
+            {visibleFindings.map((finding, index) => (
               <div
                 key={`${finding.key}:${finding.subject}:${index}`}
                 className={`rounded-xl border px-3 py-2 text-xs ${levelClass(finding.level)}`}
               >
                 <div className="flex items-start justify-between gap-3">
-                  <span>
+                  <span className="min-w-0 break-all leading-5">
                     <span className="font-semibold">{finding.subject}</span>
-                    <span className="mx-2">/</span>
+                    <span className="mx-2 inline-block">/</span>
                     {t(`app.converter.redirect_rules.audit.${finding.key}`)}
                   </span>
-                  <span className="font-medium">
+                  <span className="shrink-0 font-medium">
                     {t(`app.converter.redirect_rules.level.${finding.level}`)}
                   </span>
                 </div>
               </div>
             ))}
+            {findings.length > visibleFindings.length && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('public.rows_render_limited', {
+                  total: findings.length.toLocaleString(),
+                  visible: visibleFindings.length.toLocaleString()
+                })}
+              </p>
+            )}
           </CardContent>
         </Card>
 
@@ -826,9 +881,25 @@ export default function RedirectRulesClient() {
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Textarea readOnly value={output} className="min-h-[260px] font-mono" />
+            <Textarea readOnly value={outputPreview} className="min-h-[260px] font-mono" />
+            {outputPreviewLimited && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('public.output_preview_limited', {
+                  total: outputPreviewSource.length.toLocaleString(),
+                  visible: OUTPUT_PREVIEW_CHARS.toLocaleString()
+                })}
+              </p>
+            )}
+            {outputPreviewRowsLimited && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('public.output_preview_rows_limited', {
+                  total: rules.length.toLocaleString(),
+                  visible: outputPreviewRules.length.toLocaleString()
+                })}
+              </p>
+            )}
             <div className="flex flex-wrap gap-2">
-              <Button type="button" variant="outline" onClick={() => copy(output)}>
+              <Button type="button" variant="outline" onClick={() => copy(buildCurrentOutput())}>
                 <Copy className="h-4 w-4" />
                 {t('app.converter.redirect_rules.copy_output')}
               </Button>
@@ -836,7 +907,11 @@ export default function RedirectRulesClient() {
                 type="button"
                 variant="outline"
                 onClick={() =>
-                  downloadText(output, 'redirect-rules.txt', 'text/plain;charset=utf-8')
+                  downloadText(
+                    buildCurrentOutput(),
+                    'redirect-rules.txt',
+                    'text/plain;charset=utf-8'
+                  )
                 }
               >
                 <Download className="h-4 w-4" />
@@ -846,7 +921,7 @@ export default function RedirectRulesClient() {
                 type="button"
                 variant="outline"
                 onClick={() =>
-                  downloadText(csvOutput, 'redirect-rules.csv', 'text/csv;charset=utf-8')
+                  downloadText(buildRulesCsv(rules), 'redirect-rules.csv', 'text/csv;charset=utf-8')
                 }
               >
                 <Download className="h-4 w-4" />
@@ -870,7 +945,7 @@ export default function RedirectRulesClient() {
           <CardContent>
             {rules.length ? (
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {rules.slice(0, 42).map(rule => (
+                {visibleRules.map(rule => (
                   <div key={rule.id} className="glass-input min-w-0 rounded-xl p-3">
                     <div className="flex items-start justify-between gap-3">
                       <p className="break-all font-mono text-sm font-semibold text-[var(--text-primary)]">
@@ -888,6 +963,14 @@ export default function RedirectRulesClient() {
                     </p>
                   </div>
                 ))}
+                {rules.length > visibleRules.length && (
+                  <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)] md:col-span-2 xl:col-span-3">
+                    {t('public.rows_render_limited', {
+                      total: rules.length.toLocaleString(),
+                      visible: visibleRules.length.toLocaleString()
+                    })}
+                  </p>
+                )}
               </div>
             ) : (
               <div className="glass-input rounded-xl p-6 text-center text-sm text-[var(--text-secondary)]">
@@ -911,7 +994,7 @@ export default function RedirectRulesClient() {
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-tertiary)]" />
               <Input
                 value={referenceQuery}
-                onChange={event => setReferenceQuery(event.target.value)}
+                onChange={event => setReferenceQuery(event.target.value.slice(0, 160))}
                 placeholder={t('app.converter.redirect_rules.reference_search')}
                 className="pl-10"
               />

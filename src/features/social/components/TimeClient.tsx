@@ -1,8 +1,5 @@
 'use client'
 
-import dayjs, { type Dayjs } from 'dayjs'
-import timezone from 'dayjs/plugin/timezone'
-import utc from 'dayjs/plugin/utc'
 import { Clock3, Globe2, RotateCcw, Search, TimerReset } from 'lucide-react'
 import React, { useDeferredValue, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -14,9 +11,6 @@ import { useVisibleNow } from '@/hooks/useVisibleNow'
 import { cn } from '@/lib/utils'
 
 import { formatInteger } from '../utils/formatters'
-
-dayjs.extend(utc)
-dayjs.extend(timezone)
 
 type ZoneGroup =
   | 'africa'
@@ -44,6 +38,22 @@ interface WorldZone {
   value: string
 }
 
+interface ZoneParts {
+  day: number
+  hour: number
+  minute: number
+  month: number
+  second: number
+  year: number
+}
+
+interface ZoneSnapshot {
+  date: string
+  offsetMinutes: number
+  offsetText: string
+  time: string
+}
+
 const featuredZones: FeaturedZone[] = [
   { key: 'chinaStandardTime', group: 'asia' },
   { key: 'japanStandardTime', group: 'asia' },
@@ -54,6 +64,8 @@ const featuredZones: FeaturedZone[] = [
   { key: 'australianEasternTime', group: 'pacific' },
   { key: 'newZealandTime', group: 'pacific' }
 ]
+const MAX_VISIBLE_ZONES = 96
+const TIME_SEARCH_LIMIT = 160
 
 const groupOptionValues: ZoneGroup[] = [
   'all',
@@ -87,15 +99,18 @@ const regionLabels: Record<Exclude<ZoneGroup, 'all'>, { cn: string; en: string }
 }
 
 const dateFormatterCache = new Map<string, Intl.DateTimeFormat>()
+const timeZoneFormatterCache = new Map<string, Intl.DateTimeFormat>()
 
 const getLocale = (language: string) => (language === 'cn' ? 'zh-CN' : 'en-US')
+const padTimePart = (value: number) => String(value).padStart(2, '0')
 
 const getDateFormatter = (
   language: string,
-  mode: 'fullDate' | 'zoneCalendarDate' | 'zhWeekday'
+  mode: 'fullDate' | 'zoneCalendarDate' | 'zhWeekday',
+  zoneId?: string
 ) => {
   const locale = mode === 'zhWeekday' ? 'zh-CN' : getLocale(language)
-  const key = `${locale}:${mode}`
+  const key = `${locale}:${mode}:${zoneId ?? 'local'}`
   const cached = dateFormatterCache.get(key)
 
   if (cached) return cached
@@ -105,10 +120,11 @@ const getDateFormatter = (
     mode === 'fullDate'
       ? { dateStyle: 'full' }
       : mode === 'zhWeekday'
-        ? { weekday: 'short' }
+        ? { timeZone: zoneId, weekday: 'short' }
         : {
             day: 'numeric',
             month: 'short',
+            timeZone: zoneId,
             weekday: 'short'
           }
   )
@@ -166,43 +182,143 @@ const formatWorldTimezoneLabel = (
   return language === 'cn' ? `${region} / ${city}` : `${city} (${region})`
 }
 
-const formatOffset = (date: Dayjs, zoneId: string) => {
-  const offset = date.tz(zoneId).format('Z')
+const getZoneFormatter = (zoneId: string) => {
+  const cached = timeZoneFormatterCache.get(zoneId)
+  if (cached) return cached
+
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    day: '2-digit',
+    hour: '2-digit',
+    hour12: false,
+    hourCycle: 'h23',
+    minute: '2-digit',
+    month: '2-digit',
+    second: '2-digit',
+    timeZone: zoneId,
+    year: 'numeric'
+  })
+  timeZoneFormatterCache.set(zoneId, formatter)
+  return formatter
+}
+
+const getZoneParts = (milliseconds: number, zoneId: string): ZoneParts => {
+  const values = Object.fromEntries(
+    getZoneFormatter(zoneId)
+      .formatToParts(new Date(milliseconds))
+      .map(part => [part.type, part.value])
+  )
+
+  return {
+    day: Number(values.day),
+    hour: Number(values.hour),
+    minute: Number(values.minute),
+    month: Number(values.month),
+    second: Number(values.second),
+    year: Number(values.year)
+  }
+}
+
+const getZoneOffsetMinutesFromParts = (milliseconds: number, parts: ZoneParts) => {
+  const zonedAsUtc = Date.UTC(
+    parts.year,
+    parts.month - 1,
+    parts.day,
+    parts.hour,
+    parts.minute,
+    parts.second
+  )
+  return Math.round((zonedAsUtc - milliseconds) / 60000)
+}
+
+const getZoneOffsetMinutes = (milliseconds: number, zoneId: string) =>
+  getZoneOffsetMinutesFromParts(milliseconds, getZoneParts(milliseconds, zoneId))
+
+const formatOffsetMinutes = (offsetMinutes: number) => {
+  const sign = offsetMinutes >= 0 ? '+' : '-'
+  const absoluteMinutes = Math.abs(offsetMinutes)
+  const hours = Math.floor(absoluteMinutes / 60)
+  const minutes = absoluteMinutes % 60
+  return `${sign}${padTimePart(hours)}:${padTimePart(minutes)}`
+}
+
+const formatZonePartsTime = (parts: ZoneParts, withSeconds = true) => {
+  const time = `${padTimePart(parts.hour)}:${padTimePart(parts.minute)}`
+  return withSeconds ? `${time}:${padTimePart(parts.second)}` : time
+}
+
+const formatZonePartsDate = (parts: ZoneParts) =>
+  `${parts.year}-${padTimePart(parts.month)}-${padTimePart(parts.day)}`
+
+const getZoneSnapshot = (milliseconds: number, zoneId: string): ZoneSnapshot => {
+  const parts = getZoneParts(milliseconds, zoneId)
+  const offsetMinutes = getZoneOffsetMinutesFromParts(milliseconds, parts)
+
+  return {
+    date: formatZonePartsDate(parts),
+    offsetMinutes,
+    offsetText: `UTC${formatOffsetMinutes(offsetMinutes)}`,
+    time: formatZonePartsTime(parts)
+  }
+}
+
+const formatOffset = (milliseconds: number, zoneId: string) => {
+  const offset = formatOffsetMinutes(getZoneOffsetMinutes(milliseconds, zoneId))
   return `UTC${offset}`
 }
 
-const formatDiff = (
-  localNow: Dayjs,
-  zoneId: string,
+const formatDiffFromOffsetMinutes = (
+  milliseconds: number,
+  offsetMinutes: number,
   labels: { fromLocal: (hours: string) => string; sameAsLocal: string }
 ) => {
-  const diffHours = localNow.tz(zoneId).utcOffset() / 60 - localNow.utcOffset() / 60
+  const localOffsetMinutes = -new Date(milliseconds).getTimezoneOffset()
+  const diffHours = (offsetMinutes - localOffsetMinutes) / 60
   if (diffHours === 0) return labels.sameAsLocal
   const direction = diffHours > 0 ? '+' : ''
   return labels.fromLocal(`${direction}${diffHours}`)
 }
 
-const formatLongDate = (date: Dayjs, language: string) =>
-  getDateFormatter(language, 'fullDate').format(date.toDate())
+const formatLongDate = (milliseconds: number, language: string) =>
+  getDateFormatter(language, 'fullDate').format(new Date(milliseconds))
 
-const formatZoneCalendarDate = (date: Dayjs, language: string) => {
+const formatZoneCalendarDate = (milliseconds: number, zoneId: string, language: string) => {
   if (language === 'cn') {
-    const weekday = getDateFormatter(language, 'zhWeekday').format(date.toDate())
-    return `${date.format('M月D日')} ${weekday}`
+    const parts = getZoneParts(milliseconds, zoneId)
+    const weekday = getDateFormatter(language, 'zhWeekday', zoneId).format(new Date(milliseconds))
+    return `${parts.month}月${parts.day}日 ${weekday}`
   }
 
-  return getDateFormatter(language, 'zoneCalendarDate').format(date.toDate())
+  return getDateFormatter(language, 'zoneCalendarDate', zoneId).format(new Date(milliseconds))
 }
 
 const formatRelativeDay = (
-  zoneDate: Dayjs,
-  localDate: Dayjs,
+  milliseconds: number,
+  zoneId: string,
   labels: { today: string; tomorrow: string; yesterday: string }
 ) => {
-  const dayDiff = zoneDate.startOf('day').diff(localDate.startOf('day'), 'day')
+  const zoneParts = getZoneParts(milliseconds, zoneId)
+  const localDate = new Date(milliseconds)
+  const zoneDay = Date.UTC(zoneParts.year, zoneParts.month - 1, zoneParts.day)
+  const localDay = Date.UTC(localDate.getFullYear(), localDate.getMonth(), localDate.getDate())
+  const dayDiff = Math.round((zoneDay - localDay) / 86400000)
   if (dayDiff === -1) return labels.yesterday
   if (dayDiff === 1) return labels.tomorrow
   return labels.today
+}
+
+const formatLocalTime = (milliseconds: number) => {
+  const date = new Date(milliseconds)
+  return `${padTimePart(date.getHours())}:${padTimePart(date.getMinutes())}:${padTimePart(date.getSeconds())}`
+}
+
+const formatUtcTime = (milliseconds: number) => {
+  const date = new Date(milliseconds)
+  return `${padTimePart(date.getUTCHours())}:${padTimePart(date.getUTCMinutes())}:${padTimePart(date.getUTCSeconds())}`
+}
+
+const formatZoneTime = (milliseconds: number, zoneId: string, withSeconds = true) => {
+  const parts = getZoneParts(milliseconds, zoneId)
+  return formatZonePartsTime(parts, withSeconds)
 }
 
 const TimeClient = () => {
@@ -231,9 +347,11 @@ const TimeClient = () => {
     (hours: string) => t('app.social.time.from_local', { hours }),
     [t]
   )
-  const localNow = now > 0 ? dayjs(now) : dayjs('2000-01-01T00:00:00')
   const isReady = now > 0
-  const secondsToday = localNow.hour() * 3600 + localNow.minute() * 60 + localNow.second()
+  const localDate = useMemo(() => (isReady ? new Date(now) : null), [isReady, now])
+  const secondsToday = localDate
+    ? localDate.getHours() * 3600 + localDate.getMinutes() * 60 + localDate.getSeconds()
+    : 0
   const dayProgress = (secondsToday / 86400) * 100
   const timezoneIds = useMemo(() => getSupportedTimezoneIds(), [])
 
@@ -263,7 +381,7 @@ const TimeClient = () => {
     [t]
   )
 
-  const visibleZones = useMemo(() => {
+  const filteredZones = useMemo(() => {
     const normalizedQuery = deferredQuery.trim().toLowerCase()
 
     return zoneEntries.filter(zone => {
@@ -275,12 +393,21 @@ const TimeClient = () => {
     })
   }, [activeGroup, deferredQuery, zoneEntries])
 
-  const localTime = isReady ? localNow.format('HH:mm:ss') : '--:--:--'
-  const localDate = isReady
-    ? formatLongDate(localNow, language)
+  const visibleZones = useMemo(() => filteredZones.slice(0, MAX_VISIBLE_ZONES), [filteredZones])
+  const zoneCountLabel =
+    filteredZones.length > visibleZones.length
+      ? t('app.social.time.zones_shown_limited', {
+          count: visibleZones.length,
+          total: filteredZones.length
+        })
+      : t('app.social.time.zones_shown', { count: visibleZones.length })
+
+  const localTime = isReady ? formatLocalTime(now) : '--:--:--'
+  const localDateLabel = isReady
+    ? formatLongDate(now, language)
     : t('app.social.time.loading_local')
-  const utcTime = isReady ? localNow.utc().format('HH:mm:ss') : '--:--:--'
-  const unixTime = isReady ? formatInteger(localNow.unix(), language) : '--'
+  const utcTime = isReady ? formatUtcTime(now) : '--:--:--'
+  const unixTime = isReady ? formatInteger(Math.floor(now / 1000), language) : '--'
 
   const visibleZoneCards = useMemo(
     () =>
@@ -288,12 +415,11 @@ const TimeClient = () => {
         <WorldZoneCard
           key={zone.key}
           fromLocalLabel={fromLocalLabel}
-          language={language}
           sameAsLocalLabel={sameAsLocalLabel}
           zone={zone}
         />
       )),
-    [fromLocalLabel, language, sameAsLocalLabel, visibleZones]
+    [fromLocalLabel, sameAsLocalLabel, visibleZones]
   )
 
   return (
@@ -321,7 +447,7 @@ const TimeClient = () => {
                 {localTime}
               </div>
               <div className="mt-4 text-sm text-[var(--text-secondary)] sm:text-base">
-                {localDate}
+                {localDateLabel}
               </div>
             </div>
 
@@ -330,7 +456,7 @@ const TimeClient = () => {
               <MetricBlock label="Unix" value={unixTime} />
               <MetricBlock
                 label={t('app.social.time.offset')}
-                value={isReady ? localNow.format('Z') : '--'}
+                value={isReady ? formatOffsetMinutes(-new Date(now).getTimezoneOffset()) : '--'}
               />
             </div>
           </div>
@@ -391,8 +517,9 @@ const TimeClient = () => {
       <section className="time-featured-grid grid min-w-0 grid-cols-1 gap-5 md:grid-cols-2 md:gap-6 xl:grid-cols-4">
         {featuredZones.map(zone => {
           const zoneData = tzListMap[zone.key]
-          const zoneNow = localNow.tz(zoneData.value)
-          const relativeDay = formatRelativeDay(zoneNow, localNow, relativeDayLabels)
+          const relativeDay = isReady
+            ? formatRelativeDay(now, zoneData.value, relativeDayLabels)
+            : relativeDayLabels.today
 
           return (
             <div
@@ -405,13 +532,13 @@ const TimeClient = () => {
                     {t(`app.social.time.city.${zone.key}`)}
                   </div>
                   <div className="mt-1 truncate text-xs font-medium text-[var(--text-secondary)]">
-                    {formatOffset(localNow, zoneData.value)}
+                    {isReady ? formatOffset(now, zoneData.value) : 'UTC--:--'}
                   </div>
                 </div>
                 <Globe2 className="h-4 w-4 shrink-0 text-[var(--text-tertiary)]" />
               </div>
               <div className="mt-5 font-mono text-2xl font-semibold tabular-nums text-[var(--text-primary)]">
-                {isReady ? zoneNow.format('HH:mm') : '--:--'}
+                {isReady ? formatZoneTime(now, zoneData.value, false) : '--:--'}
               </div>
               <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-[var(--text-secondary)]">
                 {isReady ? (
@@ -419,7 +546,9 @@ const TimeClient = () => {
                     <span className="rounded-full border border-[var(--border-base)] bg-[var(--surface-subtle)] px-2 py-0.5 font-medium text-[var(--text-primary)]">
                       {relativeDay}
                     </span>
-                    <span className="truncate">{formatZoneCalendarDate(zoneNow, language)}</span>
+                    <span className="truncate">
+                      {formatZoneCalendarDate(now, zoneData.value, language)}
+                    </span>
                   </>
                 ) : (
                   t('app.social.time.loading')
@@ -436,17 +565,16 @@ const TimeClient = () => {
             <h3 className="text-base font-semibold text-[var(--text-primary)]">
               {t('app.social.time.timezone')}
             </h3>
-            <p className="mt-1 text-sm text-[var(--text-secondary)]">
-              {t('app.social.time.zones_shown', { count: visibleZones.length })}
-            </p>
+            <p className="mt-1 text-sm text-[var(--text-secondary)]">{zoneCountLabel}</p>
           </div>
           <div className="flex w-full min-w-0 flex-col gap-2 sm:flex-row md:w-auto">
             <div className="relative min-w-0 sm:w-72">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-tertiary)]" />
               <Input
                 value={query}
-                onChange={event => setQuery(event.target.value)}
+                onChange={event => setQuery(event.target.value.slice(0, TIME_SEARCH_LIMIT))}
                 placeholder={t('app.social.time.search_placeholder')}
+                maxLength={TIME_SEARCH_LIMIT}
                 className="pl-9"
               />
             </div>
@@ -516,14 +644,15 @@ const WorldZoneCard = React.memo(
     zone
   }: {
     fromLocalLabel: (hours: string) => string
-    language: string
     sameAsLocalLabel: string
     zone: WorldZone
   }) => {
     const [cardRef, isNearViewport] = useNearViewport<HTMLDivElement>()
     const now = useVisibleNow(isNearViewport)
-    const displayNow = now > 0 ? dayjs(now) : null
-    const zoneNow = displayNow ? displayNow.tz(zone.value) : null
+    const zoneSnapshot = useMemo(
+      () => (now > 0 ? getZoneSnapshot(now, zone.value) : null),
+      [now, zone.value]
+    )
 
     return (
       <div
@@ -540,20 +669,20 @@ const WorldZoneCard = React.memo(
             </div>
           </div>
           <span className="shrink-0 rounded-full border border-[var(--border-base)] bg-[var(--primary-subtle)] px-2.5 py-0.5 text-xs font-semibold text-[var(--primary)]">
-            {displayNow ? formatOffset(displayNow, zone.value) : 'UTC--:--'}
+            {zoneSnapshot ? zoneSnapshot.offsetText : 'UTC--:--'}
           </span>
         </div>
         <div className="mt-4 flex min-w-0 items-end justify-between gap-3">
           <div className="min-w-0 overflow-hidden font-mono text-3xl font-semibold leading-none tabular-nums text-[var(--text-primary)]">
-            {zoneNow ? zoneNow.format('HH:mm:ss') : '--:--:--'}
+            {zoneSnapshot ? zoneSnapshot.time : '--:--:--'}
           </div>
           <div className="min-w-0 shrink text-right text-[13px] font-medium leading-5">
             <div className="text-[var(--text-primary)]">
-              {zoneNow ? zoneNow.format('YYYY-MM-DD') : '---- -- --'}
+              {zoneSnapshot ? zoneSnapshot.date : '---- -- --'}
             </div>
             <div className="mt-0.5 text-[var(--text-secondary)]">
-              {zoneNow && displayNow
-                ? formatDiff(displayNow, zone.value, {
+              {zoneSnapshot
+                ? formatDiffFromOffsetMinutes(now, zoneSnapshot.offsetMinutes, {
                     fromLocal: fromLocalLabel,
                     sameAsLocal: sameAsLocalLabel
                   })
@@ -566,7 +695,6 @@ const WorldZoneCard = React.memo(
   },
   (previous, next) =>
     previous.fromLocalLabel === next.fromLocalLabel &&
-    previous.language === next.language &&
     previous.sameAsLocalLabel === next.sameAsLocalLabel &&
     previous.zone === next.zone
 )

@@ -13,7 +13,7 @@ import {
   Star,
   Wand2
 } from 'lucide-react'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useDeferredValue, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
@@ -74,6 +74,7 @@ const DEFAULT_COLOR = '#1677ff'
 const DEFAULT_BACKGROUND = '#ffffff'
 const MAX_EXTRACTED_COLORS = 32
 const MAX_CSS_INPUT_LENGTH = 12000
+const colorNumberFormatter = new Intl.NumberFormat()
 const COLOR_PATTERN =
   /#(?:[a-f\d]{3,8})\b|rgba?\(\s*[\d.]+%?\s*,\s*[\d.]+%?\s*,\s*[\d.]+%?(?:\s*,\s*(?:[\d.]+%?))?\s*\)|hsla?\(\s*[\d.]+(?:deg)?\s*,\s*[\d.]+%\s*,\s*[\d.]+%(?:\s*,\s*(?:[\d.]+%?))?\s*\)/gi
 
@@ -606,6 +607,7 @@ const ColorClient = () => {
     { label: 'surface', value: '#F6F8FB' },
     { label: 'ink', value: '#111827' }
   ])
+  const deferredCssInput = useDeferredValue(cssInput)
 
   const setColor = useCallback((next: ColorValues) => {
     setColors(next)
@@ -696,7 +698,8 @@ const ColorClient = () => {
 
   const palette = useMemo(() => buildPalette(colors.rgb), [colors.rgb])
   const harmony = useMemo(() => buildHarmony(colors.hsl, harmonyMode), [colors.hsl, harmonyMode])
-  const extractedColors = useMemo(() => extractColorsFromCss(cssInput), [cssInput])
+  const extractedColors = useMemo(() => extractColorsFromCss(deferredCssInput), [deferredCssInput])
+  const isCssInputCapped = cssInput.length >= MAX_CSS_INPUT_LENGTH
   const exportText = useMemo(
     () => buildExport(exportFormat, palette, harmony, colors, alpha),
     [alpha, colors, exportFormat, harmony, palette]
@@ -1200,6 +1203,13 @@ const ColorClient = () => {
               className="font-mono"
               placeholder="color: #1677ff;"
             />
+            {isCssInputCapped && (
+              <p className="text-xs text-[var(--warning)]" role="status">
+                {t('app.converter.color.warning.css_truncated', {
+                  limit: colorNumberFormatter.format(MAX_CSS_INPUT_LENGTH)
+                })}
+              </p>
+            )}
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               {extractedColors.map(item => (
                 <SwatchButton

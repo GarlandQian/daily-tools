@@ -21,6 +21,11 @@ import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
+import {
+  createOutputPreview,
+  isOutputPreviewLimited,
+  OUTPUT_PREVIEW_CHARS
+} from '@/utils/outputPreview'
 
 interface Heading {
   anchor: string
@@ -99,6 +104,10 @@ const MARKDOWN_TOC_SAMPLES: Record<MarkdownTocSample, string> = {
 
 const HEADING_LEVELS = [1, 2, 3, 4, 5, 6] as const
 const MAX_MARKDOWN_TOC_CHARS = 200000
+const MAX_MARKDOWN_TOC_LIVE_DOCUMENT_CHARS = 60000
+const MAX_MARKDOWN_TOC_OUTPUT_ROWS = 500
+const MAX_MARKDOWN_TOC_OUTLINE_ROWS = 160
+const MAX_MARKDOWN_TOC_TITLE_CHARS = 120
 const tocNumberFormatter = new Intl.NumberFormat()
 
 const normalizeAnchorText = (value: string, style: AnchorStyle) => {
@@ -248,6 +257,7 @@ const MarkdownTocClient = () => {
   const { t } = useTranslation()
   const { copy } = useCopy()
   const [markdown, setMarkdown] = useState(SAMPLE_MARKDOWN)
+  const [isMarkdownCapped, setIsMarkdownCapped] = useState(false)
   const [minLevel, setMinLevel] = useState(2)
   const [maxLevel, setMaxLevel] = useState(4)
   const [ordered, setOrdered] = useState(false)
@@ -258,6 +268,12 @@ const MarkdownTocClient = () => {
   const [tocTitle, setTocTitle] = useState('## Table of contents')
   const deferredMarkdown = useDeferredValue(markdown)
 
+  const updateMarkdown = (value: string) => {
+    const capped = value.length > MAX_MARKDOWN_TOC_CHARS
+    setIsMarkdownCapped(capped)
+    setMarkdown(capped ? value.slice(0, MAX_MARKDOWN_TOC_CHARS) : value)
+  }
+
   const tocSource = useMemo(
     () =>
       deferredMarkdown.length > MAX_MARKDOWN_TOC_CHARS
@@ -265,20 +281,44 @@ const MarkdownTocClient = () => {
         : deferredMarkdown,
     [deferredMarkdown]
   )
-  const isTocSourceTruncated = deferredMarkdown.length > MAX_MARKDOWN_TOC_CHARS
+  const isTocSourceTruncated = isMarkdownCapped || deferredMarkdown.length > MAX_MARKDOWN_TOC_CHARS
   const headings = useMemo(() => extractHeadings(tocSource, anchorStyle), [anchorStyle, tocSource])
-  const toc = useMemo(
-    () => buildToc({ headings, maxLevel, minLevel, ordered, taskList }),
-    [headings, maxLevel, minLevel, ordered, taskList]
-  )
-  const markdownWithToc = useMemo(
-    () => insertToc(markdown, toc, insertMode, tocTitle.trim() || '## Table of contents'),
-    [insertMode, markdown, toc, tocTitle]
-  )
   const filteredHeadings = useMemo(
     () => headings.filter(heading => heading.level >= minLevel && heading.level <= maxLevel),
     [headings, maxLevel, minLevel]
   )
+  const tocHeadings = useMemo(
+    () => filteredHeadings.slice(0, MAX_MARKDOWN_TOC_OUTPUT_ROWS),
+    [filteredHeadings]
+  )
+  const visibleHeadings = useMemo(
+    () => filteredHeadings.slice(0, MAX_MARKDOWN_TOC_OUTLINE_ROWS),
+    [filteredHeadings]
+  )
+  const toc = useMemo(
+    () => buildToc({ headings: tocHeadings, maxLevel, minLevel, ordered, taskList }),
+    [maxLevel, minLevel, ordered, taskList, tocHeadings]
+  )
+  const liveDocumentDeferred = tocSource.length > MAX_MARKDOWN_TOC_LIVE_DOCUMENT_CHARS
+  const documentPreviewSource = useMemo(
+    () =>
+      insertToc(
+        liveDocumentDeferred ? tocSource.slice(0, MAX_MARKDOWN_TOC_LIVE_DOCUMENT_CHARS) : tocSource,
+        toc,
+        insertMode,
+        tocTitle.trim() || '## Table of contents'
+      ),
+    [insertMode, liveDocumentDeferred, toc, tocSource, tocTitle]
+  )
+  const tocPreview = useMemo(() => createOutputPreview(toc), [toc])
+  const tocPreviewLimited = isOutputPreviewLimited(toc)
+  const markdownWithTocPreview = useMemo(
+    () => createOutputPreview(documentPreviewSource),
+    [documentPreviewSource]
+  )
+  const markdownWithTocPreviewLimited = isOutputPreviewLimited(documentPreviewSource)
+  const isTocOutputLimited = filteredHeadings.length > tocHeadings.length
+  const isOutlineLimited = filteredHeadings.length > visibleHeadings.length
   const levelCounts = useMemo(() => getLevelCounts(headings), [headings])
   const tocMetrics = useMemo(
     () => ({
@@ -291,7 +331,7 @@ const MarkdownTocClient = () => {
   )
 
   const reset = () => {
-    setMarkdown(SAMPLE_MARKDOWN)
+    updateMarkdown(SAMPLE_MARKDOWN)
     setMinLevel(2)
     setMaxLevel(4)
     setOrdered(false)
@@ -303,7 +343,7 @@ const MarkdownTocClient = () => {
   }
 
   const handleSample = (sample: MarkdownTocSample) => {
-    setMarkdown(MARKDOWN_TOC_SAMPLES[sample])
+    updateMarkdown(MARKDOWN_TOC_SAMPLES[sample])
     setMinLevel(sample === 'changelog' ? 2 : 2)
     setMaxLevel(sample === 'api' ? 3 : 4)
   }
@@ -312,6 +352,9 @@ const MarkdownTocClient = () => {
     if (!content) return
     downloadText(content, filename, 'text/markdown;charset=utf-8')
   }
+
+  const buildCurrentDocument = () =>
+    insertToc(tocSource, toc, insertMode, tocTitle.trim() || '## Table of contents')
 
   return (
     <div className="flex size-full flex-col gap-5">
@@ -376,7 +419,7 @@ const MarkdownTocClient = () => {
               <Textarea
                 id="toc-input"
                 value={markdown}
-                onChange={event => setMarkdown(event.target.value)}
+                onChange={event => updateMarkdown(event.target.value)}
                 rows={14}
                 className="min-h-[320px] resize-y font-mono"
                 placeholder="# Title"
@@ -457,7 +500,10 @@ const MarkdownTocClient = () => {
                 <Input
                   id="toc-title"
                   value={tocTitle}
-                  onChange={event => setTocTitle(event.target.value)}
+                  onChange={event =>
+                    setTocTitle(event.target.value.slice(0, MAX_MARKDOWN_TOC_TITLE_CHARS))
+                  }
+                  maxLength={MAX_MARKDOWN_TOC_TITLE_CHARS}
                   className="font-mono"
                 />
               </div>
@@ -504,7 +550,7 @@ const MarkdownTocClient = () => {
               <Button
                 variant="ghost"
                 icon={<Trash2 className="h-4 w-4" />}
-                onClick={() => setMarkdown('')}
+                onClick={() => updateMarkdown('')}
                 className="w-full"
               >
                 {t('public.clear')}
@@ -516,6 +562,14 @@ const MarkdownTocClient = () => {
             <p className="rounded-lg border border-[var(--warning)] bg-[var(--warning-subtle)] px-3 py-2 text-sm text-[var(--warning)]">
               {t('app.format.markdown_toc.warning.truncated', {
                 limit: formatTocNumber(MAX_MARKDOWN_TOC_CHARS)
+              })}
+            </p>
+          )}
+          {isTocOutputLimited && (
+            <p className="rounded-lg border border-[var(--warning)] bg-[var(--warning-subtle)] px-3 py-2 text-sm text-[var(--warning)]">
+              {t('app.format.markdown_toc.warning.toc_rows', {
+                total: formatTocNumber(filteredHeadings.length),
+                visible: formatTocNumber(tocHeadings.length)
               })}
             </p>
           )}
@@ -531,7 +585,7 @@ const MarkdownTocClient = () => {
                 <Button
                   size="sm"
                   variant="ghost"
-                  onClick={() => copy(markdownWithToc)}
+                  onClick={() => copy(buildCurrentDocument())}
                   disabled={!toc}
                 >
                   {t('app.format.markdown_toc.copy_document')}
@@ -540,7 +594,7 @@ const MarkdownTocClient = () => {
                   size="sm"
                   variant="ghost"
                   icon={<Download className="h-4 w-4" />}
-                  onClick={() => handleDownload(markdownWithToc, 'document-with-toc.md')}
+                  onClick={() => handleDownload(buildCurrentDocument(), 'document-with-toc.md')}
                   disabled={!toc}
                 >
                   {t('app.format.markdown_toc.download_document')}
@@ -553,23 +607,47 @@ const MarkdownTocClient = () => {
               <Label htmlFor="toc-output">{t('app.format.markdown_toc.toc')}</Label>
               <Textarea
                 id="toc-output"
-                value={toc}
+                value={tocPreview}
                 readOnly
                 rows={14}
                 className="min-h-[300px] resize-none font-mono"
                 placeholder={t('app.format.markdown_toc.empty')}
               />
+              {tocPreviewLimited && (
+                <p className="text-xs leading-5 text-amber-600 dark:text-amber-300">
+                  {t('public.output_preview_limited', {
+                    total: toc.length.toLocaleString(),
+                    visible: OUTPUT_PREVIEW_CHARS.toLocaleString()
+                  })}
+                </p>
+              )}
             </div>
             <div className="space-y-3">
               <Label htmlFor="toc-document">{t('app.format.markdown_toc.document')}</Label>
               <Textarea
                 id="toc-document"
-                value={markdownWithToc}
+                value={markdownWithTocPreview}
                 readOnly
                 rows={14}
                 className="min-h-[300px] resize-none font-mono"
                 placeholder={t('app.format.markdown_toc.empty')}
               />
+              {markdownWithTocPreviewLimited && (
+                <p className="text-xs leading-5 text-amber-600 dark:text-amber-300">
+                  {t('public.output_preview_limited', {
+                    total: documentPreviewSource.length.toLocaleString(),
+                    visible: OUTPUT_PREVIEW_CHARS.toLocaleString()
+                  })}
+                </p>
+              )}
+              {liveDocumentDeferred && (
+                <p className="text-xs leading-5 text-amber-600 dark:text-amber-300">
+                  {t('app.format.markdown_toc.warning.live_document_deferred', {
+                    total: formatTocNumber(tocSource.length),
+                    visible: formatTocNumber(MAX_MARKDOWN_TOC_LIVE_DOCUMENT_CHARS)
+                  })}
+                </p>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -583,8 +661,8 @@ const MarkdownTocClient = () => {
             <CardDescription>{t('app.format.markdown_toc.outline_hint')}</CardDescription>
           </CardHeader>
           <CardContent className="min-h-0 flex-1 space-y-2 overflow-auto">
-            {filteredHeadings.length ? (
-              filteredHeadings.map(heading => (
+            {visibleHeadings.length ? (
+              visibleHeadings.map(heading => (
                 <div
                   key={`${heading.line}-${heading.anchor}`}
                   className="glass-input rounded-xl p-3"
@@ -606,6 +684,14 @@ const MarkdownTocClient = () => {
               <div className="flex min-h-[260px] items-center justify-center rounded-xl border border-dashed border-[var(--border-base)] text-sm text-[var(--text-tertiary)]">
                 {t('app.format.markdown_toc.empty')}
               </div>
+            )}
+            {isOutlineLimited && (
+              <p className="rounded-lg border border-[var(--warning)] bg-[var(--warning-subtle)] px-3 py-2 text-sm text-[var(--warning)]">
+                {t('app.format.markdown_toc.warning.outline_rows', {
+                  total: formatTocNumber(filteredHeadings.length),
+                  visible: formatTocNumber(visibleHeadings.length)
+                })}
+              </p>
             )}
           </CardContent>
         </Card>

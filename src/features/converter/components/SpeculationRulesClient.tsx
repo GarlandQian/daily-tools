@@ -22,6 +22,11 @@ import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
+import {
+  createOutputPreview,
+  isOutputPreviewLimited,
+  OUTPUT_PREVIEW_CHARS
+} from '@/utils/outputPreview'
 
 type AuditSeverity = 'error' | 'ok' | 'warn'
 type Eagerness = 'conservative' | 'eager' | 'immediate' | 'moderate'
@@ -370,7 +375,16 @@ const SpeculationRulesClient = () => {
   const deferredWorkspace = useDeferredValue(workspace)
 
   const urls = useMemo(() => splitLines(draft.urls), [draft.urls])
-  const output = useMemo(() => buildOutput(draft, outputFormat), [draft, outputFormat])
+  const outputPreviewSource = useMemo(() => buildOutput(draft, outputFormat), [draft, outputFormat])
+  const outputPreview = useMemo(
+    () => createOutputPreview(outputPreviewSource),
+    [outputPreviewSource]
+  )
+  const outputPreviewLimited = isOutputPreviewLimited(outputPreviewSource)
+  const buildCurrentOutput = useCallback(
+    () => buildOutput(draft, outputFormat),
+    [draft, outputFormat]
+  )
   const parsed = useMemo(() => parseWorkspace(deferredWorkspace), [deferredWorkspace])
   const parsedRules = useMemo(() => getParsedRules(parsed.ruleset), [parsed.ruleset])
   const workspaceTruncated = workspace.length >= MAX_WORKSPACE_LENGTH
@@ -877,7 +891,7 @@ const SpeculationRulesClient = () => {
                 type="button"
                 variant="default"
                 icon={<Copy className="h-4 w-4" />}
-                onClick={() => void copy(output)}
+                onClick={() => void copy(buildCurrentOutput())}
                 className="self-end"
               >
                 {t('public.copy')}
@@ -888,7 +902,7 @@ const SpeculationRulesClient = () => {
                 icon={<Download className="h-4 w-4" />}
                 onClick={() =>
                   downloadText(
-                    output,
+                    buildCurrentOutput(),
                     outputFormat === 'csv' ? 'speculation-rules.csv' : 'speculation-rules.txt',
                     outputFormat === 'csv' ? 'text/csv;charset=utf-8' : 'text/plain;charset=utf-8'
                   )
@@ -905,9 +919,17 @@ const SpeculationRulesClient = () => {
                 {t(`app.converter.speculation_rules.output.${outputFormat}`)}
               </div>
               <pre className="max-h-[420px] overflow-auto whitespace-pre-wrap break-all font-mono text-xs text-[var(--text-primary)]">
-                {output}
+                {outputPreview}
               </pre>
             </div>
+            {outputPreviewLimited ? (
+              <p className="text-xs leading-5 text-amber-600 dark:text-amber-300">
+                {t('public.output_preview_limited', {
+                  total: outputPreviewSource.length.toLocaleString(),
+                  visible: OUTPUT_PREVIEW_CHARS.toLocaleString()
+                })}
+              </p>
+            ) : null}
           </CardContent>
         </Card>
       </div>

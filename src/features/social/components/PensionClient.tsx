@@ -22,6 +22,8 @@ const parseAmount = (value: string) => {
 }
 
 const ageOptions = Object.keys(pensionAccountMonthTable).map(Number)
+const TEXT_FIELD_LIMIT = 80
+const NUMBER_FIELD_LIMIT = 24
 
 const PensionClient = () => {
   const { i18n, t } = useTranslation()
@@ -168,8 +170,9 @@ const PensionClient = () => {
                 <Input
                   id="pension-benefit-city"
                   value={benefitCity}
-                  onChange={event => setBenefitCity(event.target.value)}
+                  onChange={event => setBenefitCity(event.target.value.slice(0, TEXT_FIELD_LIMIT))}
                   placeholder={t('app.social.region.city_placeholder')}
+                  maxLength={TEXT_FIELD_LIMIT}
                 />
               </Field>
             </div>
@@ -188,7 +191,9 @@ const PensionClient = () => {
               type="number"
               min="0"
               value={localAverageSalary}
-              onChange={event => setLocalAverageSalary(event.target.value)}
+              onChange={event =>
+                setLocalAverageSalary(event.target.value.slice(0, NUMBER_FIELD_LIMIT))
+              }
             />
           </Field>
 
@@ -204,7 +209,9 @@ const PensionClient = () => {
               min="0"
               step="0.01"
               value={averageContributionIndex}
-              onChange={event => setAverageContributionIndex(event.target.value)}
+              onChange={event =>
+                setAverageContributionIndex(event.target.value.slice(0, NUMBER_FIELD_LIMIT))
+              }
             />
           </Field>
 
@@ -217,7 +224,9 @@ const PensionClient = () => {
                 min="0"
                 step="0.5"
                 value={contributionYears}
-                onChange={event => setContributionYears(event.target.value)}
+                onChange={event =>
+                  setContributionYears(event.target.value.slice(0, NUMBER_FIELD_LIMIT))
+                }
               />
             </Field>
 
@@ -245,7 +254,9 @@ const PensionClient = () => {
               type="number"
               min="0"
               value={personalAccountBalance}
-              onChange={event => setPersonalAccountBalance(event.target.value)}
+              onChange={event =>
+                setPersonalAccountBalance(event.target.value.slice(0, NUMBER_FIELD_LIMIT))
+              }
             />
           </Field>
 
@@ -260,7 +271,9 @@ const PensionClient = () => {
               type="number"
               min="0"
               value={preRetirementSalary}
-              onChange={event => setPreRetirementSalary(event.target.value)}
+              onChange={event =>
+                setPreRetirementSalary(event.target.value.slice(0, NUMBER_FIELD_LIMIT))
+              }
             />
           </Field>
         </CardContent>

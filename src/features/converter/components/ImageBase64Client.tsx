@@ -1,8 +1,8 @@
 'use client'
 
-import { Code2, Copy, FileImage, ImageIcon, RotateCcw, Upload } from 'lucide-react'
+import { Code2, Copy, Download, FileImage, ImageIcon, RotateCcw, Upload } from 'lucide-react'
 import Image from 'next/image'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
@@ -22,18 +22,23 @@ interface FileInfo {
   dataUri: string
   height: number
   name: string
+  previewUrl: string
   size: number
   type: string
   width: number
 }
 
 const MAX_IMAGE_SIZE_BYTES = 8 * 1024 * 1024
+const IMAGE_OUTPUT_PREVIEW_CHARS = 60000
+const imageNumberFormatter = new Intl.NumberFormat()
 
 const formatSize = (bytes: number) => {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
 }
+
+const formatImageNumber = (value: number) => imageNumberFormatter.format(value)
 
 const getImageDimensions = (src: string) =>
   new Promise<{ height: number; width: number }>((resolve, reject) => {
@@ -55,7 +60,8 @@ const readFileAsDataUrl = (file: File) =>
 
 const buildOutput = (fileInfo: FileInfo | null, format: OutputFormat, includeDataUri: boolean) => {
   if (!fileInfo) return ''
-  const rawBase64 = fileInfo.dataUri.split(',')[1] || fileInfo.dataUri
+  const commaIndex = fileInfo.dataUri.indexOf(',')
+  const rawBase64 = commaIndex >= 0 ? fileInfo.dataUri.slice(commaIndex + 1) : fileInfo.dataUri
   const dataUri = includeDataUri ? fileInfo.dataUri : rawBase64
 
   if (format === 'base64') return rawBase64
@@ -67,19 +73,109 @@ const buildOutput = (fileInfo: FileInfo | null, format: OutputFormat, includeDat
   return dataUri
 }
 
+const getOutputMeta = (fileInfo: FileInfo | null, format: OutputFormat) => {
+  const rawName = fileInfo?.name.replace(/\.[^.]+$/, '') || 'daily-tools-image'
+  const safeName = rawName.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '')
+  const filenameBase = safeName || 'daily-tools-image'
+
+  if (format === 'css') return { filename: `${filenameBase}.css`, type: 'text/css;charset=utf-8' }
+  if (format === 'html')
+    return { filename: `${filenameBase}.html`, type: 'text/html;charset=utf-8' }
+  if (format === 'markdown')
+    return { filename: `${filenameBase}.md`, type: 'text/markdown;charset=utf-8' }
+  return { filename: `${filenameBase}.txt`, type: 'text/plain;charset=utf-8' }
+}
+
+const downloadText = (content: string, filename: string, type: string) => {
+  const blob = new Blob([content], { type })
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  anchor.click()
+  URL.revokeObjectURL(url)
+}
+
+const buildOutputPreview = (
+  fileInfo: FileInfo | null,
+  format: OutputFormat,
+  includeDataUri: boolean
+) => {
+  if (!fileInfo) return { text: '', totalLength: 0, visibleLength: 0 }
+
+  const commaIndex = fileInfo.dataUri.indexOf(',')
+  const base64Start = commaIndex >= 0 ? commaIndex + 1 : 0
+  const rawBase64Length = fileInfo.base64Length
+
+  if (format === 'base64') {
+    const preview = fileInfo.dataUri.slice(base64Start, base64Start + IMAGE_OUTPUT_PREVIEW_CHARS)
+    return {
+      text: rawBase64Length > IMAGE_OUTPUT_PREVIEW_CHARS ? `${preview}...` : preview,
+      totalLength: rawBase64Length,
+      visibleLength: Math.min(rawBase64Length, IMAGE_OUTPUT_PREVIEW_CHARS)
+    }
+  }
+
+  if (format === 'dataUri') {
+    const source = includeDataUri ? fileInfo.dataUri : fileInfo.dataUri.slice(base64Start)
+    const totalLength = includeDataUri ? fileInfo.dataUri.length : rawBase64Length
+    return {
+      text:
+        totalLength > IMAGE_OUTPUT_PREVIEW_CHARS
+          ? `${source.slice(0, IMAGE_OUTPUT_PREVIEW_CHARS)}...`
+          : source,
+      totalLength,
+      visibleLength: Math.min(totalLength, IMAGE_OUTPUT_PREVIEW_CHARS)
+    }
+  }
+
+  const prefix =
+    format === 'css'
+      ? 'background-image: url("'
+      : format === 'html'
+        ? '<img src="'
+        : `![${fileInfo.name}](`
+  const suffix =
+    format === 'css'
+      ? '");'
+      : format === 'html'
+        ? `" alt="${fileInfo.name}" width="${fileInfo.width}" height="${fileInfo.height}" />`
+        : ')'
+  const totalLength = prefix.length + fileInfo.dataUri.length + suffix.length
+
+  if (totalLength <= IMAGE_OUTPUT_PREVIEW_CHARS) {
+    return {
+      text: `${prefix}${fileInfo.dataUri}${suffix}`,
+      totalLength,
+      visibleLength: totalLength
+    }
+  }
+
+  const dataUriPreviewLength = Math.max(0, IMAGE_OUTPUT_PREVIEW_CHARS - prefix.length - 3)
+  return {
+    text: `${prefix}${fileInfo.dataUri.slice(0, dataUriPreviewLength)}...`,
+    totalLength,
+    visibleLength: IMAGE_OUTPUT_PREVIEW_CHARS
+  }
+}
+
 const ImageBase64Client = () => {
   const { t } = useTranslation()
   const toast = useToast()
   const { copy } = useCopy()
+  const previewUrlRef = useRef<string | null>(null)
+  const uploadTokenRef = useRef(0)
 
   const [fileInfo, setFileInfo] = useState<FileInfo | null>(null)
   const [includeDataUri, setIncludeDataUri] = useState(true)
   const [outputFormat, setOutputFormat] = useState<OutputFormat>('dataUri')
 
-  const output = useMemo(
-    () => buildOutput(fileInfo, outputFormat, includeDataUri),
+  const outputPreview = useMemo(
+    () => buildOutputPreview(fileInfo, outputFormat, includeDataUri),
     [fileInfo, includeDataUri, outputFormat]
   )
+  const isOutputPreviewLimited = outputPreview.totalLength > outputPreview.visibleLength
+  const outputMeta = useMemo(() => getOutputMeta(fileInfo, outputFormat), [fileInfo, outputFormat])
 
   const stats = useMemo(() => {
     if (!fileInfo) {
@@ -105,6 +201,14 @@ const ImageBase64Client = () => {
     ]
   }, [fileInfo, t])
 
+  useEffect(() => {
+    return () => {
+      if (previewUrlRef.current) {
+        URL.revokeObjectURL(previewUrlRef.current)
+      }
+    }
+  }, [])
+
   const handleFileChange = useCallback(
     async (files: File[]) => {
       const file = files[0]
@@ -120,9 +224,27 @@ const ImageBase64Client = () => {
         return
       }
 
+      const uploadToken = uploadTokenRef.current + 1
+      uploadTokenRef.current = uploadToken
+      let previewUrl: string | null = null
+
       try {
+        if (previewUrlRef.current) {
+          URL.revokeObjectURL(previewUrlRef.current)
+          previewUrlRef.current = null
+        }
+        previewUrl = URL.createObjectURL(file)
+        previewUrlRef.current = previewUrl
         const dataUri = await readFileAsDataUrl(file)
-        const dimensions = await getImageDimensions(dataUri)
+        if (uploadTokenRef.current !== uploadToken) {
+          URL.revokeObjectURL(previewUrl)
+          return
+        }
+        const dimensions = await getImageDimensions(previewUrl)
+        if (uploadTokenRef.current !== uploadToken) {
+          URL.revokeObjectURL(previewUrl)
+          return
+        }
         const rawBase64 = dataUri.split(',')[1] || dataUri
 
         setFileInfo({
@@ -130,19 +252,42 @@ const ImageBase64Client = () => {
           dataUri,
           height: dimensions.height,
           name: file.name,
+          previewUrl,
           size: file.size,
           type: file.type,
           width: dimensions.width
         })
       } catch {
-        toast.error(t('public.generate_failed'))
+        if (previewUrl) {
+          URL.revokeObjectURL(previewUrl)
+        }
+        if (uploadTokenRef.current === uploadToken && previewUrlRef.current === previewUrl) {
+          previewUrlRef.current = null
+          toast.error(t('public.generate_failed'))
+        }
       }
     },
     [toast, t]
   )
 
   const handleClear = () => {
+    uploadTokenRef.current += 1
+    if (previewUrlRef.current) {
+      URL.revokeObjectURL(previewUrlRef.current)
+      previewUrlRef.current = null
+    }
     setFileInfo(null)
+  }
+
+  const handleCopyOutput = () => {
+    const output = buildOutput(fileInfo, outputFormat, includeDataUri)
+    if (output) void copy(output)
+  }
+
+  const handleDownloadOutput = () => {
+    const output = buildOutput(fileInfo, outputFormat, includeDataUri)
+    if (!output) return
+    downloadText(output, outputMeta.filename, outputMeta.type)
   }
 
   return (
@@ -210,7 +355,7 @@ const ImageBase64Client = () => {
             {fileInfo ? (
               <div className="glass-input flex max-h-[420px] w-full items-center justify-center overflow-hidden rounded-xl p-3">
                 <Image
-                  src={fileInfo.dataUri}
+                  src={fileInfo.previewUrl}
                   alt={fileInfo.name}
                   width={fileInfo.width}
                   height={fileInfo.height}
@@ -239,14 +384,25 @@ const ImageBase64Client = () => {
                   {t('app.converter.image.output_hint')}
                 </CardDescription>
               </div>
-              <Button
-                type="button"
-                icon={<Copy className="h-4 w-4" />}
-                onClick={() => copy(output)}
-                disabled={!output}
-              >
-                {t('public.copy')}
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  icon={<Copy className="h-4 w-4" />}
+                  onClick={handleCopyOutput}
+                  disabled={!fileInfo}
+                >
+                  {t('public.copy')}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  icon={<Download className="h-4 w-4" />}
+                  onClick={handleDownloadOutput}
+                  disabled={!fileInfo}
+                >
+                  {t('app.converter.image.download')}
+                </Button>
+              </div>
             </div>
           </CardHeader>
           <CardContent className="flex min-h-0 flex-1 flex-col gap-4">
@@ -277,11 +433,19 @@ const ImageBase64Client = () => {
             </div>
 
             <Textarea
-              value={output}
+              value={outputPreview.text}
               readOnly
               placeholder={t('app.converter.image.base64_placeholder')}
               className="min-h-[260px] flex-1 resize-none font-mono text-xs"
             />
+            {isOutputPreviewLimited && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('app.converter.image.preview_limited', {
+                  total: formatImageNumber(outputPreview.totalLength),
+                  visible: formatImageNumber(outputPreview.visibleLength)
+                })}
+              </p>
+            )}
           </CardContent>
         </Card>
       </div>

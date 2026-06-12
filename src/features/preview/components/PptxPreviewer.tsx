@@ -16,7 +16,7 @@ interface PreviewFileInfo {
 }
 
 const previewFileNumberFormatter = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 })
-const MAX_PPTX_SIZE = 60 * 1024 * 1024
+const MAX_PPTX_SIZE = 30 * 1024 * 1024
 
 const formatFileSize = (bytes: number) => {
   if (bytes < 1024) return `${bytes} B`
@@ -30,38 +30,55 @@ const PptxPreviewer = () => {
   const pptxRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const objectUrlRef = useRef<string | null>(null)
+  const previewBufferRef = useRef<ArrayBuffer | null>(null)
+  const uploadTokenRef = useRef(0)
   const [loading, setLoading] = useState(false)
   const [hasFile, setHasFile] = useState(false)
-  const [previewBuffer, setPreviewBuffer] = useState<ArrayBuffer | null>(null)
+  const [previewRequestId, setPreviewRequestId] = useState(0)
   const [fileInfo, setFileInfo] = useState<PreviewFileInfo | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [error, setError] = useState('')
   const isInitialized = useRef(false)
 
   useEffect(() => {
-    const init = async () => {
-      if (pptxRef.current && !isInitialized.current) {
-        const { init } = await import('pptx-preview')
-        myPPtxPreviewer.current = init(pptxRef.current, {
-          width: '100%' as unknown as number,
-          height: 700
-        })
-        isInitialized.current = true
-      }
-      if (isInitialized.current && previewBuffer) {
-        myPPtxPreviewer.current
-          ?.preview(previewBuffer)
-          .then(() => setError(''))
-          .catch(() => setError(t('app.preview.pptx.preview_error')))
-          .finally(() => {
-            setLoading(false)
+    let cancelled = false
+
+    const preview = async () => {
+      if (!hasFile || !previewRequestId || !pptxRef.current || !previewBufferRef.current) return
+
+      try {
+        const host = pptxRef.current
+
+        if (!isInitialized.current) {
+          const { init } = await import('pptx-preview')
+          if (cancelled) return
+
+          const measuredWidth = Math.floor(host.getBoundingClientRect().width || host.clientWidth)
+          myPPtxPreviewer.current = init(host, {
+            width: measuredWidth > 0 ? Math.min(measuredWidth, 1200) : 960,
+            height: 700
           })
+          isInitialized.current = true
+        }
+
+        myPPtxPreviewer.current?.dom
+          .querySelectorAll('.pptx-preview-wrapper')
+          .forEach(element => element.remove())
+        await myPPtxPreviewer.current?.preview(previewBufferRef.current)
+        if (!cancelled) setError('')
+      } catch {
+        if (!cancelled) setError(t('app.preview.pptx.preview_error'))
+      } finally {
+        if (!cancelled) setLoading(false)
       }
     }
-    if (hasFile) {
-      init()
+
+    void preview()
+
+    return () => {
+      cancelled = true
     }
-  }, [hasFile, previewBuffer, t])
+  }, [hasFile, previewRequestId, t])
 
   useEffect(() => {
     return () => {
@@ -71,6 +88,7 @@ const PptxPreviewer = () => {
       if (objectUrlRef.current) {
         URL.revokeObjectURL(objectUrlRef.current)
       }
+      previewBufferRef.current = null
       isInitialized.current = false
     }
   }, [])
@@ -90,6 +108,8 @@ const PptxPreviewer = () => {
       URL.revokeObjectURL(objectUrlRef.current)
     }
 
+    const uploadToken = uploadTokenRef.current + 1
+    uploadTokenRef.current = uploadToken
     const objectUrl = URL.createObjectURL(file)
     objectUrlRef.current = objectUrl
     setLoading(true)
@@ -104,10 +124,18 @@ const PptxPreviewer = () => {
     setPreviewUrl(objectUrl)
     const reader = new FileReader()
     reader.onload = function (event) {
-      const arrayBuffer = event.target?.result as ArrayBuffer
-      setPreviewBuffer(arrayBuffer)
+      if (uploadTokenRef.current !== uploadToken) return
+      const arrayBuffer = event.target?.result
+      if (!(arrayBuffer instanceof ArrayBuffer)) {
+        setLoading(false)
+        setError(t('app.preview.pptx.preview_error'))
+        return
+      }
+      previewBufferRef.current = arrayBuffer
+      setPreviewRequestId(id => id + 1)
     }
     reader.onerror = function () {
+      if (uploadTokenRef.current !== uploadToken) return
       setLoading(false)
       setError(t('app.preview.pptx.preview_error'))
     }
@@ -130,11 +158,13 @@ const PptxPreviewer = () => {
     myPPtxPreviewer.current?.dom
       .querySelectorAll('.pptx-preview-wrapper')
       .forEach(element => element.remove())
+    uploadTokenRef.current += 1
+    previewBufferRef.current = null
     setError('')
     setFileInfo(null)
     setHasFile(false)
     setLoading(false)
-    setPreviewBuffer(null)
+    setPreviewRequestId(0)
     setPreviewUrl(null)
   }
 

@@ -15,17 +15,23 @@ import {
   Trash2,
   Zap
 } from 'lucide-react'
-import { useDeferredValue, useMemo, useState } from 'react'
+import { useCallback, useDeferredValue, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
+import { InputCapNotice } from '@/components/ui/input-cap-notice'
 import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
+import {
+  createOutputPreview,
+  isOutputPreviewLimited,
+  OUTPUT_PREVIEW_CHARS
+} from '@/utils/outputPreview'
 
 const REL_TYPES = [
   'preload',
@@ -51,6 +57,9 @@ const PRIORITIES = ['auto', 'high', 'low'] as const
 const OUTPUT_TYPES = ['html', 'headers', 'next', 'nginx', 'json', 'csv'] as const
 const WORKSPACE_LIMIT = 70000
 const HINT_LIMIT = 160
+const OUTPUT_PREVIEW_HINT_LIMIT = 80
+const VISIBLE_FINDING_LIMIT = 22
+const VISIBLE_HINT_LIMIT = 42
 
 type RelType = (typeof REL_TYPES)[number]
 type AsType = (typeof AS_TYPES)[number]
@@ -593,13 +602,27 @@ export default function ResourceHintsClient() {
   const manualHint = useMemo(() => draftToHint(draft), [draft])
   const parsedHints = useMemo(() => parseWorkspace(deferredWorkspace), [deferredWorkspace])
   const hints = useMemo(
-    () => [manualHint, ...parsedHints].slice(0, HINT_LIMIT),
+    () =>
+      [manualHint, ...parsedHints].slice(0, HINT_LIMIT).map((hint, index) => ({
+        ...hint,
+        id: `${hint.source}:${index}:${hint.rel}:${hint.href || hint.raw.slice(0, 18)}`
+      })),
     [manualHint, parsedHints]
   )
   const findings = useMemo(() => auditHints(hints), [hints])
   const score = useMemo(() => getScore(findings), [findings])
-  const output = useMemo(() => buildOutput(hints, outputType), [hints, outputType])
-  const csvOutput = useMemo(() => buildCsv(hints), [hints])
+  const outputPreviewHints = useMemo(() => hints.slice(0, OUTPUT_PREVIEW_HINT_LIMIT), [hints])
+  const outputPreviewSource = useMemo(
+    () => buildOutput(outputPreviewHints, outputType),
+    [outputPreviewHints, outputType]
+  )
+  const outputPreview = useMemo(
+    () => createOutputPreview(outputPreviewSource),
+    [outputPreviewSource]
+  )
+  const outputPreviewLimited = isOutputPreviewLimited(outputPreviewSource)
+  const outputPreviewRowsLimited = hints.length > outputPreviewHints.length
+  const buildCurrentOutput = useCallback(() => buildOutput(hints, outputType), [hints, outputType])
   const filteredFindings = useMemo(() => {
     const query = deferredAuditQuery.trim().toLowerCase()
     if (!query) return findings
@@ -618,6 +641,11 @@ export default function ResourceHintsClient() {
         .includes(query)
     )
   }, [deferredReferenceQuery, t])
+  const visibleFindings = useMemo(
+    () => filteredFindings.slice(0, VISIBLE_FINDING_LIMIT),
+    [filteredFindings]
+  )
+  const visibleHints = useMemo(() => hints.slice(0, VISIBLE_HINT_LIMIT), [hints])
   const metrics = useMemo(
     () => ({
       critical: String(findings.filter(item => item.level === 'danger').length),
@@ -882,6 +910,7 @@ export default function ResourceHintsClient() {
               placeholder={t('app.converter.resource_hints.workspace_placeholder')}
               className="min-h-[390px] font-mono"
             />
+            <InputCapNotice visible={workspace.length >= WORKSPACE_LIMIT} limit={WORKSPACE_LIMIT} />
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
@@ -919,29 +948,37 @@ export default function ResourceHintsClient() {
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-tertiary)]" />
               <Input
                 value={auditQuery}
-                onChange={event => setAuditQuery(event.target.value)}
+                onChange={event => setAuditQuery(event.target.value.slice(0, 160))}
                 placeholder={t('app.converter.resource_hints.audit_search')}
                 className="pl-10"
               />
             </div>
             <div className="space-y-2">
-              {filteredFindings.slice(0, 22).map((finding, index) => (
+              {visibleFindings.map((finding, index) => (
                 <div
                   key={`${finding.key}:${finding.subject}:${index}`}
                   className={`rounded-xl border px-3 py-2 text-xs ${levelClass(finding.level)}`}
                 >
                   <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
-                    <span className="min-w-0 break-words">
+                    <span className="min-w-0 break-all leading-5">
                       <span className="font-semibold">{finding.subject}</span>
-                      <span className="mx-2">/</span>
+                      <span className="mx-2 inline-block">/</span>
                       {t(`app.converter.resource_hints.audit.${finding.key}`)}
                     </span>
-                    <span className="font-medium">
+                    <span className="shrink-0 font-medium">
                       {t(`app.converter.resource_hints.level.${finding.level}`)}
                     </span>
                   </div>
                 </div>
               ))}
+              {filteredFindings.length > visibleFindings.length && (
+                <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                  {t('public.rows_render_limited', {
+                    total: filteredFindings.length.toLocaleString(),
+                    visible: visibleFindings.length.toLocaleString()
+                  })}
+                </p>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -974,12 +1011,28 @@ export default function ResourceHintsClient() {
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Textarea readOnly value={output} className="min-h-[320px] font-mono" />
+            <Textarea readOnly value={outputPreview} className="min-h-[320px] font-mono" />
+            {outputPreviewLimited && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('public.output_preview_limited', {
+                  total: outputPreviewSource.length.toLocaleString(),
+                  visible: OUTPUT_PREVIEW_CHARS.toLocaleString()
+                })}
+              </p>
+            )}
+            {outputPreviewRowsLimited && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('public.output_preview_rows_limited', {
+                  total: hints.length.toLocaleString(),
+                  visible: outputPreviewHints.length.toLocaleString()
+                })}
+              </p>
+            )}
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => copy(output)}
+                onClick={() => copy(buildCurrentOutput())}
                 className="w-full sm:w-auto"
               >
                 <Copy className="h-4 w-4" />
@@ -989,7 +1042,11 @@ export default function ResourceHintsClient() {
                 type="button"
                 variant="outline"
                 onClick={() =>
-                  downloadText(output, 'resource-hints.txt', 'text/plain;charset=utf-8')
+                  downloadText(
+                    buildCurrentOutput(),
+                    'resource-hints.txt',
+                    'text/plain;charset=utf-8'
+                  )
                 }
                 className="w-full sm:w-auto"
               >
@@ -1000,7 +1057,7 @@ export default function ResourceHintsClient() {
                 type="button"
                 variant="outline"
                 onClick={() =>
-                  downloadText(csvOutput, 'resource-hints.csv', 'text/csv;charset=utf-8')
+                  downloadText(buildCsv(hints), 'resource-hints.csv', 'text/csv;charset=utf-8')
                 }
                 className="w-full sm:w-auto"
               >
@@ -1025,7 +1082,7 @@ export default function ResourceHintsClient() {
           <CardContent>
             {hints.length ? (
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {hints.slice(0, 42).map(hint => (
+                {visibleHints.map(hint => (
                   <div key={hint.id} className="glass-input min-w-0 rounded-xl p-3">
                     <div className="flex items-start justify-between gap-3">
                       <p className="break-all font-mono text-sm font-semibold text-[var(--text-primary)]">
@@ -1046,6 +1103,14 @@ export default function ResourceHintsClient() {
                     </p>
                   </div>
                 ))}
+                {hints.length > visibleHints.length && (
+                  <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)] md:col-span-2 xl:col-span-3">
+                    {t('public.rows_render_limited', {
+                      total: hints.length.toLocaleString(),
+                      visible: visibleHints.length.toLocaleString()
+                    })}
+                  </p>
+                )}
               </div>
             ) : (
               <div className="glass-input rounded-xl p-6 text-center text-sm text-[var(--text-secondary)]">
@@ -1069,7 +1134,7 @@ export default function ResourceHintsClient() {
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-tertiary)]" />
               <Input
                 value={referenceQuery}
-                onChange={event => setReferenceQuery(event.target.value)}
+                onChange={event => setReferenceQuery(event.target.value.slice(0, 160))}
                 placeholder={t('app.converter.resource_hints.reference_search')}
                 className="pl-10"
               />

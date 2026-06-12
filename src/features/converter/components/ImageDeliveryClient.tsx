@@ -25,6 +25,13 @@ import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
+import {
+  createOutputPreview,
+  isOutputPreviewLimited,
+  OUTPUT_PREVIEW_CHARS,
+  OUTPUT_PREVIEW_ROWS
+} from '@/utils/outputPreview'
+import { collectBoundedNonEmptyLines } from '@/utils/textScan'
 
 const FORMATS = ['avif', 'webp', 'jpeg', 'png'] as const
 const LOADING_MODES = ['eager', 'lazy', 'auto'] as const
@@ -34,6 +41,11 @@ const FIT_MODES = ['cover', 'contain', 'fill'] as const
 const OUTPUT_TYPES = ['picture', 'next', 'preload', 'cdn', 'markdown', 'json', 'csv'] as const
 const WORKSPACE_LIMIT = 90000
 const IMAGE_LIMIT = 180
+const ALT_TEXT_FIELD_LIMIT = 320
+const JSON_LINE_SCAN_LIMIT = 220
+const TEXT_LINE_SCAN_LIMIT = 360
+const VISIBLE_FINDINGS_LIMIT = 44
+const VISIBLE_IMAGES_LIMIT = 60
 
 type Format = (typeof FORMATS)[number]
 type LoadingMode = (typeof LOADING_MODES)[number]
@@ -85,6 +97,11 @@ interface ParsedImage {
 interface ParsedWorkspace {
   errors: string[]
   images: ParsedImage[]
+  limits: {
+    htmlTags: boolean
+    jsonLines: boolean
+    textLines: boolean
+  }
 }
 
 interface Preset {
@@ -316,17 +333,33 @@ const parseSrcsetCount = (srcset: string) =>
     .map(item => item.trim())
     .filter(Boolean).length
 
-const parseHtmlWorkspace = (input: string): ParsedImage[] => {
+const parseHtmlWorkspace = (input: string): { images: ParsedImage[]; limited: boolean } => {
   const images: ParsedImage[] = []
-  const sourceFormats = Array.from(input.matchAll(/<source\b[^>]*>/giu)).map(
-    match => getAttr(match[0], 'type') || getAttr(match[0], 'srcset')
-  )
+  const sourceFormats: string[] = []
+  let htmlTagsLimited = false
+  let imageMatch: RegExpExecArray | null
+  const sourcePattern = /<source\b[^>]*>/giu
+  const imagePattern = /<(img|Image)\b[^>]*>/gu
 
-  Array.from(input.matchAll(/<(img|Image)\b[^>]*>/gu)).forEach((match, index) => {
-    const tag = match[0]
-    const isNext = match[1] === 'Image'
+  while (true) {
+    const sourceMatch = sourcePattern.exec(input)
+    if (!sourceMatch) break
+    if (sourceFormats.length >= IMAGE_LIMIT) {
+      htmlTagsLimited = true
+      break
+    }
+    sourceFormats.push(getAttr(sourceMatch[0], 'type') || getAttr(sourceMatch[0], 'srcset'))
+  }
+
+  while ((imageMatch = imagePattern.exec(input))) {
+    if (images.length >= IMAGE_LIMIT) {
+      htmlTagsLimited = true
+      break
+    }
+    const tag = imageMatch[0]
+    const isNext = imageMatch[1] === 'Image'
     const url = getAttr(tag, 'src') || getAttr(tag, 'href')
-    if (!url) return
+    if (!url) continue
     const srcset = getAttr(tag, 'srcset') || getAttr(tag, 'imagesrcset')
     const format =
       getFormatFromUrl(url) ||
@@ -339,7 +372,7 @@ const parseHtmlWorkspace = (input: string): ParsedImage[] => {
       decoding: normalizeDecoding(getAttr(tag, 'decoding')),
       format,
       height: numberFromUnknown(getAttr(tag, 'height')),
-      id: `${isNext ? 'next' : 'html'}-${index}`,
+      id: `${isNext ? 'next' : 'html'}-${images.length}`,
       isLcp:
         hasAttr(tag, 'priority') ||
         /fetchpriority\s*=\s*["']?high/iu.test(tag) ||
@@ -357,9 +390,9 @@ const parseHtmlWorkspace = (input: string): ParsedImage[] => {
       url,
       width: numberFromUnknown(getAttr(tag, 'width'))
     })
-  })
+  }
 
-  return images
+  return { images, limited: htmlTagsLimited }
 }
 
 const getObjectValue = (record: Record<string, unknown>, keys: string[]) => {
@@ -400,19 +433,24 @@ const parseImageObject = (record: Record<string, unknown>, index: number): Parse
   }
 }
 
-const parseJsonWorkspace = (input: string): { errors: string[]; images: ParsedImage[] } => {
+const parseJsonWorkspace = (
+  input: string,
+  remainingLimit = IMAGE_LIMIT
+): { errors: string[]; images: ParsedImage[]; linesLimited: boolean } => {
+  if (remainingLimit <= 0) return { errors: [], images: [], linesLimited: input.trim().length > 0 }
+
   const errors: string[] = []
   const images: ParsedImage[] = []
-  const rows = input
-    .split(/\n+/u)
-    .map(line => line.trim())
-    .filter(line => line.startsWith('{') || line.startsWith('['))
+  const rows = collectBoundedNonEmptyLines(input, JSON_LINE_SCAN_LIMIT)
 
-  rows.forEach((row, rowIndex) => {
+  rows.lines.forEach((row, rowIndex) => {
+    if (images.length >= remainingLimit) return
+    if (!row.startsWith('{') && !row.startsWith('[')) return
     try {
       const parsed = JSON.parse(row) as unknown
       const records = Array.isArray(parsed) ? parsed : [parsed]
       records.forEach((item, index) => {
+        if (images.length >= remainingLimit) return
         if (!item || typeof item !== 'object') return
         const parsedImage = parseImageObject(item as Record<string, unknown>, images.length + index)
         if (parsedImage) images.push(parsedImage)
@@ -422,65 +460,77 @@ const parseJsonWorkspace = (input: string): { errors: string[]; images: ParsedIm
     }
   })
 
-  return { errors, images }
+  return { errors, images, linesLimited: rows.limited }
 }
 
-const parseTextWorkspace = (input: string): ParsedImage[] =>
-  input
-    .split(/\n+/u)
-    .map((line, index): ParsedImage | null => {
-      const trimmed = line.trim()
-      if (!trimmed || trimmed.startsWith('{') || trimmed.startsWith('[') || /^<|^#/u.test(trimmed))
-        return null
-      const url =
-        tokenValue(trimmed, 'image') ||
-        tokenValue(trimmed, 'url') ||
-        tokenValue(trimmed, 'src') ||
-        (trimmed.match(/(?:https?:\/\/|data:|\/)[^\s,]+/iu)?.[0] ?? '')
-      if (!url) return null
-      const format =
-        tokenValue(trimmed, 'format') ||
-        tokenValue(trimmed, 'type') ||
-        getFormatFromUrl(url) ||
-        (isDataUri(url) ? 'data' : 'unknown')
+const parseTextWorkspace = (
+  input: string,
+  remainingLimit = IMAGE_LIMIT
+): { images: ParsedImage[]; linesLimited: boolean } => {
+  if (remainingLimit <= 0) return { images: [], linesLimited: input.trim().length > 0 }
 
-      return {
-        alt: tokenValue(trimmed, 'alt'),
-        bytesKb: toKb(
-          tokenValue(trimmed, 'bytes') || tokenValue(trimmed, 'size') || tokenValue(trimmed, 'kb')
-        ),
-        decoding: normalizeDecoding(tokenValue(trimmed, 'decoding')),
-        format: format.replace(/^image\//u, '').toLowerCase(),
-        height: numberFromUnknown(tokenValue(trimmed, 'height')),
-        id: `text-${index}`,
-        isLcp: /lcp\s*=\s*(true|yes)|\blcp\b|hero/iu.test(trimmed),
-        loading: normalizeLoading(tokenValue(trimmed, 'loading')),
-        priority: normalizePriority(
-          tokenValue(trimmed, 'priority') || tokenValue(trimmed, 'fetchpriority')
-        ),
-        sizes: tokenValue(trimmed, 'sizes'),
-        source: 'text',
-        srcsetCount: numberFromUnknown(
-          tokenValue(trimmed, 'srcset') || tokenValue(trimmed, 'variants')
-        ),
-        srcsetHasDataUri: /(?:^|,)\s*data:/iu.test(tokenValue(trimmed, 'srcset')),
-        url,
-        width: numberFromUnknown(tokenValue(trimmed, 'width'))
-      }
+  const rows = collectBoundedNonEmptyLines(input, TEXT_LINE_SCAN_LIMIT)
+  const images: ParsedImage[] = []
+
+  rows.lines.forEach((line, index) => {
+    if (images.length >= remainingLimit) return
+    const trimmed = line.trim()
+    if (!trimmed || trimmed.startsWith('{') || trimmed.startsWith('[') || /^<|^#/u.test(trimmed))
+      return
+    const url =
+      tokenValue(trimmed, 'image') ||
+      tokenValue(trimmed, 'url') ||
+      tokenValue(trimmed, 'src') ||
+      (trimmed.match(/(?:https?:\/\/|data:|\/)[^\s,]+/iu)?.[0] ?? '')
+    if (!url) return
+    const format =
+      tokenValue(trimmed, 'format') ||
+      tokenValue(trimmed, 'type') ||
+      getFormatFromUrl(url) ||
+      (isDataUri(url) ? 'data' : 'unknown')
+
+    images.push({
+      alt: tokenValue(trimmed, 'alt'),
+      bytesKb: toKb(
+        tokenValue(trimmed, 'bytes') || tokenValue(trimmed, 'size') || tokenValue(trimmed, 'kb')
+      ),
+      decoding: normalizeDecoding(tokenValue(trimmed, 'decoding')),
+      format: format.replace(/^image\//u, '').toLowerCase(),
+      height: numberFromUnknown(tokenValue(trimmed, 'height')),
+      id: `text-${index}`,
+      isLcp: /lcp\s*=\s*(true|yes)|\blcp\b|hero/iu.test(trimmed),
+      loading: normalizeLoading(tokenValue(trimmed, 'loading')),
+      priority: normalizePriority(
+        tokenValue(trimmed, 'priority') || tokenValue(trimmed, 'fetchpriority')
+      ),
+      sizes: tokenValue(trimmed, 'sizes'),
+      source: 'text',
+      srcsetCount: numberFromUnknown(
+        tokenValue(trimmed, 'srcset') || tokenValue(trimmed, 'variants')
+      ),
+      srcsetHasDataUri: /(?:^|,)\s*data:/iu.test(tokenValue(trimmed, 'srcset')),
+      url,
+      width: numberFromUnknown(tokenValue(trimmed, 'width'))
     })
-    .filter((image): image is ParsedImage => Boolean(image))
+  })
+
+  return { images, linesLimited: rows.limited }
+}
 
 const parseWorkspace = (input: string): ParsedWorkspace => {
   const source = input.length > WORKSPACE_LIMIT ? input.slice(0, WORKSPACE_LIMIT) : input
-  const json = parseJsonWorkspace(source)
-  const images = [
-    ...parseHtmlWorkspace(source),
-    ...json.images,
-    ...parseTextWorkspace(source)
-  ].slice(0, IMAGE_LIMIT)
+  const html = parseHtmlWorkspace(source)
+  const json = parseJsonWorkspace(source, IMAGE_LIMIT - html.images.length)
+  const text = parseTextWorkspace(source, IMAGE_LIMIT - html.images.length - json.images.length)
+  const images = [...html.images, ...json.images, ...text.images]
   return {
     errors: [...json.errors, ...(input.length > WORKSPACE_LIMIT ? ['capped_input'] : [])],
-    images
+    images,
+    limits: {
+      htmlTags: html.limited,
+      jsonLines: json.linesLimited,
+      textLines: text.linesLimited
+    }
   }
 }
 
@@ -571,6 +621,14 @@ const auditImage = (draft: ImageDraft, parsed: ParsedWorkspace): Finding[] => {
     parsed.images.filter(image => image.priority === 'high').length +
     (draft.priority === 'high' ? 1 : 0)
   if (highPriorityCount > 4) add('warn', 'too_many_high_priority', String(highPriorityCount))
+  if (
+    parsed.limits.htmlTags ||
+    parsed.limits.jsonLines ||
+    parsed.limits.textLines ||
+    parsed.images.length >= IMAGE_LIMIT
+  ) {
+    add('warn', 'scan_limited', String(IMAGE_LIMIT))
+  }
   parsed.errors.forEach(error =>
     add(
       error === 'capped_input' ? 'warn' : 'danger',
@@ -800,6 +858,7 @@ export default function ImageDeliveryClient() {
   const { copy } = useCopy()
   const [draft, setDraft] = useState<ImageDraft>(DEFAULT_DRAFT)
   const [workspace, setWorkspace] = useState(PRESETS[0]?.workspace ?? '')
+  const [isWorkspaceCapped, setIsWorkspaceCapped] = useState(false)
   const [outputType, setOutputType] = useState<OutputType>('picture')
   const [auditQuery, setAuditQuery] = useState('')
   const [imageQuery, setImageQuery] = useState('')
@@ -808,14 +867,48 @@ export default function ImageDeliveryClient() {
   const deferredAuditQuery = useDeferredValue(auditQuery)
   const deferredImageQuery = useDeferredValue(imageQuery)
 
-  const parsed = useMemo(() => parseWorkspace(deferredWorkspace), [deferredWorkspace])
+  const parsed = useMemo(() => {
+    const next = parseWorkspace(deferredWorkspace)
+
+    if (!isWorkspaceCapped || next.errors.includes('capped_input')) return next
+
+    return { ...next, errors: [...next.errors, 'capped_input'] }
+  }, [deferredWorkspace, isWorkspaceCapped])
   const findings = useMemo(() => auditImage(draft, parsed), [draft, parsed])
   const score = useMemo(() => getScore(findings), [findings])
-  const output = useMemo(
+  const outputPreviewParsed = useMemo<ParsedWorkspace>(
+    () => ({
+      errors: parsed.errors.slice(0, OUTPUT_PREVIEW_ROWS),
+      images: parsed.images.slice(0, OUTPUT_PREVIEW_ROWS),
+      limits: parsed.limits
+    }),
+    [parsed.errors, parsed.images, parsed.limits]
+  )
+  const outputPreviewFindings = useMemo(() => findings.slice(0, OUTPUT_PREVIEW_ROWS), [findings])
+  const outputPreviewSource = useMemo(
+    () => buildOutput(draft, outputPreviewParsed, outputPreviewFindings, outputType),
+    [draft, outputPreviewFindings, outputPreviewParsed, outputType]
+  )
+  const outputPreview = useMemo(
+    () => createOutputPreview(outputPreviewSource),
+    [outputPreviewSource]
+  )
+  const outputPreviewLimited = isOutputPreviewLimited(outputPreviewSource)
+  const outputPreviewUsesParsedRows =
+    outputType === 'markdown' || outputType === 'json' || outputType === 'csv'
+  const outputPreviewUsesFindings = outputType === 'markdown' || outputType === 'json'
+  const outputPreviewVisibleRows =
+    (outputPreviewUsesParsedRows ? outputPreviewParsed.images.length : 0) +
+    (outputPreviewUsesFindings ? outputPreviewFindings.length : 0)
+  const outputPreviewTotalRows =
+    (outputPreviewUsesParsedRows ? parsed.images.length : 0) +
+    (outputPreviewUsesFindings ? findings.length : 0)
+  const outputPreviewRowsLimited = outputPreviewTotalRows > outputPreviewVisibleRows
+  const buildCurrentOutput = useCallback(
     () => buildOutput(draft, parsed, findings, outputType),
     [draft, findings, outputType, parsed]
   )
-  const csvOutput = useMemo(() => buildCsv(draft, parsed), [draft, parsed])
+  const buildCurrentCsv = useCallback(() => buildCsv(draft, parsed), [draft, parsed])
   const filteredFindings = useMemo(() => {
     const query = deferredAuditQuery.trim().toLowerCase()
     if (!query) return findings
@@ -834,6 +927,16 @@ export default function ImageDeliveryClient() {
         .includes(query)
     )
   }, [deferredImageQuery, parsed.images])
+  const visibleFindings = useMemo(
+    () => filteredFindings.slice(0, VISIBLE_FINDINGS_LIMIT),
+    [filteredFindings]
+  )
+  const visibleImages = useMemo(
+    () => filteredImages.slice(0, VISIBLE_IMAGES_LIMIT),
+    [filteredImages]
+  )
+  const findingsRenderLimited = filteredFindings.length > visibleFindings.length
+  const imagesRenderLimited = filteredImages.length > visibleImages.length
   const metrics = useMemo(
     () => ({
       candidates: draft.formats.length * getCandidateWidths(draft).length,
@@ -859,18 +962,28 @@ export default function ImageDeliveryClient() {
     })
   }
 
-  const applyPreset = useCallback((preset: Preset) => {
-    setDraft(preset.draft)
-    setWorkspace(preset.workspace)
+  const updateWorkspace = useCallback((value: string) => {
+    const capped = value.length > WORKSPACE_LIMIT
+
+    setIsWorkspaceCapped(capped)
+    setWorkspace(capped ? value.slice(0, WORKSPACE_LIMIT) : value)
   }, [])
+
+  const applyPreset = useCallback(
+    (preset: Preset) => {
+      setDraft(preset.draft)
+      updateWorkspace(preset.workspace)
+    },
+    [updateWorkspace]
+  )
 
   const reset = useCallback(() => {
     setDraft(DEFAULT_DRAFT)
-    setWorkspace(PRESETS[0]?.workspace ?? '')
+    updateWorkspace(PRESETS[0]?.workspace ?? '')
     setOutputType('picture')
     setAuditQuery('')
     setImageQuery('')
-  }, [])
+  }, [updateWorkspace])
 
   const copySummary = () => {
     copy(
@@ -1186,7 +1299,10 @@ export default function ImageDeliveryClient() {
                 <Input
                   id="image-delivery-alt"
                   value={draft.altText}
-                  onChange={event => updateDraft('altText', event.target.value.slice(0, 160))}
+                  onChange={event =>
+                    updateDraft('altText', event.target.value.slice(0, ALT_TEXT_FIELD_LIMIT))
+                  }
+                  maxLength={ALT_TEXT_FIELD_LIMIT}
                 />
               </div>
               <div className="space-y-2 lg:col-span-2">
@@ -1221,7 +1337,7 @@ export default function ImageDeliveryClient() {
           <CardContent className="space-y-4">
             <Textarea
               value={workspace}
-              onChange={event => setWorkspace(event.target.value.slice(0, WORKSPACE_LIMIT))}
+              onChange={event => updateWorkspace(event.target.value)}
               placeholder={t('app.converter.image_delivery.workspace_placeholder')}
               className="min-h-[470px] font-mono"
               spellCheck={false}
@@ -1239,7 +1355,7 @@ export default function ImageDeliveryClient() {
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => setWorkspace('')}
+                onClick={() => updateWorkspace('')}
                 className="w-full sm:w-auto"
               >
                 <Trash2 className="h-4 w-4" />
@@ -1263,30 +1379,38 @@ export default function ImageDeliveryClient() {
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-tertiary)]" />
               <Input
                 value={auditQuery}
-                onChange={event => setAuditQuery(event.target.value)}
+                onChange={event => setAuditQuery(event.target.value.slice(0, 160))}
                 placeholder={t('app.converter.image_delivery.audit_search')}
                 className="pl-10"
               />
             </div>
             <div className="space-y-2">
-              {filteredFindings.slice(0, 44).map((finding, index) => (
+              {visibleFindings.map((finding, index) => (
                 <div
                   key={`${finding.key}:${finding.subject}:${index}`}
                   className={`rounded-xl border px-3 py-2 text-xs ${levelClass(finding.level)}`}
                 >
                   <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
-                    <span className="min-w-0 break-words">
+                    <span className="min-w-0 break-all leading-5">
                       <span className="font-semibold">{finding.subject}</span>
-                      <span className="mx-2">/</span>
+                      <span className="mx-2 inline-block">/</span>
                       {t(`app.converter.image_delivery.audit.${finding.key}`)}
                     </span>
-                    <span className="font-medium">
+                    <span className="shrink-0 font-medium">
                       {t(`app.converter.image_delivery.level.${finding.level}`)}
                     </span>
                   </div>
                 </div>
               ))}
             </div>
+            {findingsRenderLimited && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('public.rows_render_limited', {
+                  total: filteredFindings.length.toLocaleString(),
+                  visible: visibleFindings.length.toLocaleString()
+                })}
+              </p>
+            )}
           </CardContent>
         </Card>
 
@@ -1318,12 +1442,28 @@ export default function ImageDeliveryClient() {
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Textarea readOnly value={output} className="min-h-[360px] font-mono" />
+            <Textarea readOnly value={outputPreview} className="min-h-[360px] font-mono" />
+            {outputPreviewLimited && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('public.output_preview_limited', {
+                  total: outputPreviewSource.length.toLocaleString(),
+                  visible: OUTPUT_PREVIEW_CHARS.toLocaleString()
+                })}
+              </p>
+            )}
+            {outputPreviewRowsLimited && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('public.output_preview_rows_limited', {
+                  total: outputPreviewTotalRows.toLocaleString(),
+                  visible: outputPreviewVisibleRows.toLocaleString()
+                })}
+              </p>
+            )}
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => copy(output)}
+                onClick={() => copy(buildCurrentOutput())}
                 className="w-full sm:w-auto"
               >
                 <Copy className="h-4 w-4" />
@@ -1333,7 +1473,11 @@ export default function ImageDeliveryClient() {
                 type="button"
                 variant="outline"
                 onClick={() =>
-                  downloadText(output, 'image-delivery-output.txt', 'text/plain;charset=utf-8')
+                  downloadText(
+                    buildCurrentOutput(),
+                    'image-delivery-output.txt',
+                    'text/plain;charset=utf-8'
+                  )
                 }
                 className="w-full sm:w-auto"
               >
@@ -1344,7 +1488,7 @@ export default function ImageDeliveryClient() {
                 type="button"
                 variant="outline"
                 onClick={() =>
-                  downloadText(csvOutput, 'image-delivery.csv', 'text/csv;charset=utf-8')
+                  downloadText(buildCurrentCsv(), 'image-delivery.csv', 'text/csv;charset=utf-8')
                 }
                 className="w-full sm:w-auto"
               >
@@ -1371,14 +1515,14 @@ export default function ImageDeliveryClient() {
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-tertiary)]" />
               <Input
                 value={imageQuery}
-                onChange={event => setImageQuery(event.target.value)}
+                onChange={event => setImageQuery(event.target.value.slice(0, 160))}
                 placeholder={t('app.converter.image_delivery.parsed_search')}
                 className="pl-10"
               />
             </div>
             {filteredImages.length ? (
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {filteredImages.slice(0, 60).map(image => (
+                {visibleImages.map(image => (
                   <div
                     key={`${image.id}:${image.url}`}
                     className="glass-input min-w-0 rounded-xl p-3"
@@ -1407,6 +1551,14 @@ export default function ImageDeliveryClient() {
               <div className="glass-input rounded-xl p-6 text-center text-sm text-[var(--text-secondary)]">
                 {t('app.converter.image_delivery.empty')}
               </div>
+            )}
+            {imagesRenderLimited && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('public.rows_render_limited', {
+                  total: filteredImages.length.toLocaleString(),
+                  visible: visibleImages.length.toLocaleString()
+                })}
+              </p>
             )}
           </CardContent>
         </Card>

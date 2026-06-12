@@ -23,6 +23,11 @@ import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
+import {
+  createOutputPreview,
+  isOutputPreviewLimited,
+  OUTPUT_PREVIEW_CHARS
+} from '@/utils/outputPreview'
 
 type AuditSeverity = 'error' | 'ok' | 'warn'
 type OutputFormat = 'cloudflare' | 'csv' | 'headers' | 'json' | 'next' | 'nginx'
@@ -65,6 +70,9 @@ interface AuditItem {
 }
 
 const MAX_WORKSPACE_LENGTH = 12000
+const METRIC_LIMIT = 16
+const AUDIT_RENDER_LIMIT = 48
+const METRIC_DESC_FIELD_LIMIT = 240
 const OUTPUT_FORMATS: OutputFormat[] = ['headers', 'next', 'nginx', 'cloudflare', 'json', 'csv']
 const METRIC_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/
 
@@ -331,7 +339,16 @@ const ServerTimingClient = () => {
   const [workspace, setWorkspace] = useState(PRESETS[0]?.workspace ?? '')
   const deferredWorkspace = useDeferredValue(workspace)
 
-  const output = useMemo(() => buildOutput(draft, outputFormat), [draft, outputFormat])
+  const outputPreviewSource = useMemo(() => buildOutput(draft, outputFormat), [draft, outputFormat])
+  const outputPreview = useMemo(
+    () => createOutputPreview(outputPreviewSource),
+    [outputPreviewSource]
+  )
+  const outputPreviewLimited = isOutputPreviewLimited(outputPreviewSource)
+  const buildCurrentOutput = useCallback(
+    () => buildOutput(draft, outputFormat),
+    [draft, outputFormat]
+  )
   const parsed = useMemo(() => parseHeaders(deferredWorkspace), [deferredWorkspace])
   const workspaceTruncated = workspace.length >= MAX_WORKSPACE_LENGTH
 
@@ -466,6 +483,8 @@ const ServerTimingClient = () => {
 
     return items
   }, [draft, parsed.errors, parsed.metrics, parsed.tao, t, workspaceTruncated])
+  const visibleAudits = useMemo(() => audits.slice(0, AUDIT_RENDER_LIMIT), [audits])
+  const auditsLimited = audits.length > visibleAudits.length
 
   const counts = useMemo(
     () => ({
@@ -496,10 +515,13 @@ const ServerTimingClient = () => {
   const addMetric = useCallback(() => {
     setDraft(prev => ({
       ...prev,
-      metrics: [
-        ...prev.metrics,
-        { desc: 'New metric', dur: '10', name: `m${prev.metrics.length + 1}` }
-      ]
+      metrics:
+        prev.metrics.length >= METRIC_LIMIT
+          ? prev.metrics
+          : [
+              ...prev.metrics,
+              { desc: 'New metric', dur: '10', name: `m${prev.metrics.length + 1}` }
+            ]
     }))
   }, [])
 
@@ -626,13 +648,14 @@ const ServerTimingClient = () => {
                   variant="default"
                   icon={<Plus className="h-4 w-4" />}
                   onClick={addMetric}
+                  disabled={draft.metrics.length >= METRIC_LIMIT}
                 >
                   {t('public.add')}
                 </Button>
               </div>
 
               <div className="space-y-3">
-                {draft.metrics.map((metric, index) => (
+                {draft.metrics.slice(0, METRIC_LIMIT).map((metric, index) => (
                   <div
                     key={`${metric.name}-${index}`}
                     className="rounded-2xl border border-[var(--glass-border)] bg-[var(--glass-input-bg)] p-3"
@@ -659,8 +682,11 @@ const ServerTimingClient = () => {
                       <Input
                         value={metric.desc}
                         onChange={event =>
-                          updateMetric(index, { desc: event.target.value.slice(0, 160) })
+                          updateMetric(index, {
+                            desc: event.target.value.slice(0, METRIC_DESC_FIELD_LIMIT)
+                          })
                         }
+                        maxLength={METRIC_DESC_FIELD_LIMIT}
                         aria-label={t('app.converter.server_timing.description_field')}
                       />
                       <Button
@@ -738,7 +764,7 @@ const ServerTimingClient = () => {
             <CardDescription>{t('app.converter.server_timing.audit_hint')}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            {audits.map(item => (
+            {visibleAudits.map(item => (
               <div
                 key={item.key}
                 className="rounded-2xl border border-[var(--glass-border)] bg-[var(--glass-input-bg)] p-4"
@@ -766,6 +792,14 @@ const ServerTimingClient = () => {
                 ) : null}
               </div>
             ))}
+            {auditsLimited && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('public.output_preview_rows_limited', {
+                  total: audits.length.toLocaleString(),
+                  visible: visibleAudits.length.toLocaleString()
+                })}
+              </p>
+            )}
           </CardContent>
         </Card>
 
@@ -796,7 +830,7 @@ const ServerTimingClient = () => {
                 type="button"
                 variant="default"
                 icon={<Copy className="h-4 w-4" />}
-                onClick={() => void copy(output)}
+                onClick={() => void copy(buildCurrentOutput())}
                 className="self-end"
               >
                 {t('public.copy')}
@@ -807,7 +841,7 @@ const ServerTimingClient = () => {
                 icon={<Download className="h-4 w-4" />}
                 onClick={() =>
                   downloadText(
-                    output,
+                    buildCurrentOutput(),
                     outputFormat === 'csv' ? 'server-timing.csv' : 'server-timing.txt',
                     outputFormat === 'csv' ? 'text/csv;charset=utf-8' : 'text/plain;charset=utf-8'
                   )
@@ -824,9 +858,17 @@ const ServerTimingClient = () => {
                 {t(`app.converter.server_timing.output.${outputFormat}`)}
               </div>
               <pre className="max-h-[440px] overflow-auto whitespace-pre-wrap break-all font-mono text-xs text-[var(--text-primary)]">
-                {output}
+                {outputPreview}
               </pre>
             </div>
+            {outputPreviewLimited ? (
+              <p className="text-xs leading-5 text-amber-600 dark:text-amber-300">
+                {t('public.output_preview_limited', {
+                  total: outputPreviewSource.length.toLocaleString(),
+                  visible: OUTPUT_PREVIEW_CHARS.toLocaleString()
+                })}
+              </p>
+            ) : null}
           </CardContent>
         </Card>
       </div>

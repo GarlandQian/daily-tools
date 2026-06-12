@@ -19,15 +19,21 @@ import {
   Table2,
   Trash2
 } from 'lucide-react'
-import { type ReactNode, useDeferredValue, useMemo, useState, useSyncExternalStore } from 'react'
+import {
+  type ReactNode,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore
+} from 'react'
 import { useTranslation } from 'react-i18next'
-import { UAParser } from 'ua-parser-js'
-import { Bots, Crawlers, InApps } from 'ua-parser-js/extensions'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
+import { collectBoundedNonEmptyLines } from '@/utils/textScan'
 
 interface Section {
   icon: ReactNode
@@ -72,6 +78,58 @@ interface BatchUaResult {
   version: string
 }
 
+interface ParsedUaResult {
+  browser: {
+    major?: string
+    name?: string
+    type?: string
+    version?: string
+  }
+  cpu: {
+    architecture?: string
+  }
+  device: {
+    model?: string
+    type?: string
+    vendor?: string
+  }
+  engine: {
+    name?: string
+    version?: string
+  }
+  os: {
+    name?: string
+    version?: string
+  }
+  ua: string
+}
+
+type UaParserConstructor = new (
+  input: string,
+  extensions?: unknown
+) => {
+  getResult: () => ParsedUaResult
+}
+
+interface UaParserApi {
+  extensions: unknown
+  Parser: UaParserConstructor
+}
+
+interface UaParsedState {
+  analysis: UaAnalysis | null
+  error: string | null
+  parsed: ParsedUaResult | null
+  requestKey: string
+}
+
+interface UaBatchState {
+  error: string | null
+  isLineLimited: boolean
+  rows: BatchUaResult[]
+  requestKey: string
+}
+
 const SAMPLE_USER_AGENTS: SampleUserAgent[] = [
   {
     key: 'chrome-desktop',
@@ -102,12 +160,24 @@ const BOT_PATTERN = /\b(bot|crawler|spider|slurp|bingpreview|duckduckbot|baidusp
 const WEBVIEW_PATTERN = /(; wv\)|\bwebview\b|version\/\d+\.\d+ chrome\/\d+.+mobile safari)/i
 const IN_APP_PATTERN =
   /\b(FBAN|FBAV|FB_IAB|MicroMessenger|Line\/|Instagram|TikTok|Twitter|LinkedInApp|Alipay|Zalo)\b/i
-const UA_EXTENSIONS = [Bots, Crawlers, InApps] as UAParser.UAParserExt
 const MAX_UA_INPUT_CHARS = 10000
 const MAX_UA_BATCH_LINES = 80
 const MAX_UA_BATCH_CHARS = 60000
 const MAX_UA_BATCH_PREVIEW_ROWS = 12
 const uaNumberFormatter = new Intl.NumberFormat()
+const EMPTY_UA_PARSED_STATE: UaParsedState = {
+  analysis: null,
+  error: null,
+  parsed: null,
+  requestKey: ''
+}
+const EMPTY_UA_BATCH_STATE: UaBatchState = {
+  error: null,
+  isLineLimited: false,
+  rows: [],
+  requestKey: ''
+}
+let uaParserPromise: Promise<UaParserApi> | null = null
 
 const formatUaNumber = (value: number) => uaNumberFormatter.format(value)
 
@@ -146,7 +216,7 @@ function getEngineFamily(browserName = '', engineName = '', userAgent = '') {
   return 'Unknown'
 }
 
-function getConfidenceScore(parsed: UAParser.IResult) {
+function getConfidenceScore(parsed: ParsedUaResult) {
   const fields = [
     parsed.browser.name,
     parsed.browser.version,
@@ -163,7 +233,7 @@ function getConfidenceScore(parsed: UAParser.IResult) {
   return fields.filter(Boolean).length
 }
 
-function buildUaAnalysis(parsed: UAParser.IResult, userAgent: string): UaAnalysis {
+function buildUaAnalysis(parsed: ParsedUaResult, userAgent: string): UaAnalysis {
   const browserName = parsed.browser.name || ''
   const engineName = parsed.engine.name || ''
   const deviceType = parsed.device.type
@@ -213,15 +283,27 @@ const csvEscape = (value: string | number | string[]) => {
   return /[",\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text
 }
 
-const buildBatchRows = (input: string): BatchUaResult[] =>
-  input
-    .split(/\r?\n/)
-    .map(line => line.trim())
-    .filter(Boolean)
-    .slice(0, MAX_UA_BATCH_LINES)
-    .map(line => {
+const loadUaParser = () => {
+  uaParserPromise ??= Promise.all([import('ua-parser-js'), import('ua-parser-js/extensions')]).then(
+    ([parserModule, extensionModule]) => ({
+      extensions: [extensionModule.Bots, extensionModule.Crawlers, extensionModule.InApps],
+      Parser: parserModule.UAParser as unknown as UaParserConstructor
+    })
+  )
+  return uaParserPromise
+}
+
+const parseUa = (parserApi: UaParserApi, input: string) =>
+  new parserApi.Parser(input, parserApi.extensions).getResult()
+
+const buildBatchRows = (parserApi: UaParserApi, input: string) => {
+  const collected = collectBoundedNonEmptyLines(input, MAX_UA_BATCH_LINES)
+
+  return {
+    isLimited: collected.limited,
+    rows: collected.lines.map(line => {
       const safeLine = line.length > MAX_UA_INPUT_CHARS ? line.slice(0, MAX_UA_INPUT_CHARS) : line
-      const parsed = new UAParser(safeLine, UA_EXTENSIONS).getResult()
+      const parsed = parseUa(parserApi, safeLine)
       const analysis = buildUaAnalysis(parsed, safeLine)
 
       return {
@@ -235,6 +317,8 @@ const buildBatchRows = (input: string): BatchUaResult[] =>
         version: displayValue(parsed.browser.version, '-')
       }
     })
+  }
+}
 
 const buildBatchCsv = (rows: BatchUaResult[]) =>
   [
@@ -254,6 +338,27 @@ const buildBatchCsv = (rows: BatchUaResult[]) =>
         .join(',')
     )
   ].join('\n')
+
+const buildBatchJson = (
+  rows: BatchUaResult[],
+  stats: {
+    bots: number
+    browsers: number
+    inApps: number
+    mobile: number
+    os: number
+    total: number
+    webviews: number
+  }
+) =>
+  JSON.stringify(
+    {
+      rows,
+      stats
+    },
+    null,
+    2
+  )
 
 const downloadText = (content: string, filename: string, type: string) => {
   const blob = new Blob([content], { type })
@@ -275,12 +380,14 @@ const UaClient = () => {
   )
   const [inputOverride, setInputOverride] = useState<string | null>(null)
   const [batchInput, setBatchInput] = useState('')
+  const [isInputOverrideCapped, setIsInputOverrideCapped] = useState(false)
+  const [isBatchInputCapped, setIsBatchInputCapped] = useState(false)
   const input = inputOverride ?? userAgent
   const trimmedInput = input.trim()
   const deferredTrimmedInput = useDeferredValue(trimmedInput)
   const deferredBatchInput = useDeferredValue(batchInput)
-  const isInputTruncated = deferredTrimmedInput.length > MAX_UA_INPUT_CHARS
-  const isBatchInputTruncated = deferredBatchInput.length > MAX_UA_BATCH_CHARS
+  const isInputTruncated = isInputOverrideCapped || deferredTrimmedInput.length > MAX_UA_INPUT_CHARS
+  const isBatchInputTruncated = isBatchInputCapped || deferredBatchInput.length > MAX_UA_BATCH_CHARS
   const safeTrimmedInput = useMemo(
     () =>
       deferredTrimmedInput.length > MAX_UA_INPUT_CHARS
@@ -295,29 +402,88 @@ const UaClient = () => {
         : deferredBatchInput,
     [deferredBatchInput]
   )
-  const batchLineCount = useMemo(
-    () =>
-      safeBatchInput
-        .split(/\r?\n/)
-        .map(line => line.trim())
-        .filter(Boolean).length,
-    [safeBatchInput]
-  )
-  const isBatchLineLimited = batchLineCount > MAX_UA_BATCH_LINES
+  const parsedRequestKey = safeTrimmedInput
+  const batchRequestKey = safeBatchInput.trim() ? safeBatchInput : ''
+  const [parsedState, setParsedState] = useState<UaParsedState>(EMPTY_UA_PARSED_STATE)
+  const [batchState, setBatchState] = useState<UaBatchState>(EMPTY_UA_BATCH_STATE)
 
-  const parsed = useMemo(() => {
-    if (!safeTrimmedInput) return null
-    return new UAParser(safeTrimmedInput, UA_EXTENSIONS).getResult()
-  }, [safeTrimmedInput])
+  useEffect(() => {
+    if (!parsedRequestKey) return
 
-  const analysis = useMemo(() => {
-    if (!parsed) return null
+    let isCurrent = true
 
-    return buildUaAnalysis(parsed, safeTrimmedInput)
-  }, [safeTrimmedInput, parsed])
+    void loadUaParser()
+      .then(parserApi => {
+        if (!isCurrent) return
 
-  const batchRows = useMemo(() => buildBatchRows(safeBatchInput), [safeBatchInput])
-  const batchCsv = useMemo(() => buildBatchCsv(batchRows), [batchRows])
+        const parsedResult = parseUa(parserApi, parsedRequestKey)
+        setParsedState({
+          analysis: buildUaAnalysis(parsedResult, parsedRequestKey),
+          error: null,
+          parsed: parsedResult,
+          requestKey: parsedRequestKey
+        })
+      })
+      .catch(error => {
+        if (!isCurrent) return
+
+        setParsedState({
+          analysis: null,
+          error: error instanceof Error ? error.message : String(error),
+          parsed: null,
+          requestKey: parsedRequestKey
+        })
+      })
+
+    return () => {
+      isCurrent = false
+    }
+  }, [parsedRequestKey])
+
+  useEffect(() => {
+    if (!batchRequestKey) return
+
+    let isCurrent = true
+
+    void loadUaParser()
+      .then(parserApi => {
+        if (!isCurrent) return
+
+        const batchResult = buildBatchRows(parserApi, batchRequestKey)
+        setBatchState({
+          error: null,
+          isLineLimited: batchResult.isLimited,
+          rows: batchResult.rows,
+          requestKey: batchRequestKey
+        })
+      })
+      .catch(error => {
+        if (!isCurrent) return
+
+        setBatchState({
+          error: error instanceof Error ? error.message : String(error),
+          isLineLimited: false,
+          rows: [],
+          requestKey: batchRequestKey
+        })
+      })
+
+    return () => {
+      isCurrent = false
+    }
+  }, [batchRequestKey])
+
+  const isParsedStateCurrent =
+    Boolean(parsedRequestKey) && parsedState.requestKey === parsedRequestKey
+  const isParsedLoading = Boolean(parsedRequestKey) && !isParsedStateCurrent
+  const currentParsedState = isParsedStateCurrent ? parsedState : EMPTY_UA_PARSED_STATE
+  const parsed = currentParsedState.parsed
+  const analysis = currentParsedState.analysis
+  const isBatchStateCurrent = Boolean(batchRequestKey) && batchState.requestKey === batchRequestKey
+  const isBatchLoading = Boolean(batchRequestKey) && !isBatchStateCurrent
+  const currentBatchState = isBatchStateCurrent ? batchState : EMPTY_UA_BATCH_STATE
+  const batchRows = currentBatchState.rows
+  const isBatchLineLimited = currentBatchState.isLineLimited
   const batchStats = useMemo(() => {
     const browserSet = new Set<string>()
     const osSet = new Set<string>()
@@ -345,19 +511,6 @@ const UaClient = () => {
       webviews
     }
   }, [batchRows])
-
-  const batchJson = useMemo(
-    () =>
-      JSON.stringify(
-        {
-          rows: batchRows,
-          stats: batchStats
-        },
-        null,
-        2
-      ),
-    [batchRows, batchStats]
-  )
 
   const sections = useMemo<Section[]>(() => {
     if (!parsed) return []
@@ -520,20 +673,33 @@ const UaClient = () => {
   }, [analysis, parsed])
 
   const handleUseCurrent = () => {
+    setIsInputOverrideCapped(false)
     setInputOverride(null)
   }
 
+  const updateInputOverride = (value: string) => {
+    const capped = value.length > MAX_UA_INPUT_CHARS
+    setIsInputOverrideCapped(capped)
+    setInputOverride(capped ? value.slice(0, MAX_UA_INPUT_CHARS) : value)
+  }
+
+  const updateBatchInput = (value: string) => {
+    const capped = value.length > MAX_UA_BATCH_CHARS
+    setIsBatchInputCapped(capped)
+    setBatchInput(capped ? value.slice(0, MAX_UA_BATCH_CHARS) : value)
+  }
+
   const handleSample = (sample: SampleUserAgent) => {
-    setInputOverride(sample.value)
+    updateInputOverride(sample.value)
   }
 
   const handleClear = () => {
-    setInputOverride('')
-    setBatchInput('')
+    updateInputOverride('')
+    updateBatchInput('')
   }
 
   const handleBatchSample = () => {
-    setBatchInput(SAMPLE_USER_AGENTS.map(sample => sample.value).join('\n'))
+    updateBatchInput(SAMPLE_USER_AGENTS.map(sample => sample.value).join('\n'))
   }
 
   return (
@@ -577,7 +743,7 @@ const UaClient = () => {
         <CardContent className="space-y-4">
           <Textarea
             value={input}
-            onChange={event => setInputOverride(event.target.value)}
+            onChange={event => updateInputOverride(event.target.value)}
             placeholder={t('app.format.ua.placeholder')}
             rows={4}
             className="font-mono"
@@ -611,7 +777,25 @@ const UaClient = () => {
         </CardContent>
       </Card>
 
-      {!parsed && (
+      {isParsedLoading && (
+        <Card className="glass-panel-static">
+          <CardContent className="flex items-center gap-3 p-6 text-sm text-[var(--text-secondary)]">
+            <Info className="h-5 w-5 text-[var(--primary)]" />
+            {t('public.loading')}
+          </CardContent>
+        </Card>
+      )}
+
+      {currentParsedState.error && (
+        <Card className="glass-panel-static">
+          <CardContent className="flex items-center gap-3 p-6 text-sm text-[var(--error)]">
+            <Info className="h-5 w-5 text-[var(--error)]" />
+            {t('app.format.ua.warning.parser_failed')}
+          </CardContent>
+        </Card>
+      )}
+
+      {!isParsedLoading && !currentParsedState.error && !parsed && (
         <Card className="glass-panel-static">
           <CardContent className="flex items-center gap-3 p-6 text-sm text-[var(--text-secondary)]">
             <Info className="h-5 w-5 text-[var(--primary)]" />
@@ -751,6 +935,7 @@ const UaClient = () => {
                     size="sm"
                     icon={<Copy className="h-4 w-4" />}
                     onClick={() => copy(resultJson)}
+                    disabled={!resultJson}
                   >
                     {t('public.copy')}
                   </Button>
@@ -766,6 +951,7 @@ const UaClient = () => {
                         'application/json;charset=utf-8'
                       )
                     }
+                    disabled={!resultJson}
                   >
                     {t('app.format.ua.download_json')}
                   </Button>
@@ -808,8 +994,8 @@ const UaClient = () => {
                 variant="outline"
                 size="sm"
                 icon={<FileJson className="h-4 w-4" />}
-                onClick={() => copy(batchJson)}
-                disabled={!batchRows.length}
+                onClick={() => copy(buildBatchJson(batchRows, batchStats))}
+                disabled={!batchRows.length || isBatchLoading}
               >
                 JSON
               </Button>
@@ -818,8 +1004,8 @@ const UaClient = () => {
                 variant="outline"
                 size="sm"
                 icon={<Table2 className="h-4 w-4" />}
-                onClick={() => copy(batchCsv)}
-                disabled={!batchRows.length}
+                onClick={() => copy(buildBatchCsv(batchRows))}
+                disabled={!batchRows.length || isBatchLoading}
               >
                 CSV
               </Button>
@@ -830,12 +1016,12 @@ const UaClient = () => {
                 icon={<Download className="h-4 w-4" />}
                 onClick={() =>
                   downloadText(
-                    batchJson,
+                    buildBatchJson(batchRows, batchStats),
                     'daily-tools-user-agents.json',
                     'application/json;charset=utf-8'
                   )
                 }
-                disabled={!batchRows.length}
+                disabled={!batchRows.length || isBatchLoading}
               >
                 {t('app.format.ua.download_json')}
               </Button>
@@ -843,7 +1029,7 @@ const UaClient = () => {
                 type="button"
                 size="sm"
                 icon={<Trash2 className="h-4 w-4" />}
-                onClick={() => setBatchInput('')}
+                onClick={() => updateBatchInput('')}
                 disabled={!batchInput}
               >
                 {t('public.clear')}
@@ -854,7 +1040,7 @@ const UaClient = () => {
         <CardContent className="space-y-4">
           <Textarea
             value={batchInput}
-            onChange={event => setBatchInput(event.target.value)}
+            onChange={event => updateBatchInput(event.target.value)}
             placeholder={t('app.format.ua.batch_placeholder')}
             rows={5}
             className="font-mono"
@@ -876,6 +1062,16 @@ const UaClient = () => {
                 </p>
               )}
             </div>
+          )}
+          {isBatchLoading && (
+            <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-sm text-[var(--text-secondary)]">
+              {t('public.loading')}
+            </p>
+          )}
+          {currentBatchState.error && (
+            <p className="rounded-lg border border-[var(--error)] bg-[var(--error-subtle)] px-3 py-2 text-sm text-[var(--error)]">
+              {t('app.format.ua.warning.parser_failed')}
+            </p>
           )}
 
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
@@ -963,11 +1159,11 @@ const UaClient = () => {
                 </p>
               )}
             </div>
-          ) : (
+          ) : !isBatchLoading ? (
             <div className="glass-panel-static rounded-lg p-4 text-sm text-[var(--text-secondary)]">
               {t('app.format.ua.batch_empty')}
             </div>
-          )}
+          ) : null}
         </CardContent>
       </Card>
     </div>

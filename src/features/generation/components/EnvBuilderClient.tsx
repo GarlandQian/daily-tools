@@ -11,7 +11,7 @@ import {
   Trash2,
   Wand2
 } from 'lucide-react'
-import { useDeferredValue, useMemo, useState } from 'react'
+import { useCallback, useDeferredValue, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
@@ -23,6 +23,12 @@ import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useToast } from '@/components/ui/toast'
 import { useCopy } from '@/hooks/useCopy'
+import {
+  createOutputPreview,
+  isOutputPreviewLimited,
+  OUTPUT_PREVIEW_CHARS,
+  OUTPUT_PREVIEW_ROWS
+} from '@/utils/outputPreview'
 
 type EnvOutput = 'example' | 'redacted' | 'zod' | 'types' | 'process' | 'json' | 'keys' | 'docker'
 type EnvSamplePreset = 'next' | 'vite' | 'node' | 'docker' | 'vercel' | 'cloudflare'
@@ -551,7 +557,22 @@ const EnvBuilderClient = () => {
     () => ({ includeComments, optionalEmpty, quoteExampleValues, redactValues, sortKeys }),
     [includeComments, optionalEmpty, quoteExampleValues, redactValues, sortKeys]
   )
-  const output = useMemo(
+  const outputPreviewEntries = useMemo(
+    () => parsed.entries.slice(0, OUTPUT_PREVIEW_ROWS),
+    [parsed.entries]
+  )
+  const outputPreviewSource = useMemo(
+    () => buildOutput(outputPreviewEntries, outputType, options),
+    [options, outputPreviewEntries, outputType]
+  )
+  const outputPreview = useMemo(
+    () => createOutputPreview(outputPreviewSource),
+    [outputPreviewSource]
+  )
+  const outputPreviewLimited = isOutputPreviewLimited(outputPreviewSource)
+  const outputPreviewRowsLimited = parsed.entries.length > outputPreviewEntries.length
+  const hasOutput = parsed.entries.length > 0
+  const buildCurrentOutput = useCallback(
     () => buildOutput(parsed.entries, outputType, options),
     [options, outputType, parsed.entries]
   )
@@ -659,9 +680,9 @@ const EnvBuilderClient = () => {
   }
 
   const handleDownload = () => {
-    if (!output) return
+    if (!hasOutput) return
 
-    const blob = new Blob([output], { type: 'text/plain;charset=utf-8' })
+    const blob = new Blob([buildCurrentOutput()], { type: 'text/plain;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const anchor = document.createElement('a')
     anchor.href = url
@@ -885,20 +906,20 @@ const EnvBuilderClient = () => {
                 variant="ghost"
                 icon={<Wand2 className="h-4 w-4" />}
                 disabled={
-                  !output ||
+                  !hasOutput ||
                   outputType === 'zod' ||
                   outputType === 'types' ||
                   outputType === 'process'
                 }
-                onClick={() => handleInputChange(output)}
+                onClick={() => handleInputChange(buildCurrentOutput())}
               >
                 {t('app.generation.env.use_as_input')}
               </Button>
               <Button
                 size="sm"
                 icon={<Copy className="h-4 w-4" />}
-                disabled={!output}
-                onClick={() => copy(output)}
+                disabled={!hasOutput}
+                onClick={() => copy(buildCurrentOutput())}
               >
                 {t('public.copy')}
               </Button>
@@ -906,7 +927,7 @@ const EnvBuilderClient = () => {
                 size="sm"
                 variant="ghost"
                 icon={<Download className="h-4 w-4" />}
-                disabled={!output}
+                disabled={!hasOutput}
                 onClick={handleDownload}
               >
                 {t('app.generation.env.download')}
@@ -915,12 +936,28 @@ const EnvBuilderClient = () => {
           </CardHeader>
           <CardContent className="flex min-h-0 flex-1 flex-col">
             <Textarea
-              value={output}
+              value={outputPreview}
               readOnly
               rows={16}
               className="min-h-[320px] flex-1 resize-none font-mono"
               placeholder={t('app.generation.env.empty_state')}
             />
+            {outputPreviewLimited && (
+              <p className="mt-3 rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('public.output_preview_limited', {
+                  total: outputPreviewSource.length.toLocaleString(),
+                  visible: OUTPUT_PREVIEW_CHARS.toLocaleString()
+                })}
+              </p>
+            )}
+            {outputPreviewRowsLimited && (
+              <p className="mt-3 rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('public.output_preview_rows_limited', {
+                  total: parsed.entries.length.toLocaleString(),
+                  visible: outputPreviewEntries.length.toLocaleString()
+                })}
+              </p>
+            )}
           </CardContent>
         </Card>
 
@@ -968,7 +1005,7 @@ const EnvBuilderClient = () => {
                 />
                 <Input
                   value={auditQuery}
-                  onChange={event => setAuditQuery(event.target.value)}
+                  onChange={event => setAuditQuery(event.target.value.slice(0, 160))}
                   className="h-10 pl-9"
                   placeholder={t('app.generation.env.audit_search')}
                   aria-label={t('app.generation.env.audit_search')}

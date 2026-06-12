@@ -69,6 +69,18 @@ export const resolveNavigableMenuPath = (path: string) => {
   return visit(menus)
 }
 
+export const buildSearchableToolPathSet = () => {
+  const paths = new Set<string>()
+
+  menus.forEach(category => {
+    category.children?.forEach(child => {
+      paths.add(child.path)
+    })
+  })
+
+  return paths
+}
+
 export const buildMenuLabelMap = (translate: Translate) => {
   const labelMap = new Map<string, string>()
 

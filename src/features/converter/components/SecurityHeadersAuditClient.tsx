@@ -16,6 +16,7 @@ import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { InputCapNotice } from '@/components/ui/input-cap-notice'
 import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
@@ -23,6 +24,7 @@ import { useCopy } from '@/hooks/useCopy'
 
 const INPUT_LIMIT = 36000
 const ROW_LIMIT = 220
+const RENDER_LIMIT = 48
 const PROFILES = ['html', 'api', 'asset'] as const
 
 type Profile = (typeof PROFILES)[number]
@@ -464,6 +466,8 @@ export default function SecurityHeadersAuditClient() {
   const deferredWorkspace = useDeferredValue(workspace)
 
   const parsedHeaders = useMemo(() => parseHeaders(deferredWorkspace), [deferredWorkspace])
+  const visibleParsedHeaders = useMemo(() => parsedHeaders.slice(0, RENDER_LIMIT), [parsedHeaders])
+  const parsedHeadersLimited = parsedHeaders.length > visibleParsedHeaders.length
   const findings = useMemo(() => auditHeaders(parsedHeaders, profile), [parsedHeaders, profile])
   const score = useMemo(() => getScore(findings), [findings])
   const metrics = useMemo(() => {
@@ -683,6 +687,7 @@ export default function SecurityHeadersAuditClient() {
               placeholder={t('app.converter.security_headers.workspace_placeholder')}
               className="min-h-[320px] font-mono"
             />
+            <InputCapNotice visible={workspace.length >= INPUT_LIMIT} limit={INPUT_LIMIT} />
             <div className="flex flex-wrap gap-2">
               <Button type="button" variant="outline" onClick={() => copy(exportJson)}>
                 <Copy className="h-4 w-4" />
@@ -797,18 +802,28 @@ export default function SecurityHeadersAuditClient() {
         </CardHeader>
         <CardContent>
           {parsedHeaders.length ? (
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {parsedHeaders.map((row, index) => (
-                <div key={`${row.raw}:${index}`} className="glass-input rounded-xl p-3">
-                  <p className="break-all font-mono text-sm font-semibold text-[var(--text-primary)]">
-                    {row.name}
-                  </p>
-                  <p className="mt-2 line-clamp-3 break-all font-mono text-xs leading-5 text-[var(--text-secondary)]">
-                    {row.value}
-                  </p>
-                </div>
-              ))}
-            </div>
+            <>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {visibleParsedHeaders.map((row, index) => (
+                  <div key={`${row.raw}:${index}`} className="glass-input rounded-xl p-3">
+                    <p className="break-all font-mono text-sm font-semibold text-[var(--text-primary)]">
+                      {row.name}
+                    </p>
+                    <p className="mt-2 line-clamp-3 break-all font-mono text-xs leading-5 text-[var(--text-secondary)]">
+                      {row.value}
+                    </p>
+                  </div>
+                ))}
+              </div>
+              {parsedHeadersLimited && (
+                <p className="mt-3 rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                  {t('public.output_preview_rows_limited', {
+                    total: parsedHeaders.length.toLocaleString(),
+                    visible: visibleParsedHeaders.length.toLocaleString()
+                  })}
+                </p>
+              )}
+            </>
           ) : (
             <div className="glass-input rounded-xl p-6 text-center text-sm text-[var(--text-secondary)]">
               {t('app.converter.security_headers.empty')}

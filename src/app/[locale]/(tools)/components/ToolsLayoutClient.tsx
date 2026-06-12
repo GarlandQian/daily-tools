@@ -13,6 +13,7 @@ import {
   Search,
   Sun
 } from 'lucide-react'
+import dynamic from 'next/dynamic'
 import { usePathname } from 'next/navigation'
 import { useRouter } from 'nextjs-toploader/app'
 import React, { useMemo, useState } from 'react'
@@ -24,6 +25,7 @@ import { type ThemeMode, useTheme } from '@/components/ThemeProvider'
 import TransitionLayout from '@/components/TransitionLayout'
 import {
   buildMenuLabelMap,
+  buildSearchableToolPathSet,
   buildToolSearchItems,
   findMenuMatch,
   getMenuLabel,
@@ -33,7 +35,10 @@ import {
 import { type MenuConfig, menus } from '@/config/menus'
 import { cn } from '@/lib/utils'
 
-import { ToolCommandPalette } from './ToolCommandPalette'
+const ToolCommandPalette = dynamic(
+  () => import('./ToolCommandPalette').then(mod => mod.ToolCommandPalette),
+  { ssr: false }
+)
 
 type ViewTransitionDocument = Document & {
   startViewTransition?: (callback: () => void) => { finished: Promise<void> }
@@ -231,6 +236,7 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null)
   const [direction, setDirection] = useState<DirectionMode>('ltr')
   const [commandOpen, setCommandOpen] = useState(false)
+  const [commandPaletteLoaded, setCommandPaletteLoaded] = useState(false)
   const [recentToolPaths, setRecentToolPaths] = useState<string[]>([])
 
   useRandomizedGlassEffects()
@@ -280,11 +286,11 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
   }, [language])
 
   const menuLabelByPath = useMemo(() => buildMenuLabelMap(t), [t])
-  const toolSearchItems = useMemo(() => buildToolSearchItems(t), [t])
-  const searchableToolPaths = useMemo(
-    () => new Set(toolSearchItems.filter(item => !item.isCategory).map(item => item.path)),
-    [toolSearchItems]
+  const toolSearchItems = useMemo(
+    () => (commandPaletteLoaded ? buildToolSearchItems(t) : []),
+    [commandPaletteLoaded, t]
   )
+  const searchableToolPaths = useMemo(() => buildSearchableToolPathSet(), [])
 
   const { currentCategory, breadcrumbs } = useMemo(() => {
     const menuMatch = findMenuMatch(pathname)
@@ -352,6 +358,7 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
   }
 
   const openCommandPalette = React.useCallback(() => {
+    setCommandPaletteLoaded(true)
     setSidebarOpen(false)
     setCommandOpen(true)
   }, [])
@@ -366,7 +373,11 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
         event.preventDefault()
         event.stopPropagation()
         setSidebarOpen(false)
-        setCommandOpen(current => !current)
+        setCommandOpen(current => {
+          const nextOpen = !current
+          if (nextOpen) setCommandPaletteLoaded(true)
+          return nextOpen
+        })
         return
       }
 
@@ -578,14 +589,16 @@ const ToolsLayoutClient = ({ children }: { children: React.ReactNode }) => {
   return (
     <div className="relative isolate flex h-screen w-full overflow-hidden">
       <MeshGradient />
-      <ToolCommandPalette
-        currentPath={pathname}
-        items={toolSearchItems}
-        open={commandOpen}
-        recentPaths={recentToolPaths}
-        onOpenChange={setCommandOpen}
-        onSelect={handleNavigate}
-      />
+      {commandPaletteLoaded && (
+        <ToolCommandPalette
+          currentPath={pathname}
+          items={toolSearchItems}
+          open={commandOpen}
+          recentPaths={recentToolPaths}
+          onOpenChange={setCommandOpen}
+          onSelect={handleNavigate}
+        />
+      )}
 
       <aside
         className="relative z-10 hidden h-full shrink-0 flex-col overflow-hidden border-r border-[var(--glass-border-strong)] glass-panel-strong transition-[width] duration-300 ease-out lg:flex"

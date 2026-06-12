@@ -15,7 +15,7 @@ import {
   Sparkles,
   Unlock
 } from 'lucide-react'
-import { type FormEvent, useMemo, useState } from 'react'
+import { type FormEvent, useDeferredValue, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
@@ -41,6 +41,12 @@ import {
 
 type SymmetricAlgorithm = 'aes' | 'des' | 'tripledes'
 type Operation = 'encrypt' | 'decrypt'
+type CryptoOperation = (
+  text: string,
+  secret: string,
+  options: AesCryptoOptions,
+  isEncrypt?: boolean
+) => Promise<string>
 
 interface SymmetricCryptoClientProps {
   algorithm: SymmetricAlgorithm
@@ -57,6 +63,8 @@ interface Preset {
 }
 
 const MAX_INPUT_CHARS = 200000
+const MAX_SECRET_CHARS = 4096
+const MAX_IV_CHARS = 256
 const metricNumberFormatter = new Intl.NumberFormat()
 
 const ALGORITHM_META: Record<
@@ -134,7 +142,7 @@ const PRESETS: Record<SymmetricAlgorithm, Preset[]> = {
   ]
 }
 
-const getCrypto = (algorithm: SymmetricAlgorithm) => {
+const getCrypto = (algorithm: SymmetricAlgorithm): CryptoOperation => {
   if (algorithm === 'aes') return aesCrypto
   if (algorithm === 'des') return desCrypto
   return TripleDesCrypto
@@ -168,38 +176,44 @@ const SymmetricCryptoClient = ({ algorithm }: SymmetricCryptoClientProps) => {
   const [encoding, setEncoding] = useState<AesCryptoOptions['encoding']>('Utf8')
   const [iv, setIv] = useState(meta.defaultIv)
   const [result, setResult] = useState('')
+  const [isProcessing, setIsProcessing] = useState(false)
+  const deferredContent = useDeferredValue(content)
+  const deferredSecret = useDeferredValue(secret)
+  const deferredIv = useDeferredValue(iv)
+  const deferredResult = useDeferredValue(result)
 
-  const contentBytes = useMemo(() => countBytes(content), [content])
-  const secretBytes = useMemo(() => countBytes(secret), [secret])
-  const ivBytes = useMemo(() => countBytes(iv), [iv])
-  const outputBytes = useMemo(() => countBytes(result), [result])
-  const isInputTooLarge = content.length > MAX_INPUT_CHARS
+  const contentBytes = useMemo(() => countBytes(deferredContent), [deferredContent])
+  const secretBytes = useMemo(() => countBytes(deferredSecret), [deferredSecret])
+  const ivBytes = useMemo(() => countBytes(deferredIv), [deferredIv])
+  const outputBytes = useMemo(() => countBytes(deferredResult), [deferredResult])
+  const isInputCapped = content.length >= MAX_INPUT_CHARS
   const warnings = useMemo(() => {
     const next: string[] = []
     if (meta.legacy) next.push(t('app.encryption.symmetric.warning.legacy'))
     if (mode === 'ECB') next.push(t('app.encryption.symmetric.warning.ecb'))
     if (padding === 'NoPadding') next.push(t('app.encryption.symmetric.warning.no_padding'))
-    if (isInputTooLarge) {
+    if (isInputCapped) {
       next.push(
-        t('app.encryption.symmetric.warning.too_large', {
+        t('app.encryption.symmetric.warning.truncated', {
           limit: metricNumberFormatter.format(MAX_INPUT_CHARS)
         })
       )
     }
-    if (operation === 'decrypt' && format === 'Hex' && /[^a-f0-9]/i.test(content.trim())) {
+    if (operation === 'decrypt' && format === 'Hex' && /[^a-f0-9]/i.test(deferredContent.trim())) {
       next.push(t('app.encryption.symmetric.warning.hex_input'))
     }
     return next
-  }, [content, format, isInputTooLarge, meta.legacy, mode, operation, padding, t])
+  }, [deferredContent, format, isInputCapped, meta.legacy, mode, operation, padding, t])
 
   const options = useMemo<AesCryptoOptions>(
     () => ({ encoding, format, iv, mode, padding }),
     [encoding, format, iv, mode, padding]
   )
 
-  const handleSubmit = (event: FormEvent) => {
+  const handleSubmit = async (event: FormEvent) => {
     event.preventDefault()
 
+    if (isProcessing) return
     if (!content.trim()) {
       toast.warning(t('app.encryption.aes.content_required'))
       return
@@ -208,17 +222,10 @@ const SymmetricCryptoClient = ({ algorithm }: SymmetricCryptoClientProps) => {
       toast.warning(t('app.encryption.aes.password_required'))
       return
     }
-    if (isInputTooLarge) {
-      toast.warning(
-        t('app.encryption.symmetric.warning.too_large', {
-          limit: metricNumberFormatter.format(MAX_INPUT_CHARS)
-        })
-      )
-      return
-    }
 
+    setIsProcessing(true)
     try {
-      const nextResult = cryptoFn(content, secret, options, operation === 'encrypt')
+      const nextResult = await cryptoFn(content, secret, options, operation === 'encrypt')
       if (operation === 'decrypt' && !nextResult) {
         throw new Error('app.encryption.aes.decrypt_failed_empty')
       }
@@ -234,6 +241,8 @@ const SymmetricCryptoClient = ({ algorithm }: SymmetricCryptoClientProps) => {
         )
         setResult('')
       }
+    } finally {
+      setIsProcessing(false)
     }
   }
 
@@ -262,7 +271,7 @@ const SymmetricCryptoClient = ({ algorithm }: SymmetricCryptoClientProps) => {
   }
 
   const useOutputAsInput = () => {
-    setContent(result)
+    setContent(result.slice(0, MAX_INPUT_CHARS))
     setOperation('decrypt')
     setResult('')
   }
@@ -410,7 +419,7 @@ const SymmetricCryptoClient = ({ algorithm }: SymmetricCryptoClientProps) => {
                 id={`${algorithm}-content`}
                 rows={8}
                 value={content}
-                onChange={event => setContent(event.target.value)}
+                onChange={event => setContent(event.target.value.slice(0, MAX_INPUT_CHARS))}
                 placeholder={t('app.encryption.symmetric.content_placeholder')}
                 className="font-mono"
               />
@@ -425,8 +434,9 @@ const SymmetricCryptoClient = ({ algorithm }: SymmetricCryptoClientProps) => {
                   id={`${algorithm}-secret`}
                   type={showSecret ? 'text' : 'password'}
                   value={secret}
-                  onChange={event => setSecret(event.target.value)}
+                  onChange={event => setSecret(event.target.value.slice(0, MAX_SECRET_CHARS))}
                   placeholder={meta.defaultKey}
+                  maxLength={MAX_SECRET_CHARS}
                   className="font-mono"
                 />
               </div>
@@ -448,8 +458,9 @@ const SymmetricCryptoClient = ({ algorithm }: SymmetricCryptoClientProps) => {
               <Input
                 id={`${algorithm}-iv`}
                 value={iv}
-                onChange={event => setIv(event.target.value)}
+                onChange={event => setIv(event.target.value.slice(0, MAX_IV_CHARS))}
                 placeholder={t('app.encryption.aes.iv_placeholder')}
+                maxLength={MAX_IV_CHARS}
                 className="font-mono"
               />
             </div>
@@ -495,6 +506,8 @@ const SymmetricCryptoClient = ({ algorithm }: SymmetricCryptoClientProps) => {
             <Button
               type="submit"
               variant="primary"
+              loading={isProcessing}
+              disabled={isProcessing}
               icon={
                 operation === 'encrypt' ? (
                   <Lock className="h-4 w-4" />
@@ -502,7 +515,6 @@ const SymmetricCryptoClient = ({ algorithm }: SymmetricCryptoClientProps) => {
                   <Unlock className="h-4 w-4" />
                 )
               }
-              disabled={isInputTooLarge}
             >
               {operation === 'encrypt'
                 ? t('app.encryption.aes.encrypt')

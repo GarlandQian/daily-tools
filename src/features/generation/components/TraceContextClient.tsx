@@ -21,10 +21,16 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
+import { InputCapNotice } from '@/components/ui/input-cap-notice'
 import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
+import {
+  createOutputPreview,
+  isOutputPreviewLimited,
+  OUTPUT_PREVIEW_CHARS
+} from '@/utils/outputPreview'
 
 type AuditSeverity = 'error' | 'ok' | 'warn'
 type OutputFormat =
@@ -547,7 +553,16 @@ const TraceContextClient = () => {
   const deferredWorkspace = useDeferredValue(workspace)
 
   const traceparent = useMemo(() => buildTraceparent(draft), [draft])
-  const output = useMemo(() => buildOutput(draft, outputFormat), [draft, outputFormat])
+  const outputPreviewSource = useMemo(() => buildOutput(draft, outputFormat), [draft, outputFormat])
+  const outputPreview = useMemo(
+    () => createOutputPreview(outputPreviewSource),
+    [outputPreviewSource]
+  )
+  const outputPreviewLimited = isOutputPreviewLimited(outputPreviewSource)
+  const buildCurrentOutput = useCallback(
+    () => buildOutput(draft, outputFormat),
+    [draft, outputFormat]
+  )
   const headerBytes = useMemo(
     () => new TextEncoder().encode(getHeaderLines(draft).join('\n')).length,
     [draft]
@@ -803,6 +818,10 @@ const TraceContextClient = () => {
     [audits]
   )
 
+  const updateWorkspace = useCallback((value: string) => {
+    setWorkspace(value.length > MAX_WORKSPACE_LENGTH ? value.slice(0, MAX_WORKSPACE_LENGTH) : value)
+  }, [])
+
   const handleGenerate = useCallback(() => {
     setDraft(prev => ({
       ...prev,
@@ -818,21 +837,24 @@ const TraceContextClient = () => {
     }))
   }, [])
 
-  const handleApplyPreset = useCallback((preset: TracePreset) => {
-    setDraft(preset.value)
-    setWorkspace(preset.workspace)
-  }, [])
+  const handleApplyPreset = useCallback(
+    (preset: TracePreset) => {
+      setDraft(preset.value)
+      updateWorkspace(preset.workspace)
+    },
+    [updateWorkspace]
+  )
 
   const handleReset = useCallback(() => {
     setDraft(DEFAULT_DRAFT)
     setAuditQuery('')
     setOutputFormat('headers')
-    setWorkspace(PRESET_DRAFTS[0]?.workspace ?? '')
-  }, [])
+    updateWorkspace(PRESET_DRAFTS[0]?.workspace ?? '')
+  }, [updateWorkspace])
 
   const handleUseOutput = useCallback(() => {
-    setWorkspace(buildOutput(draft, 'headers'))
-  }, [draft])
+    updateWorkspace(buildOutput(draft, 'headers'))
+  }, [draft, updateWorkspace])
 
   const handleAdoptParsed = useCallback(() => {
     if (!parsed.traceparent) return
@@ -1066,11 +1088,12 @@ const TraceContextClient = () => {
           <CardContent className="space-y-4">
             <Textarea
               value={workspace}
-              onChange={event => setWorkspace(event.target.value.slice(0, MAX_WORKSPACE_LENGTH))}
+              onChange={event => updateWorkspace(event.target.value)}
               className="min-h-[220px] font-mono"
               spellCheck={false}
               placeholder={t('app.generation.trace_context.workspace_placeholder')}
             />
+            <InputCapNotice visible={workspaceTruncated} limit={MAX_WORKSPACE_LENGTH} />
             <div className="flex flex-wrap gap-2">
               <Button type="button" variant="default" onClick={handleUseOutput}>
                 {t('app.generation.trace_context.use_output')}
@@ -1083,7 +1106,7 @@ const TraceContextClient = () => {
               >
                 {t('app.generation.trace_context.adopt_parsed')}
               </Button>
-              <Button type="button" variant="ghost" onClick={() => setWorkspace('')}>
+              <Button type="button" variant="ghost" onClick={() => updateWorkspace('')}>
                 {t('public.clear')}
               </Button>
             </div>
@@ -1152,7 +1175,7 @@ const TraceContextClient = () => {
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-muted)]" />
               <Input
                 value={auditQuery}
-                onChange={event => setAuditQuery(event.target.value)}
+                onChange={event => setAuditQuery(event.target.value.slice(0, 160))}
                 className="pl-9"
                 placeholder={t('app.generation.trace_context.audit_search')}
               />
@@ -1215,7 +1238,7 @@ const TraceContextClient = () => {
                 type="button"
                 variant="default"
                 icon={<Copy className="h-4 w-4" />}
-                onClick={() => void copy(output)}
+                onClick={() => void copy(buildCurrentOutput())}
                 className="self-end"
               >
                 {t('public.copy')}
@@ -1233,7 +1256,9 @@ const TraceContextClient = () => {
                 type="button"
                 variant="default"
                 icon={<Download className="h-4 w-4" />}
-                onClick={() => downloadText(output, downloadMeta.filename, downloadMeta.type)}
+                onClick={() =>
+                  downloadText(buildCurrentOutput(), downloadMeta.filename, downloadMeta.type)
+                }
                 className="self-end"
               >
                 {t('app.generation.trace_context.download')}
@@ -1246,9 +1271,17 @@ const TraceContextClient = () => {
                 {t(`app.generation.trace_context.output.${outputFormat}`)}
               </div>
               <pre className="max-h-[360px] overflow-auto whitespace-pre-wrap break-all font-mono text-xs text-[var(--text-primary)]">
-                {output}
+                {outputPreview}
               </pre>
             </div>
+            {outputPreviewLimited ? (
+              <p className="text-xs leading-5 text-amber-600 dark:text-amber-300">
+                {t('public.output_preview_limited', {
+                  total: outputPreviewSource.length.toLocaleString(),
+                  visible: OUTPUT_PREVIEW_CHARS.toLocaleString()
+                })}
+              </p>
+            ) : null}
           </CardContent>
         </Card>
       </div>

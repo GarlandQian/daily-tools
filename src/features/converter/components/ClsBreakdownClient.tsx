@@ -26,6 +26,12 @@ import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
+import {
+  createOutputPreview,
+  isOutputPreviewLimited,
+  OUTPUT_PREVIEW_CHARS,
+  OUTPUT_PREVIEW_ROWS
+} from '@/utils/outputPreview'
 
 const DEVICES = ['mobile', 'desktop'] as const
 const IMPACT_TYPES = [
@@ -770,6 +776,7 @@ export default function ClsBreakdownClient() {
   const { copy } = useCopy()
   const [draft, setDraft] = useState<ClsDraft>(DEFAULT_DRAFT)
   const [workspace, setWorkspace] = useState(PRESETS[0]?.workspace ?? '')
+  const [isWorkspaceCapped, setIsWorkspaceCapped] = useState(false)
   const [outputType, setOutputType] = useState<OutputType>('observer')
   const [auditQuery, setAuditQuery] = useState('')
   const [shiftQuery, setShiftQuery] = useState('')
@@ -778,14 +785,47 @@ export default function ClsBreakdownClient() {
   const deferredAuditQuery = useDeferredValue(auditQuery)
   const deferredShiftQuery = useDeferredValue(shiftQuery)
 
-  const parsed = useMemo(() => parseWorkspace(deferredWorkspace), [deferredWorkspace])
+  const parsed = useMemo(() => {
+    const next = parseWorkspace(deferredWorkspace)
+
+    if (!isWorkspaceCapped || next.errors.includes('capped_input')) return next
+
+    return { ...next, errors: [...next.errors, 'capped_input'] }
+  }, [deferredWorkspace, isWorkspaceCapped])
   const findings = useMemo(() => auditCls(draft, parsed), [draft, parsed])
   const score = useMemo(() => getScore(findings), [findings])
-  const output = useMemo(
+  const outputPreviewParsed = useMemo<ParsedWorkspace>(
+    () => ({
+      errors: parsed.errors.slice(0, OUTPUT_PREVIEW_ROWS),
+      shifts: parsed.shifts.slice(0, OUTPUT_PREVIEW_ROWS)
+    }),
+    [parsed.errors, parsed.shifts]
+  )
+  const outputPreviewFindings = useMemo(() => findings.slice(0, OUTPUT_PREVIEW_ROWS), [findings])
+  const outputPreviewSource = useMemo(
+    () => buildOutput(draft, outputPreviewParsed, outputPreviewFindings, outputType),
+    [draft, outputPreviewFindings, outputPreviewParsed, outputType]
+  )
+  const outputPreview = useMemo(
+    () => createOutputPreview(outputPreviewSource),
+    [outputPreviewSource]
+  )
+  const outputPreviewLimited = isOutputPreviewLimited(outputPreviewSource)
+  const outputPreviewUsesParsedRows =
+    outputType === 'markdown' || outputType === 'json' || outputType === 'csv'
+  const outputPreviewUsesFindings = outputType === 'markdown' || outputType === 'json'
+  const outputPreviewVisibleRows =
+    (outputPreviewUsesParsedRows ? outputPreviewParsed.shifts.length : 0) +
+    (outputPreviewUsesFindings ? outputPreviewFindings.length : 0)
+  const outputPreviewTotalRows =
+    (outputPreviewUsesParsedRows ? parsed.shifts.length : 0) +
+    (outputPreviewUsesFindings ? findings.length : 0)
+  const outputPreviewRowsLimited = outputPreviewTotalRows > outputPreviewVisibleRows
+  const buildCurrentOutput = useCallback(
     () => buildOutput(draft, parsed, findings, outputType),
     [draft, findings, outputType, parsed]
   )
-  const csvOutput = useMemo(() => buildCsv(draft, parsed), [draft, parsed])
+  const buildCurrentCsv = useCallback(() => buildCsv(draft, parsed), [draft, parsed])
   const rows = useMemo(() => [draftShift(draft), ...parsed.shifts], [draft, parsed.shifts])
   const currentShift = useMemo(() => draftShift(draft), [draft])
   const filteredFindings = useMemo(() => {
@@ -823,18 +863,28 @@ export default function ClsBreakdownClient() {
     setDraft(current => ({ ...current, [key]: value }))
   }
 
-  const applyPreset = useCallback((preset: Preset) => {
-    setDraft(preset.draft)
-    setWorkspace(preset.workspace)
+  const updateWorkspace = useCallback((value: string) => {
+    const capped = value.length > WORKSPACE_LIMIT
+
+    setIsWorkspaceCapped(capped)
+    setWorkspace(capped ? value.slice(0, WORKSPACE_LIMIT) : value)
   }, [])
+
+  const applyPreset = useCallback(
+    (preset: Preset) => {
+      setDraft(preset.draft)
+      updateWorkspace(preset.workspace)
+    },
+    [updateWorkspace]
+  )
 
   const reset = useCallback(() => {
     setDraft(DEFAULT_DRAFT)
-    setWorkspace(PRESETS[0]?.workspace ?? '')
+    updateWorkspace(PRESETS[0]?.workspace ?? '')
     setOutputType('observer')
     setAuditQuery('')
     setShiftQuery('')
-  }, [])
+  }, [updateWorkspace])
 
   const copySummary = () => {
     copy(
@@ -1187,7 +1237,7 @@ export default function ClsBreakdownClient() {
           <CardContent className="space-y-4">
             <Textarea
               value={workspace}
-              onChange={event => setWorkspace(event.target.value.slice(0, WORKSPACE_LIMIT))}
+              onChange={event => updateWorkspace(event.target.value)}
               placeholder={t('app.converter.cls_breakdown.workspace_placeholder')}
               className="min-h-[640px] font-mono"
               spellCheck={false}
@@ -1205,7 +1255,7 @@ export default function ClsBreakdownClient() {
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => setWorkspace('')}
+                onClick={() => updateWorkspace('')}
                 className="w-full sm:w-auto"
               >
                 <Trash2 className="h-4 w-4" />
@@ -1229,7 +1279,7 @@ export default function ClsBreakdownClient() {
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-tertiary)]" />
               <Input
                 value={auditQuery}
-                onChange={event => setAuditQuery(event.target.value)}
+                onChange={event => setAuditQuery(event.target.value.slice(0, 160))}
                 placeholder={t('app.converter.cls_breakdown.audit_search')}
                 className="pl-10"
               />
@@ -1241,12 +1291,12 @@ export default function ClsBreakdownClient() {
                   className={`rounded-xl border px-3 py-2 text-xs ${levelClass(finding.level)}`}
                 >
                   <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
-                    <span className="min-w-0 break-words">
+                    <span className="min-w-0 break-all leading-5">
                       <span className="font-semibold">{finding.subject}</span>
-                      <span className="mx-2">/</span>
+                      <span className="mx-2 inline-block">/</span>
                       {t(`app.converter.cls_breakdown.audit.${finding.key}`)}
                     </span>
-                    <span className="font-medium">
+                    <span className="shrink-0 font-medium">
                       {t(`app.converter.cls_breakdown.level.${finding.level}`)}
                     </span>
                   </div>
@@ -1282,12 +1332,28 @@ export default function ClsBreakdownClient() {
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Textarea readOnly value={output} className="min-h-[380px] font-mono" />
+            <Textarea readOnly value={outputPreview} className="min-h-[380px] font-mono" />
+            {outputPreviewLimited && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('public.output_preview_limited', {
+                  total: outputPreviewSource.length.toLocaleString(),
+                  visible: OUTPUT_PREVIEW_CHARS.toLocaleString()
+                })}
+              </p>
+            )}
+            {outputPreviewRowsLimited && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('public.output_preview_rows_limited', {
+                  total: outputPreviewTotalRows.toLocaleString(),
+                  visible: outputPreviewVisibleRows.toLocaleString()
+                })}
+              </p>
+            )}
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => copy(output)}
+                onClick={() => copy(buildCurrentOutput())}
                 className="w-full sm:w-auto"
               >
                 <Copy className="h-4 w-4" />
@@ -1297,7 +1363,11 @@ export default function ClsBreakdownClient() {
                 type="button"
                 variant="outline"
                 onClick={() =>
-                  downloadText(output, 'cls-breakdown-output.txt', 'text/plain;charset=utf-8')
+                  downloadText(
+                    buildCurrentOutput(),
+                    'cls-breakdown-output.txt',
+                    'text/plain;charset=utf-8'
+                  )
                 }
                 className="w-full sm:w-auto"
               >
@@ -1308,7 +1378,7 @@ export default function ClsBreakdownClient() {
                 type="button"
                 variant="outline"
                 onClick={() =>
-                  downloadText(csvOutput, 'cls-breakdown.csv', 'text/csv;charset=utf-8')
+                  downloadText(buildCurrentCsv(), 'cls-breakdown.csv', 'text/csv;charset=utf-8')
                 }
                 className="w-full sm:w-auto"
               >
@@ -1333,7 +1403,7 @@ export default function ClsBreakdownClient() {
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-tertiary)]" />
               <Input
                 value={shiftQuery}
-                onChange={event => setShiftQuery(event.target.value)}
+                onChange={event => setShiftQuery(event.target.value.slice(0, 160))}
                 placeholder={t('app.converter.cls_breakdown.shift_search')}
                 className="pl-10"
               />

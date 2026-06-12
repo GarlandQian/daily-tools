@@ -45,6 +45,7 @@ interface KeyInfo {
 }
 
 const HISTORY_LIMIT = 40
+const SEARCH_LIMIT = 120
 const shortcutOrder = ['ctrlKey', 'altKey', 'shiftKey', 'metaKey'] as const
 const shortcutLabels: Record<(typeof shortcutOrder)[number], string> = {
   altKey: 'Alt',
@@ -410,8 +411,9 @@ const KeyCodeClient = () => {
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-tertiary)]" />
               <Input
                 value={search}
-                onChange={event => setSearch(event.target.value)}
+                onChange={event => setSearch(event.target.value.slice(0, SEARCH_LIMIT))}
                 placeholder={t('app.social.keycode.search')}
+                maxLength={SEARCH_LIMIT}
                 className="pl-9"
               />
             </div>

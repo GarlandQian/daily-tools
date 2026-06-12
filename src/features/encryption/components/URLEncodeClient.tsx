@@ -1,6 +1,14 @@
 'use client'
 
-import { ArrowRightLeft, Copy, FlaskConical, Link2, ListFilter, Trash2 } from 'lucide-react'
+import {
+  ArrowRightLeft,
+  Copy,
+  Download,
+  FlaskConical,
+  Link2,
+  ListFilter,
+  Trash2
+} from 'lucide-react'
 import { useCallback, useDeferredValue, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -11,7 +19,13 @@ import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
+import { useToast } from '@/components/ui/toast'
 import { useCopy } from '@/hooks/useCopy'
+import {
+  createOutputPreview,
+  isOutputPreviewLimited,
+  OUTPUT_PREVIEW_CHARS
+} from '@/utils/outputPreview'
 
 type EncodeScope = 'component' | 'url'
 type Mode = 'encode' | 'decode'
@@ -21,7 +35,16 @@ interface QueryParamRow {
   value: string
 }
 
+interface QueryParamResult {
+  limited: boolean
+  rows: QueryParamRow[]
+  total: number
+}
+
 const MAX_URL_INPUT_CHARS = 120000
+const MAX_URL_LIVE_CONVERSION_CHARS = 30000
+const MAX_QUERY_PARSE_CHARS = 60000
+const MAX_QUERY_COLLECT_ROWS = 160
 const MAX_QUERY_ROWS = 24
 
 const URL_SAMPLE = 'https://daily-tools.dev/search?q=hello world&tag=ui/glass&redirect=/tools?a=1'
@@ -62,9 +85,44 @@ const transformInput = (
     .join('\n')
 }
 
-const collectQueryParams = (value: string): QueryParamRow[] => {
-  const trimmed = value.trim()
-  if (!trimmed) return []
+const getLiveUrlInput = (value: string, mode: Mode) => {
+  const preview = value.slice(0, MAX_URL_LIVE_CONVERSION_CHARS)
+  if (mode !== 'decode' || preview.length === value.length) return preview
+
+  const lastPercent = preview.lastIndexOf('%')
+  if (lastPercent >= 0 && preview.length - lastPercent < 3) return preview.slice(0, lastPercent)
+  return preview
+}
+
+const convertUrl = (
+  value: string,
+  mode: Mode,
+  scope: EncodeScope,
+  plusForSpaces: boolean,
+  lineByLine: boolean
+) => {
+  try {
+    return {
+      errorKey: null as string | null,
+      output: transformInput(value, mode, scope, plusForSpaces, lineByLine),
+      success: true
+    }
+  } catch {
+    return {
+      errorKey: 'app.encryption.urlEncode.error.decode_failed',
+      output: '',
+      success: false
+    }
+  }
+}
+
+const emptyQueryResult = (): QueryParamResult => ({ limited: false, rows: [], total: 0 })
+
+const collectQueryParams = (value: string): QueryParamResult => {
+  const source =
+    value.length > MAX_QUERY_PARSE_CHARS ? value.slice(0, MAX_QUERY_PARSE_CHARS) : value
+  const trimmed = source.trim()
+  if (!trimmed) return emptyQueryResult()
 
   let search = ''
   try {
@@ -76,21 +134,44 @@ const collectQueryParams = (value: string): QueryParamRow[] => {
 
   const hashIndex = search.indexOf('#')
   const queryText = (hashIndex >= 0 ? search.slice(0, hashIndex) : search).replace(/^\?/u, '')
-  if (!/[=&]/u.test(queryText)) return []
+  if (!/[=&]/u.test(queryText)) return emptyQueryResult()
 
   const params = new URLSearchParams(queryText)
-  return Array.from(params.entries()).map(([key, value]) => ({ key, value }))
+  const rows: QueryParamRow[] = []
+  let total = 0
+  for (const [key, value] of params.entries()) {
+    total += 1
+    if (rows.length < MAX_QUERY_COLLECT_ROWS) rows.push({ key, value })
+  }
+
+  return {
+    limited: value.length > MAX_QUERY_PARSE_CHARS || total > rows.length,
+    rows,
+    total
+  }
+}
+
+const downloadText = (content: string, filename: string, type: string) => {
+  const blob = new Blob([content], { type })
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  anchor.click()
+  URL.revokeObjectURL(url)
 }
 
 export default function URLEncodeClient() {
   const { t } = useTranslation()
   const { copy } = useCopy()
+  const toast = useToast()
 
   const [mode, setMode] = useState<Mode>('encode')
   const [scope, setScope] = useState<EncodeScope>('component')
   const [plusForSpaces, setPlusForSpaces] = useState(false)
   const [lineByLine, setLineByLine] = useState(false)
   const [text, setText] = useState('')
+  const [isInputCapped, setIsInputCapped] = useState(false)
 
   const deferredText = useDeferredValue(text)
   const deferredMode = useDeferredValue(mode)
@@ -99,34 +180,42 @@ export default function URLEncodeClient() {
   const deferredLineByLine = useDeferredValue(lineByLine)
 
   const safeInput = useMemo(() => deferredText.slice(0, MAX_URL_INPUT_CHARS), [deferredText])
+  const liveConversionDeferred = safeInput.length > MAX_URL_LIVE_CONVERSION_CHARS
+  const liveInput = useMemo(
+    () => getLiveUrlInput(safeInput, deferredMode),
+    [deferredMode, safeInput]
+  )
 
   const conversion = useMemo(() => {
-    if (!safeInput) {
-      return { error: null as string | null, output: '', success: true }
-    }
-
-    try {
+    if (!liveInput) {
       return {
-        error: null,
-        output: transformInput(
-          safeInput,
-          deferredMode,
-          deferredScope,
-          deferredPlusForSpaces,
-          deferredLineByLine
-        ),
+        error: null as string | null,
+        errorKey: null as string | null,
+        output: '',
         success: true
       }
-    } catch {
-      return {
-        error: t('app.encryption.urlEncode.error.decode_failed'),
-        output: '',
-        success: false
-      }
     }
-  }, [deferredLineByLine, deferredMode, deferredPlusForSpaces, deferredScope, safeInput, t])
 
-  const queryRows = useMemo(() => collectQueryParams(safeInput), [safeInput])
+    const result = convertUrl(
+      liveInput,
+      deferredMode,
+      deferredScope,
+      deferredPlusForSpaces,
+      deferredLineByLine
+    )
+
+    return {
+      error: result.errorKey ? t(result.errorKey) : null,
+      errorKey: result.errorKey,
+      output: result.output,
+      success: result.success
+    }
+  }, [deferredLineByLine, deferredMode, deferredPlusForSpaces, deferredScope, liveInput, t])
+  const outputPreview = useMemo(() => createOutputPreview(conversion.output), [conversion.output])
+  const outputPreviewLimited = isOutputPreviewLimited(conversion.output)
+
+  const queryResult = useMemo(() => collectQueryParams(safeInput), [safeInput])
+  const queryRows = queryResult.rows
   const visibleQueryRows = queryRows.slice(0, MAX_QUERY_ROWS)
   const percentEscapes = useMemo(
     () => countPercentEscapes(deferredMode === 'encode' ? conversion.output : safeInput),
@@ -136,33 +225,100 @@ export default function URLEncodeClient() {
   const stats = useMemo(
     () => [
       { label: t('app.encryption.urlEncode.stats.input_chars'), value: safeInput.length },
-      { label: t('app.encryption.urlEncode.stats.output_chars'), value: conversion.output.length },
+      {
+        label: t('app.encryption.urlEncode.stats.output_chars'),
+        value: liveConversionDeferred ? `${conversion.output.length}+` : conversion.output.length
+      },
       { label: t('app.encryption.urlEncode.stats.escapes'), value: percentEscapes },
-      { label: t('app.encryption.urlEncode.stats.query'), value: queryRows.length },
+      {
+        label: t('app.encryption.urlEncode.stats.query'),
+        value: queryResult.limited ? `${queryResult.total}+` : queryResult.total
+      },
       {
         label: t('app.encryption.urlEncode.stats.ratio'),
         value: formatRatio(safeInput.length, conversion.output.length)
       }
     ],
-    [conversion.output.length, percentEscapes, queryRows.length, safeInput.length, t]
+    [
+      conversion.output.length,
+      liveConversionDeferred,
+      percentEscapes,
+      queryResult.limited,
+      queryResult.total,
+      safeInput.length,
+      t
+    ]
   )
 
-  const warning =
-    deferredText.length > MAX_URL_INPUT_CHARS
-      ? t('app.encryption.urlEncode.warning.truncated', { count: MAX_URL_INPUT_CHARS })
-      : null
+  const warnings = useMemo(() => {
+    const messages: string[] = []
+    if (isInputCapped || deferredText.length > MAX_URL_INPUT_CHARS) {
+      messages.push(t('app.encryption.urlEncode.warning.truncated', { count: MAX_URL_INPUT_CHARS }))
+    }
+    if (liveConversionDeferred) {
+      messages.push(
+        t('app.encryption.urlEncode.warning.live_output_deferred', {
+          total: safeInput.length.toLocaleString(),
+          visible: liveInput.length.toLocaleString()
+        })
+      )
+    }
+    return messages
+  }, [
+    deferredText.length,
+    isInputCapped,
+    liveConversionDeferred,
+    liveInput.length,
+    safeInput.length,
+    t
+  ])
+
+  const updateText = useCallback((value: string) => {
+    const isCapped = value.length > MAX_URL_INPUT_CHARS
+    setIsInputCapped(isCapped)
+    setText(isCapped ? value.slice(0, MAX_URL_INPUT_CHARS) : value)
+  }, [])
 
   const loadSample = useCallback(() => {
     setMode('encode')
     setScope('url')
     setPlusForSpaces(false)
     setLineByLine(false)
+    setIsInputCapped(false)
     setText(URL_SAMPLE)
   }, [])
 
+  const buildCurrentOutput = useCallback(
+    () => convertUrl(safeInput, mode, scope, plusForSpaces, lineByLine),
+    [lineByLine, mode, plusForSpaces, safeInput, scope]
+  )
+
   const handleUseOutput = () => {
-    setText(conversion.output)
+    const result = buildCurrentOutput()
+    if (!result.success) {
+      toast.error(t(result.errorKey ?? 'public.error'))
+      return
+    }
+    updateText(result.output)
     setMode(current => (current === 'encode' ? 'decode' : 'encode'))
+  }
+
+  const handleCopyOutput = () => {
+    const result = buildCurrentOutput()
+    if (!result.success) {
+      toast.error(t(result.errorKey ?? 'public.error'))
+      return
+    }
+    void copy(result.output)
+  }
+
+  const handleDownload = () => {
+    const result = buildCurrentOutput()
+    if (!result.success) {
+      toast.error(t(result.errorKey ?? 'public.error'))
+      return
+    }
+    downloadText(result.output, 'daily-tools-url-encoded.txt', 'text/plain;charset=utf-8')
   }
 
   const queryJson = useMemo(() => JSON.stringify(queryRows, null, 2), [queryRows])
@@ -194,7 +350,7 @@ export default function URLEncodeClient() {
                 type="button"
                 variant="ghost"
                 icon={<Trash2 className="h-4 w-4" />}
-                onClick={() => setText('')}
+                onClick={() => updateText('')}
               >
                 {t('public.clear')}
               </Button>
@@ -266,7 +422,7 @@ export default function URLEncodeClient() {
                 id="url-input"
                 rows={11}
                 value={text}
-                onChange={event => setText(event.target.value)}
+                onChange={event => updateText(event.target.value)}
                 placeholder={
                   mode === 'encode'
                     ? t('app.encryption.urlEncode.encode_placeholder')
@@ -285,7 +441,7 @@ export default function URLEncodeClient() {
                     size="sm"
                     variant="ghost"
                     icon={<ArrowRightLeft className="h-4 w-4" />}
-                    disabled={!conversion.success || !conversion.output}
+                    disabled={!conversion.success || !safeInput}
                     onClick={handleUseOutput}
                   >
                     {t('app.encryption.urlEncode.use_output')}
@@ -293,9 +449,19 @@ export default function URLEncodeClient() {
                   <Button
                     type="button"
                     size="sm"
+                    variant="ghost"
+                    icon={<Download className="h-4 w-4" />}
+                    disabled={!conversion.success || !safeInput}
+                    onClick={handleDownload}
+                  >
+                    {t('app.encryption.urlEncode.download')}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
                     icon={<Copy className="h-4 w-4" />}
-                    disabled={!conversion.success || !conversion.output}
-                    onClick={() => copy(conversion.output)}
+                    disabled={!conversion.success || !safeInput}
+                    onClick={handleCopyOutput}
                   >
                     {t('public.copy')}
                   </Button>
@@ -304,19 +470,30 @@ export default function URLEncodeClient() {
               <Textarea
                 id="url-output"
                 rows={11}
-                value={conversion.output}
+                value={outputPreview}
                 readOnly
                 placeholder={t('app.encryption.urlEncode.output_placeholder')}
                 className="resize-none font-mono"
               />
+              {outputPreviewLimited && (
+                <p className="text-xs leading-5 text-amber-600 dark:text-amber-300">
+                  {t('public.output_preview_action_limited', {
+                    total: conversion.output.length.toLocaleString(),
+                    visible: OUTPUT_PREVIEW_CHARS.toLocaleString()
+                  })}
+                </p>
+              )}
             </div>
           </div>
 
-          {warning && (
-            <p className="rounded-lg border border-[var(--warning)] bg-[var(--warning-subtle)] px-3 py-2 text-sm text-[var(--warning)]">
-              {warning}
+          {warnings.map(message => (
+            <p
+              key={message}
+              className="rounded-lg border border-[var(--warning)] bg-[var(--warning-subtle)] px-3 py-2 text-sm text-[var(--warning)]"
+            >
+              {message}
             </p>
-          )}
+          ))}
 
           {conversion.error && (
             <p className="rounded-lg border border-[var(--error)] bg-[var(--error-subtle)] px-3 py-2 text-sm text-[var(--error)]">
@@ -337,7 +514,7 @@ export default function URLEncodeClient() {
                 </CardTitle>
                 <CardDescription className="mt-2">
                   {t('app.encryption.urlEncode.query_params_hint', {
-                    count: queryRows.length,
+                    count: queryResult.total,
                     limit: MAX_QUERY_ROWS
                   })}
                 </CardDescription>

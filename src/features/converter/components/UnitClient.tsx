@@ -125,6 +125,7 @@ const unitData: Record<UnitCategory, { base: string; units: Record<string, UnitD
 }
 
 const UNIT_CATEGORIES = Object.keys(unitData) as UnitCategory[]
+const UNIT_VALUE_LIMIT = 40
 
 const PRESETS: UnitPreset[] = [
   {
@@ -239,7 +240,7 @@ const UnitClient = () => {
   const handleSwap = () => {
     setFromUnit(toUnit)
     setToUnit(fromUnit)
-    if (result !== null) setFromValue(String(result))
+    if (result !== null) setFromValue(String(result).slice(0, UNIT_VALUE_LIMIT))
   }
 
   const handleReset = () => {
@@ -254,7 +255,7 @@ const UnitClient = () => {
     setCategory(preset.category)
     setFromUnit(preset.fromUnit)
     setToUnit(preset.toUnit)
-    setFromValue(preset.value)
+    setFromValue(preset.value.slice(0, UNIT_VALUE_LIMIT))
   }
 
   const handleCopyResult = () => {
@@ -355,7 +356,7 @@ const UnitClient = () => {
             <Input
               type="number"
               value={fromValue}
-              onChange={event => setFromValue(event.target.value)}
+              onChange={event => setFromValue(event.target.value.slice(0, UNIT_VALUE_LIMIT))}
               className="h-14 font-mono text-3xl font-semibold"
             />
           </CardContent>

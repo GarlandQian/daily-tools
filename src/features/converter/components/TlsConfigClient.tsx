@@ -15,22 +15,31 @@ import {
   Sparkles,
   Trash2
 } from 'lucide-react'
-import { useDeferredValue, useMemo, useState } from 'react'
+import { useCallback, useDeferredValue, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
+import { InputCapNotice } from '@/components/ui/input-cap-notice'
 import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
+import {
+  createOutputPreview,
+  isOutputPreviewLimited,
+  OUTPUT_PREVIEW_CHARS
+} from '@/utils/outputPreview'
 
 const TLS_VERSIONS = ['TLSv1', 'TLSv1.1', 'TLSv1.2', 'TLSv1.3'] as const
 const OUTPUT_TYPES = ['nginx', 'apache', 'caddy', 'node', 'json'] as const
 const CIPHER_INPUT_LIMIT = 24000
 const CIPHER_LIMIT = 140
+const OUTPUT_PREVIEW_CIPHER_LIMIT = 80
+const OUTPUT_PREVIEW_FINDING_LIMIT = 40
+const VISIBLE_CIPHER_LIMIT = 42
 
 type TlsVersion = (typeof TLS_VERSIONS)[number]
 type OutputType = (typeof OUTPUT_TYPES)[number]
@@ -527,6 +536,19 @@ const buildOutput = (
 }
 
 const escapeCsv = (value: boolean | number | string) => `"${String(value).replaceAll('"', '""')}"`
+const buildCiphersCsv = (ciphers: ParsedCipher[]) =>
+  [
+    ['name', 'protocol', 'status', 'known', 'tags'],
+    ...ciphers.map(cipher => [
+      cipher.name,
+      cipher.protocol ?? '',
+      cipher.status,
+      String(cipher.known),
+      cipher.tags.join('|')
+    ])
+  ]
+    .map(row => row.map(escapeCsv).join(','))
+    .join('\n')
 
 const downloadText = (content: string, filename: string, type: string) => {
   const blob = new Blob([content], { type })
@@ -562,10 +584,35 @@ export default function TlsConfigClient() {
   const parsedCiphers = useMemo(() => parseCiphers(deferredCiphers), [deferredCiphers])
   const findings = useMemo(() => auditTls(draft, parsedCiphers), [draft, parsedCiphers])
   const score = useMemo(() => getScore(findings), [findings])
-  const output = useMemo(
+  const outputPreviewCiphers = useMemo(
+    () => parsedCiphers.slice(0, OUTPUT_PREVIEW_CIPHER_LIMIT),
+    [parsedCiphers]
+  )
+  const outputPreviewFindings = useMemo(
+    () => findings.slice(0, OUTPUT_PREVIEW_FINDING_LIMIT),
+    [findings]
+  )
+  const outputPreviewSource = useMemo(
+    () => buildOutput(draft, outputPreviewCiphers, outputPreviewFindings, outputType),
+    [draft, outputPreviewCiphers, outputPreviewFindings, outputType]
+  )
+  const outputPreview = useMemo(
+    () => createOutputPreview(outputPreviewSource),
+    [outputPreviewSource]
+  )
+  const outputPreviewLimited = isOutputPreviewLimited(outputPreviewSource)
+  const outputPreviewRowsLimited =
+    parsedCiphers.length > outputPreviewCiphers.length ||
+    findings.length > outputPreviewFindings.length
+  const buildCurrentOutput = useCallback(
     () => buildOutput(draft, parsedCiphers, findings, outputType),
     [draft, findings, outputType, parsedCiphers]
   )
+  const visibleCiphers = useMemo(
+    () => parsedCiphers.slice(0, VISIBLE_CIPHER_LIMIT),
+    [parsedCiphers]
+  )
+  const parsedCiphersLimited = parsedCiphers.length > visibleCiphers.length
   const metrics = useMemo(() => {
     const weak = parsedCiphers.filter(
       cipher => cipher.status === 'danger' || cipher.status === 'legacy'
@@ -590,23 +637,6 @@ export default function TlsConfigClient() {
       return haystack.includes(query)
     })
   }, [deferredReferenceQuery, t])
-  const csvOutput = useMemo(
-    () =>
-      [
-        ['name', 'protocol', 'status', 'known', 'tags'],
-        ...parsedCiphers.map(cipher => [
-          cipher.name,
-          cipher.protocol ?? '',
-          cipher.status,
-          String(cipher.known),
-          cipher.tags.join('|')
-        ])
-      ]
-        .map(row => row.map(escapeCsv).join(','))
-        .join('\n'),
-    [parsedCiphers]
-  )
-
   const updateDraft = <Key extends keyof TlsDraft>(key: Key, value: TlsDraft[Key]) => {
     setDraft(current => ({ ...current, [key]: value }))
   }
@@ -800,6 +830,10 @@ export default function TlsConfigClient() {
               placeholder={t('app.converter.tls_config.workspace_placeholder')}
               className="min-h-[360px] font-mono"
             />
+            <InputCapNotice
+              visible={draft.ciphers.length >= CIPHER_INPUT_LIMIT}
+              limit={CIPHER_INPUT_LIMIT}
+            />
             <div className="flex flex-wrap gap-2">
               <Button type="button" variant="outline" onClick={() => copy(draft.ciphers)}>
                 <Copy className="h-4 w-4" />
@@ -829,12 +863,12 @@ export default function TlsConfigClient() {
                 className={`rounded-xl border px-3 py-2 text-xs ${levelClass(finding.level)}`}
               >
                 <div className="flex items-start justify-between gap-3">
-                  <span>
+                  <span className="min-w-0 break-all leading-5">
                     <span className="font-semibold">{finding.subject}</span>
-                    <span className="mx-2">/</span>
+                    <span className="mx-2 inline-block">/</span>
                     {t(`app.converter.tls_config.audit.${finding.key}`)}
                   </span>
-                  <span className="font-medium">
+                  <span className="shrink-0 font-medium">
                     {t(`app.converter.tls_config.level.${finding.level}`)}
                   </span>
                 </div>
@@ -867,16 +901,36 @@ export default function TlsConfigClient() {
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Textarea readOnly value={output} className="min-h-[260px] font-mono" />
+            <Textarea readOnly value={outputPreview} className="min-h-[260px] font-mono" />
+            {outputPreviewLimited && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('public.output_preview_limited', {
+                  total: outputPreviewSource.length.toLocaleString(),
+                  visible: OUTPUT_PREVIEW_CHARS.toLocaleString()
+                })}
+              </p>
+            )}
+            {outputPreviewRowsLimited && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('public.output_preview_rows_limited', {
+                  total: (parsedCiphers.length + findings.length).toLocaleString(),
+                  visible: (
+                    outputPreviewCiphers.length + outputPreviewFindings.length
+                  ).toLocaleString()
+                })}
+              </p>
+            )}
             <div className="flex flex-wrap gap-2">
-              <Button type="button" variant="outline" onClick={() => copy(output)}>
+              <Button type="button" variant="outline" onClick={() => copy(buildCurrentOutput())}>
                 <Copy className="h-4 w-4" />
                 {t('app.converter.tls_config.copy_output')}
               </Button>
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => downloadText(output, 'tls-config.txt', 'text/plain;charset=utf-8')}
+                onClick={() =>
+                  downloadText(buildCurrentOutput(), 'tls-config.txt', 'text/plain;charset=utf-8')
+                }
               >
                 <Download className="h-4 w-4" />
                 {t('app.converter.tls_config.download_output')}
@@ -884,7 +938,13 @@ export default function TlsConfigClient() {
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => downloadText(csvOutput, 'tls-ciphers.csv', 'text/csv;charset=utf-8')}
+                onClick={() =>
+                  downloadText(
+                    buildCiphersCsv(parsedCiphers),
+                    'tls-ciphers.csv',
+                    'text/csv;charset=utf-8'
+                  )
+                }
               >
                 <Download className="h-4 w-4" />
                 {t('app.converter.tls_config.download_csv')}
@@ -904,35 +964,45 @@ export default function TlsConfigClient() {
           </CardHeader>
           <CardContent>
             {parsedCiphers.length ? (
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {parsedCiphers.slice(0, 42).map(cipher => (
-                  <div key={cipher.name} className="glass-input min-w-0 rounded-xl p-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <p className="break-all font-mono text-sm font-semibold text-[var(--text-primary)]">
-                        {cipher.name}
-                      </p>
-                      <span
-                        className={`shrink-0 rounded-full px-2 py-1 text-xs font-medium ${statusClass(cipher.status)}`}
-                      >
-                        {t(`app.converter.tls_config.status.${cipher.status}`)}
-                      </span>
-                    </div>
-                    <p className="mt-2 text-xs text-[var(--text-tertiary)]">
-                      {cipher.protocol ?? t('app.converter.tls_config.unknown')}
-                    </p>
-                    <div className="mt-2 flex flex-wrap gap-1">
-                      {cipher.tags.map(tag => (
+              <>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                  {visibleCiphers.map(cipher => (
+                    <div key={cipher.name} className="glass-input min-w-0 rounded-xl p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <p className="break-all font-mono text-sm font-semibold text-[var(--text-primary)]">
+                          {cipher.name}
+                        </p>
                         <span
-                          key={tag}
-                          className="rounded-full bg-[var(--bg-hover)] px-2 py-1 text-[10px] text-[var(--text-secondary)]"
+                          className={`shrink-0 rounded-full px-2 py-1 text-xs font-medium ${statusClass(cipher.status)}`}
                         >
-                          {tag}
+                          {t(`app.converter.tls_config.status.${cipher.status}`)}
                         </span>
-                      ))}
+                      </div>
+                      <p className="mt-2 text-xs text-[var(--text-tertiary)]">
+                        {cipher.protocol ?? t('app.converter.tls_config.unknown')}
+                      </p>
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {cipher.tags.map(tag => (
+                          <span
+                            key={tag}
+                            className="rounded-full bg-[var(--bg-hover)] px-2 py-1 text-[10px] text-[var(--text-secondary)]"
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+                {parsedCiphersLimited && (
+                  <p className="mt-3 text-xs leading-5 text-amber-600 dark:text-amber-300">
+                    {t('public.rows_render_limited', {
+                      total: parsedCiphers.length,
+                      visible: visibleCiphers.length
+                    })}
+                  </p>
+                )}
+              </>
             ) : (
               <div className="glass-input rounded-xl p-6 text-center text-sm text-[var(--text-secondary)]">
                 {t('app.converter.tls_config.empty')}
@@ -953,7 +1023,7 @@ export default function TlsConfigClient() {
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-tertiary)]" />
               <Input
                 value={referenceQuery}
-                onChange={event => setReferenceQuery(event.target.value)}
+                onChange={event => setReferenceQuery(event.target.value.slice(0, 160))}
                 placeholder={t('app.converter.tls_config.reference_search')}
                 className="pl-10"
               />

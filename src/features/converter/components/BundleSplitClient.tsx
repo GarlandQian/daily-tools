@@ -28,6 +28,12 @@ import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
+import {
+  createOutputPreview,
+  isOutputPreviewLimited,
+  OUTPUT_PREVIEW_CHARS,
+  OUTPUT_PREVIEW_ROWS
+} from '@/utils/outputPreview'
 
 const DEVICES = ['mobile', 'desktop'] as const
 const OUTPUT_TYPES = ['dynamic', 'next', 'budget', 'markdown', 'json', 'csv'] as const
@@ -850,6 +856,7 @@ export default function BundleSplitClient() {
   const { copy } = useCopy()
   const [draft, setDraft] = useState<BundleSplitDraft>(DEFAULT_DRAFT)
   const [workspace, setWorkspace] = useState(PRESETS[0]?.workspace ?? '')
+  const [isWorkspaceCapped, setIsWorkspaceCapped] = useState(false)
   const [outputType, setOutputType] = useState<OutputType>('dynamic')
   const [auditQuery, setAuditQuery] = useState('')
   const [parsedQuery, setParsedQuery] = useState('')
@@ -858,14 +865,55 @@ export default function BundleSplitClient() {
   const deferredAuditQuery = useDeferredValue(auditQuery)
   const deferredParsedQuery = useDeferredValue(parsedQuery)
 
-  const parsed = useMemo(() => parseWorkspace(deferredWorkspace), [deferredWorkspace])
+  const parsed = useMemo(() => {
+    const next = parseWorkspace(deferredWorkspace)
+
+    if (!isWorkspaceCapped || next.errors.includes('truncated')) return next
+
+    return { ...next, errors: [...next.errors, 'truncated'] }
+  }, [deferredWorkspace, isWorkspaceCapped])
   const findings = useMemo(() => auditBundle(draft, parsed), [draft, parsed])
   const score = useMemo(() => getScore(findings), [findings])
-  const output = useMemo(
+  const outputPreviewParsed = useMemo<ParsedWorkspace>(
+    () => ({
+      chunks: parsed.chunks.slice(0, OUTPUT_PREVIEW_ROWS),
+      errors: parsed.errors.slice(0, OUTPUT_PREVIEW_ROWS),
+      rawRows: parsed.rawRows.slice(0, OUTPUT_PREVIEW_ROWS),
+      routes: parsed.routes.slice(0, OUTPUT_PREVIEW_ROWS)
+    }),
+    [parsed.chunks, parsed.errors, parsed.rawRows, parsed.routes]
+  )
+  const outputPreviewFindings = useMemo(() => findings.slice(0, OUTPUT_PREVIEW_ROWS), [findings])
+  const outputPreviewSource = useMemo(
+    () => buildOutput(draft, outputPreviewParsed, outputPreviewFindings, outputType),
+    [draft, outputPreviewFindings, outputPreviewParsed, outputType]
+  )
+  const outputPreview = useMemo(
+    () => createOutputPreview(outputPreviewSource),
+    [outputPreviewSource]
+  )
+  const outputPreviewLimited = isOutputPreviewLimited(outputPreviewSource)
+  const outputPreviewUsesChunks =
+    outputType === 'markdown' || outputType === 'json' || outputType === 'csv'
+  const outputPreviewUsesRoutes = outputType === 'budget' || outputType === 'json'
+  const outputPreviewUsesRawRows = outputType === 'json'
+  const outputPreviewUsesFindings = outputType === 'markdown' || outputType === 'json'
+  const outputPreviewVisibleRows =
+    (outputPreviewUsesChunks ? outputPreviewParsed.chunks.length : 0) +
+    (outputPreviewUsesRoutes ? outputPreviewParsed.routes.length : 0) +
+    (outputPreviewUsesRawRows ? outputPreviewParsed.rawRows.length : 0) +
+    (outputPreviewUsesFindings ? outputPreviewFindings.length : 0)
+  const outputPreviewTotalRows =
+    (outputPreviewUsesChunks ? parsed.chunks.length : 0) +
+    (outputPreviewUsesRoutes ? parsed.routes.length : 0) +
+    (outputPreviewUsesRawRows ? parsed.rawRows.length : 0) +
+    (outputPreviewUsesFindings ? findings.length : 0)
+  const outputPreviewRowsLimited = outputPreviewTotalRows > outputPreviewVisibleRows
+  const buildCurrentOutput = useCallback(
     () => buildOutput(draft, parsed, findings, outputType),
     [draft, findings, outputType, parsed]
   )
-  const budgetCsv = useMemo(() => buildBudgetCsv(draft, parsed), [draft, parsed])
+  const buildCurrentBudgetCsv = useCallback(() => buildBudgetCsv(draft, parsed), [draft, parsed])
   const filteredFindings = useMemo(() => {
     const query = deferredAuditQuery.trim().toLowerCase()
     if (!query) return findings
@@ -903,18 +951,28 @@ export default function BundleSplitClient() {
     setDraft(current => ({ ...current, [key]: value }))
   }
 
-  const applyPreset = useCallback((preset: Preset) => {
-    setDraft(preset.draft)
-    setWorkspace(preset.workspace)
+  const updateWorkspace = useCallback((value: string) => {
+    const capped = value.length > WORKSPACE_LIMIT
+
+    setIsWorkspaceCapped(capped)
+    setWorkspace(capped ? value.slice(0, WORKSPACE_LIMIT) : value)
   }, [])
+
+  const applyPreset = useCallback(
+    (preset: Preset) => {
+      setDraft(preset.draft)
+      updateWorkspace(preset.workspace)
+    },
+    [updateWorkspace]
+  )
 
   const reset = useCallback(() => {
     setDraft(DEFAULT_DRAFT)
-    setWorkspace(PRESETS[0]?.workspace ?? '')
+    updateWorkspace(PRESETS[0]?.workspace ?? '')
     setOutputType('dynamic')
     setAuditQuery('')
     setParsedQuery('')
-  }, [])
+  }, [updateWorkspace])
 
   const copySummary = () => {
     copy(
@@ -1235,7 +1293,7 @@ export default function BundleSplitClient() {
           <CardContent className="space-y-4">
             <Textarea
               value={workspace}
-              onChange={event => setWorkspace(event.target.value.slice(0, WORKSPACE_LIMIT))}
+              onChange={event => updateWorkspace(event.target.value)}
               placeholder={t('app.converter.bundle_split.workspace_placeholder')}
               className="min-h-[470px] font-mono"
               spellCheck={false}
@@ -1253,7 +1311,7 @@ export default function BundleSplitClient() {
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => setWorkspace('')}
+                onClick={() => updateWorkspace('')}
                 className="w-full sm:w-auto"
               >
                 <Trash2 className="h-4 w-4" />
@@ -1277,7 +1335,7 @@ export default function BundleSplitClient() {
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-tertiary)]" />
               <Input
                 value={auditQuery}
-                onChange={event => setAuditQuery(event.target.value)}
+                onChange={event => setAuditQuery(event.target.value.slice(0, 160))}
                 placeholder={t('app.converter.bundle_split.audit_search')}
                 className="pl-10"
               />
@@ -1289,12 +1347,12 @@ export default function BundleSplitClient() {
                   className={`rounded-xl border px-3 py-2 text-xs ${levelClass(finding.level)}`}
                 >
                   <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
-                    <span className="min-w-0 break-words">
+                    <span className="min-w-0 break-all leading-5">
                       <span className="font-semibold">{finding.subject}</span>
-                      <span className="mx-2">/</span>
+                      <span className="mx-2 inline-block">/</span>
                       {t(`app.converter.bundle_split.audit.${finding.key}`)}
                     </span>
-                    <span className="font-medium">
+                    <span className="shrink-0 font-medium">
                       {t(`app.converter.bundle_split.level.${finding.level}`)}
                     </span>
                   </div>
@@ -1330,12 +1388,28 @@ export default function BundleSplitClient() {
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Textarea readOnly value={output} className="min-h-[360px] font-mono" />
+            <Textarea readOnly value={outputPreview} className="min-h-[360px] font-mono" />
+            {outputPreviewLimited && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('public.output_preview_limited', {
+                  total: outputPreviewSource.length.toLocaleString(),
+                  visible: OUTPUT_PREVIEW_CHARS.toLocaleString()
+                })}
+              </p>
+            )}
+            {outputPreviewRowsLimited && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('public.output_preview_rows_limited', {
+                  total: outputPreviewTotalRows.toLocaleString(),
+                  visible: outputPreviewVisibleRows.toLocaleString()
+                })}
+              </p>
+            )}
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => copy(output)}
+                onClick={() => copy(buildCurrentOutput())}
                 className="w-full sm:w-auto"
               >
                 <Copy className="h-4 w-4" />
@@ -1345,7 +1419,11 @@ export default function BundleSplitClient() {
                 type="button"
                 variant="outline"
                 onClick={() =>
-                  downloadText(output, 'bundle-split-output.txt', 'text/plain;charset=utf-8')
+                  downloadText(
+                    buildCurrentOutput(),
+                    'bundle-split-output.txt',
+                    'text/plain;charset=utf-8'
+                  )
                 }
                 className="w-full sm:w-auto"
               >
@@ -1356,7 +1434,11 @@ export default function BundleSplitClient() {
                 type="button"
                 variant="outline"
                 onClick={() =>
-                  downloadText(budgetCsv, 'bundle-route-budget.csv', 'text/csv;charset=utf-8')
+                  downloadText(
+                    buildCurrentBudgetCsv(),
+                    'bundle-route-budget.csv',
+                    'text/csv;charset=utf-8'
+                  )
                 }
                 className="w-full sm:w-auto"
               >
@@ -1381,7 +1463,7 @@ export default function BundleSplitClient() {
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-tertiary)]" />
               <Input
                 value={parsedQuery}
-                onChange={event => setParsedQuery(event.target.value)}
+                onChange={event => setParsedQuery(event.target.value.slice(0, 160))}
                 placeholder={t('app.converter.bundle_split.parsed_search')}
                 className="pl-10"
               />

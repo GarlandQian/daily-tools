@@ -23,10 +23,17 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
+import { InputCapNotice } from '@/components/ui/input-cap-notice'
 import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
+import {
+  createOutputPreview,
+  isOutputPreviewLimited,
+  OUTPUT_PREVIEW_CHARS,
+  OUTPUT_PREVIEW_ROWS
+} from '@/utils/outputPreview'
 
 const TRIGGERS = ['push_pull', 'deploy', 'schedule', 'manual'] as const
 const PACKAGE_MANAGERS = ['pnpm', 'npm', 'yarn', 'bun'] as const
@@ -35,6 +42,7 @@ const PERMISSION_PROFILES = ['read', 'deploy', 'pages', 'write_all'] as const
 const OUTPUT_TYPES = ['workflow', 'matrix', 'secrets', 'badge', 'markdown', 'json'] as const
 const WORKSPACE_LIMIT = 70000
 const PARSED_LIST_LIMIT = 120
+const NODE_VERSIONS_FIELD_LIMIT = 320
 const SECRET_REF_PATTERN = new RegExp('\\$\\{\\{\\s*secrets\\.([A-Z0-9_]+)\\s*\\}\\}', 'giu')
 const PLAIN_SENSITIVE_ENV_PATTERN = new RegExp(
   '^\\s*([A-Z0-9_]*(?:SECRET|TOKEN|KEY|PASSWORD|PRIVATE|CREDENTIAL|DATABASE)[A-Z0-9_]*)\\s*:\\s*(?!\\$\\{\\{\\s*secrets\\.)',
@@ -94,6 +102,7 @@ interface ParsedWorkflow {
   permissions: string
   plainSensitiveEnv: string[]
   scheduleCount: number
+  scanLimited: boolean
   secretRefs: string[]
   triggers: string[]
 }
@@ -602,21 +611,67 @@ const buildOutput = (
   return JSON.stringify({ draft, findings, parsed, workflow: buildWorkflow(draft) }, null, 2)
 }
 
-const extractUnique = (source: string, pattern: RegExp, group = 1) =>
-  unique(Array.from(source.matchAll(pattern)).map(match => match[group] ?? '')).slice(
-    0,
-    PARSED_LIST_LIMIT
-  )
+const extractUnique = (source: string, pattern: RegExp, group = 1) => {
+  const values: string[] = []
+  const seen = new Set<string>()
+  let limited = false
+  pattern.lastIndex = 0
+
+  let match: RegExpExecArray | null
+  while ((match = pattern.exec(source))) {
+    const value = match[group] ?? ''
+    if (values.length >= PARSED_LIST_LIMIT) {
+      limited = true
+      break
+    }
+    if (value && !seen.has(value)) {
+      seen.add(value)
+      values.push(value)
+    }
+    if (match[0] === '') pattern.lastIndex += 1
+  }
+
+  return { limited, values }
+}
+
+const countMatches = (source: string, pattern: RegExp, limit = PARSED_LIST_LIMIT) => {
+  let count = 0
+  let limited = false
+  pattern.lastIndex = 0
+
+  let match: RegExpExecArray | null
+  while ((match = pattern.exec(source))) {
+    if (count >= limit) {
+      limited = true
+      break
+    }
+    count += 1
+    if (match[0] === '') pattern.lastIndex += 1
+  }
+
+  return { count, limited }
+}
 
 const parseWorkflow = (input: string): ParsedWorkflow => {
   const source = input.length > WORKSPACE_LIMIT ? input.slice(0, WORKSPACE_LIMIT) : input
   const lines = source.split(/\r?\n/u)
-  const secretRefs = extractUnique(source, SECRET_REF_PATTERN)
-  const nodeVersions = extractUnique(source, /node-version:\s*["']?([0-9.x*-]+)/giu)
-  const plainSensitiveEnv = lines
-    .map(line => line.match(PLAIN_SENSITIVE_ENV_PATTERN)?.[1] ?? '')
-    .filter(Boolean)
-    .slice(0, PARSED_LIST_LIMIT)
+  const secretRefResult = extractUnique(source, SECRET_REF_PATTERN)
+  const nodeVersionResult = extractUnique(source, /node-version:\s*["']?([0-9.x*-]+)/giu)
+  const plainSensitiveEnv: string[] = []
+  const seenPlainSensitiveEnv = new Set<string>()
+  let plainSensitiveEnvLimited = false
+
+  for (const line of lines) {
+    const value = line.match(PLAIN_SENSITIVE_ENV_PATTERN)?.[1] ?? ''
+    if (!value || seenPlainSensitiveEnv.has(value)) continue
+    if (plainSensitiveEnv.length >= PARSED_LIST_LIMIT) {
+      plainSensitiveEnvLimited = true
+      break
+    }
+    seenPlainSensitiveEnv.add(value)
+    plainSensitiveEnv.push(value)
+  }
+  const scheduleResult = countMatches(source, /\bcron\s*:/giu)
   const packageManagers = PACKAGE_MANAGERS.filter(manager =>
     new RegExp(`\\b${manager}\\b`, 'iu').test(source)
   )
@@ -646,13 +701,18 @@ const parseWorkflow = (input: string): ParsedWorkflow => {
     hasCheckout: /actions\/checkout@v\d+/iu.test(source),
     hasSetupNode: /actions\/setup-node@v\d+/iu.test(source),
     jobs,
-    nodeVersions,
+    nodeVersions: nodeVersionResult.values,
     packageManagers,
     permissions:
       permissionsLine || (/\bwrite-all\b/iu.test(source) ? 'permissions: write-all' : ''),
-    plainSensitiveEnv: unique(plainSensitiveEnv),
-    scheduleCount: (source.match(/\bcron\s*:/giu) ?? []).length,
-    secretRefs,
+    plainSensitiveEnv,
+    scheduleCount: scheduleResult.count,
+    scanLimited:
+      secretRefResult.limited ||
+      nodeVersionResult.limited ||
+      plainSensitiveEnvLimited ||
+      scheduleResult.limited,
+    secretRefs: secretRefResult.values,
     triggers
   }
 }
@@ -699,6 +759,7 @@ const auditWorkflow = (draft: WorkflowDraft, parsed: ParsedWorkflow): Finding[] 
     add('warn', 'artifact_path_missing', 'artifact')
 
   if (parsed.capped) add('warn', 'workspace_capped', `${WORKSPACE_LIMIT}`)
+  if (parsed.scanLimited) add('warn', 'scan_limited', `${PARSED_LIST_LIMIT}`)
   if (parsed.permissions && /write-all/iu.test(parsed.permissions))
     add('danger', 'parsed_write_all', parsed.permissions)
   if (parsed.jobs === 0 && parsed.triggers.length) add('warn', 'parsed_no_jobs', 'jobs')
@@ -769,19 +830,64 @@ export default function GitHubActionsClient() {
   const { copy } = useCopy()
   const [draft, setDraft] = useState<WorkflowDraft>(DEFAULT_DRAFT)
   const [workspace, setWorkspace] = useState(PRESETS[0]?.workspace ?? '')
+  const [isWorkspaceCapped, setIsWorkspaceCapped] = useState(false)
   const [outputType, setOutputType] = useState<OutputType>('workflow')
   const [auditQuery, setAuditQuery] = useState('')
 
   const deferredWorkspace = useDeferredValue(workspace)
   const deferredAuditQuery = useDeferredValue(auditQuery)
 
-  const parsed = useMemo(() => parseWorkflow(deferredWorkspace), [deferredWorkspace])
+  const parsed = useMemo(() => {
+    const next = parseWorkflow(deferredWorkspace)
+
+    return isWorkspaceCapped ? { ...next, capped: true } : next
+  }, [deferredWorkspace, isWorkspaceCapped])
   const findings = useMemo(() => auditWorkflow(draft, parsed), [draft, parsed])
-  const output = useMemo(
+  const outputPreviewParsed = useMemo<ParsedWorkflow>(
+    () => ({
+      ...parsed,
+      nodeVersions: parsed.nodeVersions.slice(0, OUTPUT_PREVIEW_ROWS),
+      packageManagers: parsed.packageManagers.slice(0, OUTPUT_PREVIEW_ROWS),
+      plainSensitiveEnv: parsed.plainSensitiveEnv.slice(0, OUTPUT_PREVIEW_ROWS),
+      secretRefs: parsed.secretRefs.slice(0, OUTPUT_PREVIEW_ROWS),
+      triggers: parsed.triggers.slice(0, OUTPUT_PREVIEW_ROWS)
+    }),
+    [parsed]
+  )
+  const outputPreviewFindings = useMemo(() => findings.slice(0, OUTPUT_PREVIEW_ROWS), [findings])
+  const outputPreviewSource = useMemo(
+    () => buildOutput(draft, outputPreviewFindings, outputPreviewParsed, outputType),
+    [draft, outputPreviewFindings, outputPreviewParsed, outputType]
+  )
+  const outputPreview = useMemo(
+    () => createOutputPreview(outputPreviewSource),
+    [outputPreviewSource]
+  )
+  const outputPreviewLimited = isOutputPreviewLimited(outputPreviewSource)
+  const outputPreviewUsesParsedRows = outputType === 'json'
+  const outputPreviewUsesFindings = outputType === 'markdown' || outputType === 'json'
+  const outputPreviewVisibleRows =
+    (outputPreviewUsesParsedRows
+      ? outputPreviewParsed.nodeVersions.length +
+        outputPreviewParsed.packageManagers.length +
+        outputPreviewParsed.plainSensitiveEnv.length +
+        outputPreviewParsed.secretRefs.length +
+        outputPreviewParsed.triggers.length
+      : 0) + (outputPreviewUsesFindings ? outputPreviewFindings.length : 0)
+  const outputPreviewTotalRows =
+    (outputPreviewUsesParsedRows
+      ? parsed.nodeVersions.length +
+        parsed.packageManagers.length +
+        parsed.plainSensitiveEnv.length +
+        parsed.secretRefs.length +
+        parsed.triggers.length
+      : 0) + (outputPreviewUsesFindings ? findings.length : 0)
+  const outputPreviewRowsLimited = outputPreviewTotalRows > outputPreviewVisibleRows
+  const buildCurrentOutput = useCallback(
     () => buildOutput(draft, findings, parsed, outputType),
     [draft, findings, outputType, parsed]
   )
-  const csvOutput = useMemo(
+  const buildCurrentCsv = useCallback(
     () =>
       [
         [
@@ -838,17 +944,27 @@ export default function GitHubActionsClient() {
     setDraft(current => ({ ...current, [key]: value }))
   }
 
-  const applyPreset = useCallback((preset: Preset) => {
-    setDraft(preset.draft)
-    setWorkspace(preset.workspace)
+  const updateWorkspace = useCallback((value: string) => {
+    const capped = value.length > WORKSPACE_LIMIT
+
+    setIsWorkspaceCapped(capped)
+    setWorkspace(capped ? value.slice(0, WORKSPACE_LIMIT) : value)
   }, [])
+
+  const applyPreset = useCallback(
+    (preset: Preset) => {
+      setDraft(preset.draft)
+      updateWorkspace(preset.workspace)
+    },
+    [updateWorkspace]
+  )
 
   const reset = useCallback(() => {
     setDraft(DEFAULT_DRAFT)
-    setWorkspace(PRESETS[0]?.workspace ?? '')
+    updateWorkspace(PRESETS[0]?.workspace ?? '')
     setOutputType('workflow')
     setAuditQuery('')
-  }, [])
+  }, [updateWorkspace])
 
   const copySummary = () => {
     copy(
@@ -1072,7 +1188,13 @@ export default function GitHubActionsClient() {
                 <Textarea
                   id="gha-node"
                   value={draft.nodeVersions}
-                  onChange={event => updateDraft('nodeVersions', event.target.value.slice(0, 160))}
+                  onChange={event =>
+                    updateDraft(
+                      'nodeVersions',
+                      event.target.value.slice(0, NODE_VERSIONS_FIELD_LIMIT)
+                    )
+                  }
+                  maxLength={NODE_VERSIONS_FIELD_LIMIT}
                   className="min-h-[96px] font-mono"
                   spellCheck={false}
                 />
@@ -1238,11 +1360,12 @@ export default function GitHubActionsClient() {
           <CardContent className="space-y-4">
             <Textarea
               value={workspace}
-              onChange={event => setWorkspace(event.target.value.slice(0, WORKSPACE_LIMIT))}
+              onChange={event => updateWorkspace(event.target.value)}
               placeholder={t('app.generation.github_actions.workspace_placeholder')}
               className="min-h-[740px] font-mono"
               spellCheck={false}
             />
+            <InputCapNotice visible={isWorkspaceCapped} limit={WORKSPACE_LIMIT} />
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
@@ -1256,7 +1379,7 @@ export default function GitHubActionsClient() {
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => setWorkspace(output)}
+                onClick={() => updateWorkspace(buildCurrentOutput())}
                 className="w-full sm:w-auto"
               >
                 <FileCode2 className="h-4 w-4" />
@@ -1265,7 +1388,7 @@ export default function GitHubActionsClient() {
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => setWorkspace('')}
+                onClick={() => updateWorkspace('')}
                 className="w-full sm:w-auto"
               >
                 <Trash2 className="h-4 w-4" />
@@ -1292,7 +1415,7 @@ export default function GitHubActionsClient() {
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-tertiary)]" />
               <Input
                 value={auditQuery}
-                onChange={event => setAuditQuery(event.target.value)}
+                onChange={event => setAuditQuery(event.target.value.slice(0, 160))}
                 placeholder={t('app.generation.github_actions.audit_search')}
                 className="pl-10"
               />
@@ -1304,12 +1427,12 @@ export default function GitHubActionsClient() {
                   className={`rounded-xl border px-3 py-2 text-xs ${levelClass(finding.level)}`}
                 >
                   <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
-                    <span className="min-w-0 break-words">
+                    <span className="min-w-0 break-all leading-5">
                       <span className="font-semibold">{finding.subject}</span>
-                      <span className="mx-2">/</span>
+                      <span className="mx-2 inline-block">/</span>
                       {t(`app.generation.github_actions.audit.${finding.key}`)}
                     </span>
-                    <span className="font-medium">
+                    <span className="shrink-0 font-medium">
                       {t(`app.generation.github_actions.level.${finding.level}`)}
                     </span>
                   </div>
@@ -1345,12 +1468,28 @@ export default function GitHubActionsClient() {
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Textarea readOnly value={output} className="min-h-[430px] font-mono" />
+            <Textarea readOnly value={outputPreview} className="min-h-[430px] font-mono" />
+            {outputPreviewLimited && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('public.output_preview_limited', {
+                  total: outputPreviewSource.length.toLocaleString(),
+                  visible: OUTPUT_PREVIEW_CHARS.toLocaleString()
+                })}
+              </p>
+            )}
+            {outputPreviewRowsLimited && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('public.output_preview_rows_limited', {
+                  total: outputPreviewTotalRows.toLocaleString(),
+                  visible: outputPreviewVisibleRows.toLocaleString()
+                })}
+              </p>
+            )}
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => copy(output)}
+                onClick={() => copy(buildCurrentOutput())}
                 className="w-full sm:w-auto"
               >
                 <Copy className="h-4 w-4" />
@@ -1361,7 +1500,7 @@ export default function GitHubActionsClient() {
                 variant="outline"
                 onClick={() =>
                   downloadText(
-                    output,
+                    buildCurrentOutput(),
                     outputType === 'workflow'
                       ? workflowFileName(draft.workflowName)
                       : 'github-actions-output.txt',
@@ -1377,7 +1516,11 @@ export default function GitHubActionsClient() {
                 type="button"
                 variant="outline"
                 onClick={() =>
-                  downloadText(csvOutput, 'github-actions-audit.csv', 'text/csv;charset=utf-8')
+                  downloadText(
+                    buildCurrentCsv(),
+                    'github-actions-audit.csv',
+                    'text/csv;charset=utf-8'
+                  )
                 }
                 className="w-full sm:w-auto"
               >
