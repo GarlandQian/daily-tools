@@ -1,7 +1,7 @@
 'use client'
 
 import { Calculator, Copy, FileCode2, RotateCcw, Type } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useCallback, useDeferredValue, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
@@ -11,6 +11,11 @@ import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
+import {
+  createOutputPreview,
+  isOutputPreviewLimited,
+  OUTPUT_PREVIEW_CHARS
+} from '@/utils/outputPreview'
 
 type PxRemOutput = 'css' | 'json' | 'tailwind'
 type SpacingPreset = 'compact' | 'default' | 'fluid' | 'tailwind'
@@ -22,6 +27,7 @@ const SPACING_PRESETS: Record<SpacingPreset, string> = {
   fluid: '8, 12, 16, 24, 32, 48, 64, 80, 96, 128',
   tailwind: '0, 1, 2, 4, 8, 12, 16, 20, 24, 32, 40, 48, 64, 80, 96'
 }
+const SCALE_INPUT_LIMIT = 12000
 
 const toPx = (value: number, unit: Unit, base: number) => {
   if (unit === 'px') return value
@@ -40,12 +46,29 @@ const formatNumber = (value: number) => {
   return Number(value.toFixed(4)).toString()
 }
 
-const parseScale = (input: string) =>
-  input
-    .split(/[,\s]+/)
-    .map(item => Number(item))
-    .filter(item => Number.isFinite(item))
-    .slice(0, 80)
+const parseScale = (input: string) => {
+  const values: number[] = []
+  let tokenStart = -1
+
+  for (let index = 0; index <= input.length; index += 1) {
+    const char = input[index]
+    const isDelimiter = index === input.length || char === ',' || /\s/u.test(char)
+
+    if (!isDelimiter) {
+      if (tokenStart < 0) tokenStart = index
+      continue
+    }
+
+    if (tokenStart >= 0) {
+      const value = Number(input.slice(tokenStart, index))
+      if (Number.isFinite(value)) values.push(value)
+      tokenStart = -1
+      if (values.length >= 80) break
+    }
+  }
+
+  return values
+}
 
 const formatCssVars = (rows: ScaleRow[], prefix: string) =>
   `:root {\n${rows.map(row => `  --${prefix}-${row.name}: ${row.rem}rem;`).join('\n')}\n}`
@@ -65,6 +88,13 @@ const formatJson = (rows: ScaleRow[]) =>
     2
   )
 
+const buildScaleOutput = (outputType: PxRemOutput, rows: ScaleRow[], tokenPrefix: string) => {
+  const prefix = tokenPrefix || 'space'
+  if (outputType === 'json') return formatJson(rows)
+  if (outputType === 'tailwind') return formatTailwind(rows, prefix)
+  return formatCssVars(rows, prefix)
+}
+
 interface ScaleRow {
   name: string
   percent: string
@@ -81,6 +111,12 @@ const PxRemClient = () => {
   const [scaleInput, setScaleInput] = useState(SPACING_PRESETS.default)
   const [tokenPrefix, setTokenPrefix] = useState('space')
   const [outputType, setOutputType] = useState<PxRemOutput>('css')
+  const deferredScaleInput = useDeferredValue(scaleInput)
+  const safeScaleInput = useMemo(
+    () => deferredScaleInput.slice(0, SCALE_INPUT_LIMIT),
+    [deferredScaleInput]
+  )
+  const scaleInputLimited = scaleInput.length >= SCALE_INPUT_LIMIT
 
   const pxValue = useMemo(() => toPx(value, fromUnit, base), [base, fromUnit, value])
   const conversions = useMemo(
@@ -93,19 +129,27 @@ const PxRemClient = () => {
   )
   const scaleRows = useMemo(
     () =>
-      parseScale(scaleInput).map((px, index) => ({
+      parseScale(safeScaleInput).map((px, index) => ({
         name: String(index + 1).padStart(2, '0'),
         percent: formatNumber((px / base) * 100),
         px,
         rem: formatNumber(px / base)
       })),
-    [base, scaleInput]
+    [base, safeScaleInput]
   )
-  const output = useMemo(() => {
-    if (outputType === 'json') return formatJson(scaleRows)
-    if (outputType === 'tailwind') return formatTailwind(scaleRows, tokenPrefix || 'space')
-    return formatCssVars(scaleRows, tokenPrefix || 'space')
-  }, [outputType, scaleRows, tokenPrefix])
+  const outputPreviewSource = useMemo(
+    () => buildScaleOutput(outputType, scaleRows, tokenPrefix),
+    [outputType, scaleRows, tokenPrefix]
+  )
+  const outputPreview = useMemo(
+    () => createOutputPreview(outputPreviewSource),
+    [outputPreviewSource]
+  )
+  const outputPreviewLimited = isOutputPreviewLimited(outputPreviewSource)
+  const buildCurrentOutput = useCallback(
+    () => buildScaleOutput(outputType, scaleRows, tokenPrefix),
+    [outputType, scaleRows, tokenPrefix]
+  )
 
   const conversionSummary = conversions
     .map(item => `${item.value}${item.unit === 'percent' ? '%' : item.unit}`)
@@ -249,13 +293,20 @@ const PxRemClient = () => {
               <Textarea
                 id="pxrem-scale"
                 value={scaleInput}
-                onChange={event => setScaleInput(event.target.value)}
+                onChange={event => setScaleInput(event.target.value.slice(0, SCALE_INPUT_LIMIT))}
                 rows={3}
                 className="resize-none font-mono"
               />
               <p className="text-xs text-[var(--text-secondary)]">
                 {t('app.converter.px_rem.scale_hint', { count: scaleRows.length })}
               </p>
+              {scaleInputLimited ? (
+                <p className="text-xs leading-5 text-amber-600 dark:text-amber-300">
+                  {t('app.converter.px_rem.scale_input_truncated', {
+                    limit: SCALE_INPUT_LIMIT.toLocaleString()
+                  })}
+                </p>
+              ) : null}
             </div>
 
             <div className="glass-clip overflow-auto rounded-xl border border-[var(--border-base)]">
@@ -295,7 +346,7 @@ const PxRemClient = () => {
                 <FileCode2 className="h-4 w-4 text-[var(--primary)]" />
                 {t('app.converter.px_rem.output')}
               </CardTitle>
-              <Button size="sm" variant="ghost" onClick={() => copy(output)}>
+              <Button size="sm" variant="ghost" onClick={() => copy(buildCurrentOutput())}>
                 {t('public.copy')}
               </Button>
             </div>
@@ -314,11 +365,19 @@ const PxRemClient = () => {
               </Select>
             </div>
             <Textarea
-              value={output}
+              value={outputPreview}
               readOnly
               rows={16}
               className="min-h-[280px] flex-1 resize-none font-mono"
             />
+            {outputPreviewLimited && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('public.output_preview_limited', {
+                  total: outputPreviewSource.length.toLocaleString(),
+                  visible: OUTPUT_PREVIEW_CHARS.toLocaleString()
+                })}
+              </p>
+            )}
           </CardContent>
         </Card>
       </div>

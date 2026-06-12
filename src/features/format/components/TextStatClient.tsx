@@ -108,29 +108,127 @@ const getTopKeywords = (counts: Map<string, number>): Keyword[] => {
   return keywords
 }
 
-const getWordSummary = (words: string[]) => {
+const getWordSummary = (text: string) => {
+  WORD_PATTERN.lastIndex = 0
   const keywordCounts = new Map<string, number>()
   const uniqueWords = new Set<string>()
   let longestWord = ''
   let totalWordLength = 0
+  let wordCount = 0
+  let match: RegExpExecArray | null
 
-  words.forEach(word => {
+  while ((match = WORD_PATTERN.exec(text))) {
+    const word = match[0]
     const normalized = word.toLowerCase()
 
+    wordCount += 1
     uniqueWords.add(normalized)
     totalWordLength += word.length
     if (word.length > longestWord.length) longestWord = word
 
-    if (normalized.length <= 2 || STOP_WORDS.has(normalized)) return
-    keywordCounts.set(normalized, (keywordCounts.get(normalized) ?? 0) + 1)
-  })
+    if (normalized.length > 2 && !STOP_WORDS.has(normalized)) {
+      keywordCounts.set(normalized, (keywordCounts.get(normalized) ?? 0) + 1)
+    }
+  }
 
   return {
-    averageWordLength: words.length ? totalWordLength / words.length : 0,
+    averageWordLength: wordCount ? totalWordLength / wordCount : 0,
     keywords: getTopKeywords(keywordCounts),
     longestWord,
-    uniqueWords: uniqueWords.size
+    uniqueWords: uniqueWords.size,
+    wordCount
   }
+}
+
+const isInlineWhitespace = (value: string, code: number) => {
+  if (code === 0x09 || code === 0x0b || code === 0x0c || code === 0x20 || code === 0xa0) {
+    return true
+  }
+
+  if (code <= 0x7f) return false
+  return value.trim() === ''
+}
+
+const countSentences = (text: string) => {
+  if (!text.trim()) return 0
+
+  SENTENCE_PATTERN.lastIndex = 0
+  let count = 0
+
+  while (SENTENCE_PATTERN.exec(text)) {
+    count += 1
+  }
+
+  return count
+}
+
+const analyzeTextShape = (text: string) => {
+  if (!text) return { bytes: 0, lines: 0, paragraphs: 0, whitespace: 0 }
+
+  let bytes = 0
+  let lines = 1
+  let paragraphs = 0
+  let whitespace = 0
+  let lineHasText = false
+  let inParagraph = false
+
+  const finishLine = () => {
+    if (lineHasText) {
+      if (!inParagraph) paragraphs += 1
+      inParagraph = true
+    } else {
+      inParagraph = false
+    }
+    lineHasText = false
+  }
+
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index] ?? ''
+    const code = text.charCodeAt(index)
+
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = text.charCodeAt(index + 1)
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        bytes += 4
+        lineHasText = true
+        index += 1
+        continue
+      }
+    }
+
+    if (code <= 0x7f) bytes += 1
+    else if (code <= 0x7ff) bytes += 2
+    else bytes += 3
+
+    if (char === '\r') {
+      whitespace += 1
+      finishLine()
+      lines += 1
+      if (text[index + 1] === '\n') {
+        bytes += 1
+        whitespace += 1
+        index += 1
+      }
+      continue
+    }
+
+    if (char === '\n') {
+      whitespace += 1
+      finishLine()
+      lines += 1
+      continue
+    }
+
+    if (isInlineWhitespace(char, code)) {
+      whitespace += 1
+    } else {
+      lineHasText = true
+    }
+  }
+
+  finishLine()
+
+  return { bytes, lines, paragraphs, whitespace }
 }
 
 const toCsv = (items: Keyword[]) =>
@@ -143,30 +241,30 @@ const TextStatClient = () => {
   const { copy } = useCopy()
 
   const [input, setInput] = useState('')
+  const [isInputCapped, setIsInputCapped] = useState(false)
   const [readingWpm, setReadingWpm] = useState(225)
   const [speakingWpm, setSpeakingWpm] = useState(150)
   const deferredInput = useDeferredValue(input)
 
+  const updateInput = (value: string) => {
+    const capped = value.length > MAX_TEXT_STAT_CHARS
+    setIsInputCapped(capped)
+    setInput(capped ? value.slice(0, MAX_TEXT_STAT_CHARS) : value)
+  }
+
   const analysis = useMemo(() => {
-    const isTruncated = deferredInput.length > MAX_TEXT_STAT_CHARS
+    const isTruncated = isInputCapped || deferredInput.length > MAX_TEXT_STAT_CHARS
     const text = isTruncated ? deferredInput.slice(0, MAX_TEXT_STAT_CHARS) : deferredInput
-    const words = text.match(WORD_PATTERN) ?? []
     const chars = text.length
-    const charsNoSpaces = text.replace(/\s/g, '').length
-    const whitespace = chars - charsNoSpaces
-    const lines = text ? text.split(/\r\n|\r|\n/).length : 0
-    const paragraphs = text.trim()
-      ? text
-          .trim()
-          .split(/\r?\n\s*\r?\n/)
-          .filter(Boolean).length
+    const shape = analyzeTextShape(text)
+    const charsNoSpaces = chars - shape.whitespace
+    const sentences = countSentences(text)
+    const wordSummary = getWordSummary(text)
+    const lexicalDensity = wordSummary.wordCount
+      ? (wordSummary.uniqueWords / wordSummary.wordCount) * 100
       : 0
-    const sentences = text.trim() ? (text.match(SENTENCE_PATTERN) ?? []).length : 0
-    const bytes = new Blob([text]).size
-    const wordSummary = getWordSummary(words)
-    const lexicalDensity = words.length ? (wordSummary.uniqueWords / words.length) * 100 : 0
-    const whitespaceRatio = chars ? (whitespace / chars) * 100 : 0
-    const averageSentenceWords = sentences ? words.length / sentences : 0
+    const whitespaceRatio = chars ? (shape.whitespace / chars) * 100 : 0
+    const averageSentenceWords = sentences ? wordSummary.wordCount / sentences : 0
 
     const stats: StatItem[] = [
       {
@@ -177,7 +275,7 @@ const TextStatClient = () => {
       },
       {
         labelKey: 'app.format.text.words',
-        value: words.length,
+        value: wordSummary.wordCount,
         color: 'var(--success)',
         bg: 'var(--success-subtle)'
       },
@@ -189,13 +287,13 @@ const TextStatClient = () => {
       },
       {
         labelKey: 'app.format.text.paragraphs',
-        value: paragraphs,
+        value: shape.paragraphs,
         color: 'var(--warning)',
         bg: 'var(--warning-subtle)'
       },
       {
         labelKey: 'app.format.text.lines',
-        value: lines,
+        value: shape.lines,
         color: 'var(--primary)',
         bg: 'var(--primary-subtle)'
       },
@@ -213,7 +311,7 @@ const TextStatClient = () => {
       },
       {
         labelKey: 'app.format.text.bytes',
-        value: bytes,
+        value: shape.bytes,
         color: 'var(--error)',
         bg: 'var(--error-subtle)'
       }
@@ -223,24 +321,24 @@ const TextStatClient = () => {
       stats,
       averageSentenceWords,
       averageWordLength: wordSummary.averageWordLength,
-      bytes,
+      bytes: shape.bytes,
       chars,
       charsNoSpaces,
       isTruncated,
       keywords: wordSummary.keywords,
       lexicalDensity,
-      lines,
+      lines: shape.lines,
       longestWord: wordSummary.longestWord,
-      paragraphs,
-      readingMinutes: getMinutes(words.length, readingWpm),
+      paragraphs: shape.paragraphs,
+      readingMinutes: getMinutes(wordSummary.wordCount, readingWpm),
       sentences,
-      speakingMinutes: getMinutes(words.length, speakingWpm),
+      speakingMinutes: getMinutes(wordSummary.wordCount, speakingWpm),
       uniqueWords: wordSummary.uniqueWords,
-      whitespace,
+      whitespace: shape.whitespace,
       whitespaceRatio,
-      words: words.length
+      words: wordSummary.wordCount
     }
-  }, [deferredInput, readingWpm, speakingWpm])
+  }, [deferredInput, isInputCapped, readingWpm, speakingWpm])
 
   const jsonSummary = useMemo(
     () =>
@@ -298,7 +396,7 @@ const TextStatClient = () => {
                 type="button"
                 variant="ghost"
                 icon={<FlaskConical className="h-4 w-4" />}
-                onClick={() => setInput(SAMPLE_TEXT)}
+                onClick={() => updateInput(SAMPLE_TEXT)}
               >
                 {t('app.format.text.sample')}
               </Button>
@@ -314,7 +412,7 @@ const TextStatClient = () => {
                 type="button"
                 variant="ghost"
                 icon={<Trash2 className="h-4 w-4" />}
-                onClick={() => setInput('')}
+                onClick={() => updateInput('')}
               >
                 {t('public.clear')}
               </Button>
@@ -483,7 +581,7 @@ const TextStatClient = () => {
           <CardContent className="flex-1 overflow-hidden">
             <Textarea
               value={input}
-              onChange={event => setInput(event.target.value)}
+              onChange={event => updateInput(event.target.value)}
               placeholder={t('app.format.text.placeholder')}
               className="h-full resize-none font-mono"
             />

@@ -26,6 +26,13 @@ import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
+import {
+  createOutputPreview,
+  isOutputPreviewLimited,
+  OUTPUT_PREVIEW_CHARS,
+  OUTPUT_PREVIEW_ROWS
+} from '@/utils/outputPreview'
+import { collectBoundedNonEmptyLines } from '@/utils/textScan'
 
 const SCRIPT_CATEGORIES = [
   'analytics',
@@ -49,6 +56,12 @@ const LOAD_STRATEGIES = [
 const OUTPUT_TYPES = ['next', 'consent', 'dataLayer', 'markdown', 'json', 'csv'] as const
 const WORKSPACE_LIMIT = 70000
 const SCRIPT_LIMIT = 180
+const JSON_LINE_SCAN_LIMIT = 220
+const TEXT_LINE_SCAN_LIMIT = 360
+const RAW_ROW_LIMIT = 120
+const JSON_CHILD_SCAN_LIMIT = 40
+const VISIBLE_FINDINGS_LIMIT = 36
+const VISIBLE_SCRIPTS_LIMIT = 54
 
 type ScriptCategory = (typeof SCRIPT_CATEGORIES)[number]
 type LoadStrategy = (typeof LOAD_STRATEGIES)[number]
@@ -91,6 +104,12 @@ interface ParsedScript {
 
 interface ParsedWorkspace {
   errors: string[]
+  limits: {
+    htmlTags: boolean
+    jsonLines: boolean
+    rawRows: boolean
+    textLines: boolean
+  }
   rawRows: Array<{ label: string; value: string }>
   scripts: ParsedScript[]
 }
@@ -354,24 +373,60 @@ const scriptFromRecord = (record: Record<string, unknown>, index: number): Parse
   }
 }
 
-const collectJson = (value: unknown, scripts: ParsedScript[], depth = 0) => {
-  if (depth > 6 || scripts.length >= SCRIPT_LIMIT) return
+const createParsedWorkspace = (): ParsedWorkspace => ({
+  errors: [],
+  limits: {
+    htmlTags: false,
+    jsonLines: false,
+    rawRows: false,
+    textLines: false
+  },
+  rawRows: [],
+  scripts: []
+})
+
+const collectJson = (value: unknown, parsed: ParsedWorkspace, depth = 0): boolean => {
+  if (parsed.scripts.length >= SCRIPT_LIMIT) return true
+  if (depth > 6) return true
+
   if (Array.isArray(value)) {
-    value.forEach(item => collectJson(item, scripts, depth + 1))
-    return
+    let limited = value.length > JSON_CHILD_SCAN_LIMIT
+
+    for (let index = 0; index < value.length && index < JSON_CHILD_SCAN_LIMIT; index += 1) {
+      if (collectJson(value[index], parsed, depth + 1)) limited = true
+      if (parsed.scripts.length >= SCRIPT_LIMIT) return true
+    }
+
+    return limited
   }
+
   const record = asRecord(value)
-  if (!record) return
-  const script = scriptFromRecord(record, scripts.length)
-  if (script) scripts.push(script)
-  Object.values(record)
-    .slice(0, 40)
-    .forEach(item => collectJson(item, scripts, depth + 1))
+  if (!record) return false
+
+  const script = scriptFromRecord(record, parsed.scripts.length)
+  if (script) parsed.scripts.push(script)
+  if (parsed.scripts.length >= SCRIPT_LIMIT) return true
+
+  let inspected = 0
+  let limited = false
+
+  for (const key in record) {
+    if (!Object.hasOwn(record, key)) continue
+    if (inspected >= JSON_CHILD_SCAN_LIMIT) {
+      limited = true
+      break
+    }
+    if (collectJson(record[key], parsed, depth + 1)) limited = true
+    inspected += 1
+    if (parsed.scripts.length >= SCRIPT_LIMIT) return true
+  }
+
+  return limited
 }
 
 const parseJson = (parsed: ParsedWorkspace, input: string, reportError = true) => {
   try {
-    collectJson(JSON.parse(input), parsed.scripts)
+    if (collectJson(JSON.parse(input), parsed)) parsed.limits.jsonLines = true
   } catch {
     if (reportError) parsed.errors.push('json_error')
   }
@@ -428,16 +483,23 @@ const parseTextScript = (line: string, index: number): ParsedScript | null => {
 }
 
 const parseWorkspace = (input: string): ParsedWorkspace => {
-  const source = input.slice(0, WORKSPACE_LIMIT)
-  const parsed: ParsedWorkspace = { errors: [], rawRows: [], scripts: [] }
+  const source = input.length > WORKSPACE_LIMIT ? input.slice(0, WORKSPACE_LIMIT) : input
+  const parsed = createParsedWorkspace()
   const trimmed = source.trim()
+  const jsonRows = collectBoundedNonEmptyLines(source, JSON_LINE_SCAN_LIMIT)
+  const textRows = collectBoundedNonEmptyLines(source, TEXT_LINE_SCAN_LIMIT)
+
   const parseJsonLines = () => {
-    source
-      .split(/\r?\n/u)
-      .map(line => line.trim())
-      .filter(line => line.startsWith('{') || line.startsWith('['))
-      .slice(0, SCRIPT_LIMIT)
-      .forEach(line => parseJson(parsed, line, false))
+    if (jsonRows.limited) parsed.limits.jsonLines = true
+
+    for (const line of jsonRows.lines) {
+      if (parsed.scripts.length >= SCRIPT_LIMIT) {
+        parsed.limits.jsonLines = true
+        break
+      }
+      if (!line.startsWith('{') && !line.startsWith('[')) continue
+      parseJson(parsed, line, false)
+    }
   }
 
   if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
@@ -448,28 +510,39 @@ const parseWorkspace = (input: string): ParsedWorkspace => {
     parseJsonLines()
   }
 
-  Array.from(source.matchAll(/<(?:Script|script)\b[^>]*>/giu))
-    .slice(0, SCRIPT_LIMIT)
-    .forEach((match, index) => {
-      const script = parseTag(match[0], index)
-      if (script) parsed.scripts.push(script)
-    })
+  const tagPattern = /<(?:Script|script)\b[^>]*>/giu
+  let tagIndex = 0
+  let tagMatch: RegExpExecArray | null
+  while ((tagMatch = tagPattern.exec(source))) {
+    if (tagIndex >= SCRIPT_LIMIT || parsed.scripts.length >= SCRIPT_LIMIT) {
+      parsed.limits.htmlTags = true
+      break
+    }
+    const script = parseTag(tagMatch[0], tagIndex)
+    if (script) parsed.scripts.push(script)
+    tagIndex += 1
+  }
 
-  source
-    .split(/\r?\n/u)
-    .slice(0, SCRIPT_LIMIT)
-    .forEach((line, index) => {
-      const clean = line.trim()
-      if (!clean) return
+  if (textRows.limited) parsed.limits.textLines = true
+  textRows.lines.forEach((clean, index) => {
+    if (parsed.scripts.length < SCRIPT_LIMIT) {
       const script = parseTextScript(clean, index)
       if (script) parsed.scripts.push(script)
-      if (/<script|<Script|script=|strategy=|main=|category=/iu.test(clean)) {
+    } else {
+      parsed.limits.textLines = true
+    }
+
+    if (/<script|<Script|script=|strategy=|main=|category=/iu.test(clean)) {
+      if (parsed.rawRows.length < RAW_ROW_LIMIT) {
         parsed.rawRows.push({
-          label: clean.split(/\s/u)[0]?.slice(0, 80) ?? 'row',
+          label: clean.match(/^\S+/u)?.[0]?.slice(0, 80) ?? 'row',
           value: clean.slice(0, 220)
         })
+      } else {
+        parsed.limits.rawRows = true
       }
-    })
+    }
+  })
 
   parsed.scripts = parsed.scripts.slice(0, SCRIPT_LIMIT)
   if (input.length > WORKSPACE_LIMIT) parsed.errors.push('truncated')
@@ -572,6 +645,15 @@ const auditScripts = (draft: ThirdPartyDraft, parsed: ParsedWorkspace): Finding[
   if (parsed.errors.includes('truncated'))
     addFinding(findings, 'warn', 'workspace_truncated', String(WORKSPACE_LIMIT))
   if (parsed.errors.includes('json_error')) addFinding(findings, 'warn', 'json_error', 'JSON')
+  if (
+    parsed.limits.htmlTags ||
+    parsed.limits.jsonLines ||
+    parsed.limits.rawRows ||
+    parsed.limits.textLines ||
+    parsed.scripts.length >= SCRIPT_LIMIT
+  ) {
+    addFinding(findings, 'warn', 'scan_limited', String(SCRIPT_LIMIT))
+  }
   if (!findings.some(item => item.level !== 'good'))
     addFinding(findings, 'good', 'baseline_ok', draft.routePattern)
   return findings
@@ -780,6 +862,7 @@ export default function ThirdPartyScriptsClient() {
   const { copy } = useCopy()
   const [draft, setDraft] = useState<ThirdPartyDraft>(DEFAULT_DRAFT)
   const [workspace, setWorkspace] = useState(PRESETS[0]?.workspace ?? '')
+  const [isWorkspaceCapped, setIsWorkspaceCapped] = useState(false)
   const [outputType, setOutputType] = useState<OutputType>('next')
   const [auditQuery, setAuditQuery] = useState('')
   const [scriptQuery, setScriptQuery] = useState('')
@@ -788,14 +871,49 @@ export default function ThirdPartyScriptsClient() {
   const deferredAuditQuery = useDeferredValue(auditQuery)
   const deferredScriptQuery = useDeferredValue(scriptQuery)
 
-  const parsed = useMemo(() => parseWorkspace(deferredWorkspace), [deferredWorkspace])
+  const parsed = useMemo(() => {
+    const next = parseWorkspace(deferredWorkspace)
+
+    if (!isWorkspaceCapped || next.errors.includes('truncated')) return next
+
+    return { ...next, errors: [...next.errors, 'truncated'] }
+  }, [deferredWorkspace, isWorkspaceCapped])
   const findings = useMemo(() => auditScripts(draft, parsed), [draft, parsed])
   const score = useMemo(() => getScore(findings), [findings])
-  const output = useMemo(
+  const outputPreviewParsed = useMemo<ParsedWorkspace>(
+    () => ({
+      errors: parsed.errors.slice(0, OUTPUT_PREVIEW_ROWS),
+      limits: parsed.limits,
+      rawRows: parsed.rawRows.slice(0, OUTPUT_PREVIEW_ROWS),
+      scripts: parsed.scripts.slice(0, OUTPUT_PREVIEW_ROWS)
+    }),
+    [parsed.errors, parsed.limits, parsed.rawRows, parsed.scripts]
+  )
+  const outputPreviewFindings = useMemo(() => findings.slice(0, OUTPUT_PREVIEW_ROWS), [findings])
+  const outputPreviewSource = useMemo(
+    () => buildOutput(draft, outputPreviewParsed, outputPreviewFindings, outputType),
+    [draft, outputPreviewFindings, outputPreviewParsed, outputType]
+  )
+  const outputPreview = useMemo(
+    () => createOutputPreview(outputPreviewSource),
+    [outputPreviewSource]
+  )
+  const outputPreviewLimited = isOutputPreviewLimited(outputPreviewSource)
+  const outputPreviewUsesParsedRows =
+    outputType === 'markdown' || outputType === 'json' || outputType === 'csv'
+  const outputPreviewUsesFindings = outputType === 'markdown' || outputType === 'json'
+  const outputPreviewVisibleRows =
+    (outputPreviewUsesParsedRows ? outputPreviewParsed.scripts.length : 0) +
+    (outputPreviewUsesFindings ? outputPreviewFindings.length : 0)
+  const outputPreviewTotalRows =
+    (outputPreviewUsesParsedRows ? parsed.scripts.length : 0) +
+    (outputPreviewUsesFindings ? findings.length : 0)
+  const outputPreviewRowsLimited = outputPreviewTotalRows > outputPreviewVisibleRows
+  const buildCurrentOutput = useCallback(
     () => buildOutput(draft, parsed, findings, outputType),
     [draft, findings, outputType, parsed]
   )
-  const csvOutput = useMemo(() => buildCsv(draft, parsed), [draft, parsed])
+  const buildCurrentCsv = useCallback(() => buildCsv(draft, parsed), [draft, parsed])
   const filteredFindings = useMemo(() => {
     const query = deferredAuditQuery.trim().toLowerCase()
     if (!query) return findings
@@ -814,6 +932,16 @@ export default function ThirdPartyScriptsClient() {
         .includes(query)
     )
   }, [deferredScriptQuery, parsed.scripts])
+  const visibleFindings = useMemo(
+    () => filteredFindings.slice(0, VISIBLE_FINDINGS_LIMIT),
+    [filteredFindings]
+  )
+  const visibleScripts = useMemo(
+    () => filteredScripts.slice(0, VISIBLE_SCRIPTS_LIMIT),
+    [filteredScripts]
+  )
+  const findingsRenderLimited = filteredFindings.length > visibleFindings.length
+  const scriptsRenderLimited = filteredScripts.length > visibleScripts.length
   const metrics = useMemo(
     () => ({
       critical: findings.filter(item => item.level === 'danger').length,
@@ -833,18 +961,28 @@ export default function ThirdPartyScriptsClient() {
     setDraft(current => ({ ...current, [key]: value }))
   }
 
-  const applyPreset = useCallback((preset: Preset) => {
-    setDraft(preset.draft)
-    setWorkspace(preset.workspace)
+  const updateWorkspace = useCallback((value: string) => {
+    const capped = value.length > WORKSPACE_LIMIT
+
+    setIsWorkspaceCapped(capped)
+    setWorkspace(capped ? value.slice(0, WORKSPACE_LIMIT) : value)
   }, [])
+
+  const applyPreset = useCallback(
+    (preset: Preset) => {
+      setDraft(preset.draft)
+      updateWorkspace(preset.workspace)
+    },
+    [updateWorkspace]
+  )
 
   const reset = useCallback(() => {
     setDraft(DEFAULT_DRAFT)
-    setWorkspace(PRESETS[0]?.workspace ?? '')
+    updateWorkspace(PRESETS[0]?.workspace ?? '')
     setOutputType('next')
     setAuditQuery('')
     setScriptQuery('')
-  }, [])
+  }, [updateWorkspace])
 
   const copySummary = () => {
     copy(
@@ -1198,7 +1336,7 @@ export default function ThirdPartyScriptsClient() {
           <CardContent className="space-y-4">
             <Textarea
               value={workspace}
-              onChange={event => setWorkspace(event.target.value.slice(0, WORKSPACE_LIMIT))}
+              onChange={event => updateWorkspace(event.target.value)}
               placeholder={t('app.converter.third_party_scripts.workspace_placeholder')}
               className="min-h-[470px] font-mono"
               spellCheck={false}
@@ -1216,7 +1354,7 @@ export default function ThirdPartyScriptsClient() {
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => setWorkspace('')}
+                onClick={() => updateWorkspace('')}
                 className="w-full sm:w-auto"
               >
                 <Trash2 className="h-4 w-4" />
@@ -1242,30 +1380,38 @@ export default function ThirdPartyScriptsClient() {
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-tertiary)]" />
               <Input
                 value={auditQuery}
-                onChange={event => setAuditQuery(event.target.value)}
+                onChange={event => setAuditQuery(event.target.value.slice(0, 160))}
                 placeholder={t('app.converter.third_party_scripts.audit_search')}
                 className="pl-10"
               />
             </div>
             <div className="space-y-2">
-              {filteredFindings.slice(0, 36).map((finding, index) => (
+              {visibleFindings.map((finding, index) => (
                 <div
                   key={`${finding.key}:${finding.subject}:${index}`}
                   className={`rounded-xl border px-3 py-2 text-xs ${levelClass(finding.level)}`}
                 >
                   <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
-                    <span className="min-w-0 break-words">
+                    <span className="min-w-0 break-all leading-5">
                       <span className="font-semibold">{finding.subject}</span>
-                      <span className="mx-2">/</span>
+                      <span className="mx-2 inline-block">/</span>
                       {t(`app.converter.third_party_scripts.audit.${finding.key}`)}
                     </span>
-                    <span className="font-medium">
+                    <span className="shrink-0 font-medium">
                       {t(`app.converter.third_party_scripts.level.${finding.level}`)}
                     </span>
                   </div>
                 </div>
               ))}
             </div>
+            {findingsRenderLimited && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('public.rows_render_limited', {
+                  total: filteredFindings.length.toLocaleString(),
+                  visible: visibleFindings.length.toLocaleString()
+                })}
+              </p>
+            )}
           </CardContent>
         </Card>
 
@@ -1299,12 +1445,28 @@ export default function ThirdPartyScriptsClient() {
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Textarea readOnly value={output} className="min-h-[360px] font-mono" />
+            <Textarea readOnly value={outputPreview} className="min-h-[360px] font-mono" />
+            {outputPreviewLimited && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('public.output_preview_limited', {
+                  total: outputPreviewSource.length.toLocaleString(),
+                  visible: OUTPUT_PREVIEW_CHARS.toLocaleString()
+                })}
+              </p>
+            )}
+            {outputPreviewRowsLimited && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('public.output_preview_rows_limited', {
+                  total: outputPreviewTotalRows.toLocaleString(),
+                  visible: outputPreviewVisibleRows.toLocaleString()
+                })}
+              </p>
+            )}
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => copy(output)}
+                onClick={() => copy(buildCurrentOutput())}
                 className="w-full sm:w-auto"
               >
                 <Copy className="h-4 w-4" />
@@ -1314,7 +1476,11 @@ export default function ThirdPartyScriptsClient() {
                 type="button"
                 variant="outline"
                 onClick={() =>
-                  downloadText(output, 'third-party-script-output.txt', 'text/plain;charset=utf-8')
+                  downloadText(
+                    buildCurrentOutput(),
+                    'third-party-script-output.txt',
+                    'text/plain;charset=utf-8'
+                  )
                 }
                 className="w-full sm:w-auto"
               >
@@ -1325,7 +1491,11 @@ export default function ThirdPartyScriptsClient() {
                 type="button"
                 variant="outline"
                 onClick={() =>
-                  downloadText(csvOutput, 'third-party-scripts.csv', 'text/csv;charset=utf-8')
+                  downloadText(
+                    buildCurrentCsv(),
+                    'third-party-scripts.csv',
+                    'text/csv;charset=utf-8'
+                  )
                 }
                 className="w-full sm:w-auto"
               >
@@ -1352,14 +1522,14 @@ export default function ThirdPartyScriptsClient() {
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-tertiary)]" />
               <Input
                 value={scriptQuery}
-                onChange={event => setScriptQuery(event.target.value)}
+                onChange={event => setScriptQuery(event.target.value.slice(0, 160))}
                 placeholder={t('app.converter.third_party_scripts.parsed_search')}
                 className="pl-10"
               />
             </div>
             {filteredScripts.length ? (
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {filteredScripts.slice(0, 54).map(script => (
+                {visibleScripts.map(script => (
                   <div
                     key={`${script.id}:${script.url}`}
                     className="glass-input min-w-0 rounded-xl p-3"
@@ -1388,6 +1558,14 @@ export default function ThirdPartyScriptsClient() {
               <div className="glass-input rounded-xl p-6 text-center text-sm text-[var(--text-secondary)]">
                 {t('app.converter.third_party_scripts.empty')}
               </div>
+            )}
+            {scriptsRenderLimited && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('public.rows_render_limited', {
+                  total: filteredScripts.length.toLocaleString(),
+                  visible: visibleScripts.length.toLocaleString()
+                })}
+              </p>
             )}
           </CardContent>
         </Card>

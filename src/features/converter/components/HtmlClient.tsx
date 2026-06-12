@@ -1,7 +1,15 @@
 'use client'
 
 import he from 'he'
-import { ArrowRightLeft, Code2, Copy, FlaskConical, ShieldAlert, Trash2 } from 'lucide-react'
+import {
+  ArrowRightLeft,
+  Code2,
+  Copy,
+  Download,
+  FlaskConical,
+  ShieldAlert,
+  Trash2
+} from 'lucide-react'
 import { useCallback, useDeferredValue, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -12,12 +20,19 @@ import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
+import { useToast } from '@/components/ui/toast'
 import { useCopy } from '@/hooks/useCopy'
+import {
+  createOutputPreview,
+  isOutputPreviewLimited,
+  OUTPUT_PREVIEW_CHARS
+} from '@/utils/outputPreview'
 
 type EntityStyle = 'named' | 'decimal' | 'hex'
 type Mode = 'encode' | 'decode'
 
 const MAX_HTML_INPUT_CHARS = 120000
+const MAX_HTML_LIVE_CONVERSION_CHARS = 30000
 
 const HTML_SAMPLE = `<section data-note="Tom & Jerry">
   <h1>Daily Tools \\u00A9 2026</h1>
@@ -88,20 +103,75 @@ const hasInvalidNumericEntity = (value: string) => {
 const escapeUnsafeOnly = (value: string, entityStyle: EntityStyle) =>
   value.replace(/[&<>"'`]/gu, char => unsafeEntityMap[entityStyle][char] ?? char)
 
+const getLiveHtmlInput = (value: string, mode: Mode) => {
+  const preview = value.slice(0, MAX_HTML_LIVE_CONVERSION_CHARS)
+  if (mode !== 'decode' || preview.length === value.length) return preview
+
+  const lastAmpersand = preview.lastIndexOf('&')
+  const lastSemicolon = preview.lastIndexOf(';')
+  if (lastAmpersand > lastSemicolon && preview.length - lastAmpersand < 40) {
+    return preview.slice(0, lastAmpersand)
+  }
+
+  return preview
+}
+
+const convertHtml = (
+  value: string,
+  mode: Mode,
+  entityStyle: EntityStyle,
+  encodeNonAscii: boolean,
+  strictDecode: boolean
+) => {
+  try {
+    if (mode === 'encode') {
+      const output = encodeNonAscii
+        ? he.encode(value, htmlEncodeOptions[entityStyle])
+        : escapeUnsafeOnly(value, entityStyle)
+
+      return { errorKey: null as string | null, output, success: true }
+    }
+
+    return {
+      errorKey: null,
+      output: he.decode(value, { strict: strictDecode }),
+      success: true
+    }
+  } catch {
+    return {
+      errorKey: 'app.converter.html.warning.decode_failed',
+      output: '',
+      success: false
+    }
+  }
+}
+
 const formatRatio = (inputLength: number, outputLength: number) => {
   if (inputLength === 0) return '0%'
   return `${Math.round((outputLength / inputLength) * 100)}%`
 }
 
+const downloadText = (content: string, filename: string, type: string) => {
+  const blob = new Blob([content], { type })
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  anchor.click()
+  URL.revokeObjectURL(url)
+}
+
 export default function HtmlClient() {
   const { t } = useTranslation()
   const { copy } = useCopy()
+  const toast = useToast()
 
   const [input, setInput] = useState('')
   const [mode, setMode] = useState<Mode>('encode')
   const [entityStyle, setEntityStyle] = useState<EntityStyle>('named')
   const [encodeNonAscii, setEncodeNonAscii] = useState(true)
   const [strictDecode, setStrictDecode] = useState(true)
+  const [isInputCapped, setIsInputCapped] = useState(false)
 
   const deferredInput = useDeferredValue(input)
   const deferredMode = useDeferredValue(mode)
@@ -110,45 +180,46 @@ export default function HtmlClient() {
   const deferredStrictDecode = useDeferredValue(strictDecode)
 
   const safeInput = useMemo(() => deferredInput.slice(0, MAX_HTML_INPUT_CHARS), [deferredInput])
+  const liveConversionDeferred = safeInput.length > MAX_HTML_LIVE_CONVERSION_CHARS
+  const liveInput = useMemo(
+    () => getLiveHtmlInput(safeInput, deferredMode),
+    [deferredMode, safeInput]
+  )
 
   const conversion = useMemo(() => {
-    if (!safeInput) {
+    if (!liveInput) {
       return {
+        errorKey: null as string | null,
         error: null as string | null,
         output: '',
         success: true
       }
     }
 
-    try {
-      if (deferredMode === 'encode') {
-        const output = deferredEncodeNonAscii
-          ? he.encode(safeInput, htmlEncodeOptions[deferredEntityStyle])
-          : escapeUnsafeOnly(safeInput, deferredEntityStyle)
+    const result = convertHtml(
+      liveInput,
+      deferredMode,
+      deferredEntityStyle,
+      deferredEncodeNonAscii,
+      deferredStrictDecode
+    )
 
-        return { error: null, output, success: true }
-      }
-
-      return {
-        error: null,
-        output: he.decode(safeInput, { strict: deferredStrictDecode }),
-        success: true
-      }
-    } catch {
-      return {
-        error: t('app.converter.html.warning.decode_failed'),
-        output: '',
-        success: false
-      }
+    return {
+      error: result.errorKey ? t(result.errorKey) : null,
+      errorKey: result.errorKey,
+      output: result.output,
+      success: result.success
     }
   }, [
     deferredEncodeNonAscii,
     deferredEntityStyle,
     deferredMode,
     deferredStrictDecode,
-    safeInput,
+    liveInput,
     t
   ])
+  const outputPreview = useMemo(() => createOutputPreview(conversion.output), [conversion.output])
+  const outputPreviewLimited = isOutputPreviewLimited(conversion.output)
 
   const entityCount = useMemo(
     () => countEntities(deferredMode === 'decode' ? safeInput : conversion.output),
@@ -158,21 +229,33 @@ export default function HtmlClient() {
   const stats = useMemo(
     () => [
       { label: t('app.converter.html.stats.input_chars'), value: safeInput.length },
-      { label: t('app.converter.html.stats.output_chars'), value: conversion.output.length },
+      {
+        label: t('app.converter.html.stats.output_chars'),
+        value: liveConversionDeferred ? `${conversion.output.length}+` : conversion.output.length
+      },
       { label: t('app.converter.html.stats.entities'), value: entityCount },
       {
         label: t('app.converter.html.stats.ratio'),
         value: formatRatio(safeInput.length, conversion.output.length)
       }
     ],
-    [conversion.output.length, entityCount, safeInput.length, t]
+    [conversion.output.length, entityCount, liveConversionDeferred, safeInput.length, t]
   )
 
   const warnings = useMemo(() => {
     const messages: string[] = []
 
-    if (deferredInput.length > MAX_HTML_INPUT_CHARS) {
+    if (isInputCapped || deferredInput.length > MAX_HTML_INPUT_CHARS) {
       messages.push(t('app.converter.html.warning.truncated', { count: MAX_HTML_INPUT_CHARS }))
+    }
+
+    if (liveConversionDeferred) {
+      messages.push(
+        t('app.converter.html.warning.live_output_deferred', {
+          total: safeInput.length.toLocaleString(),
+          visible: liveInput.length.toLocaleString()
+        })
+      )
     }
 
     if (deferredMode === 'decode' && safeInput.trim()) {
@@ -188,23 +271,74 @@ export default function HtmlClient() {
     }
 
     return messages
-  }, [deferredInput.length, deferredMode, deferredStrictDecode, entityCount, safeInput, t])
+  }, [
+    deferredInput.length,
+    deferredMode,
+    deferredStrictDecode,
+    entityCount,
+    isInputCapped,
+    liveConversionDeferred,
+    liveInput.length,
+    safeInput,
+    t
+  ])
+
+  const updateInput = useCallback((value: string) => {
+    const isCapped = value.length > MAX_HTML_INPUT_CHARS
+    setIsInputCapped(isCapped)
+    setInput(isCapped ? value.slice(0, MAX_HTML_INPUT_CHARS) : value)
+  }, [])
 
   const loadSample = useCallback(() => {
     setMode('encode')
     setEntityStyle('named')
     setEncodeNonAscii(true)
     setStrictDecode(true)
+    setIsInputCapped(false)
     setInput(HTML_SAMPLE.replace('\\u00A9', '\u00A9'))
   }, [])
 
+  const buildCurrentOutput = useCallback(() => {
+    return convertHtml(safeInput, mode, entityStyle, encodeNonAscii, strictDecode)
+  }, [encodeNonAscii, entityStyle, mode, safeInput, strictDecode])
+
+  const handleOutputError = useCallback(
+    (errorKey: string | null) => {
+      if (errorKey) toast.error(t(errorKey))
+    },
+    [t, toast]
+  )
+
   const handleSwap = () => {
-    setInput(conversion.output)
+    const result = buildCurrentOutput()
+    if (!result.success) {
+      handleOutputError(result.errorKey)
+      return
+    }
+    updateInput(result.output)
     setMode(current => (current === 'encode' ? 'decode' : 'encode'))
   }
 
+  const handleCopyOutput = () => {
+    const result = buildCurrentOutput()
+    if (!result.success) {
+      handleOutputError(result.errorKey)
+      return
+    }
+    void copy(result.output)
+  }
+
+  const handleDownload = () => {
+    const result = buildCurrentOutput()
+    if (!result.success) {
+      handleOutputError(result.errorKey)
+      return
+    }
+    downloadText(result.output, 'daily-tools-html.txt', 'text/plain;charset=utf-8')
+  }
+
   const handleClear = () => {
-    setInput('')
+    updateInput('')
   }
 
   return (
@@ -318,7 +452,7 @@ export default function HtmlClient() {
               <Textarea
                 id="html-input"
                 value={input}
-                onChange={event => setInput(event.target.value)}
+                onChange={event => updateInput(event.target.value)}
                 placeholder={
                   mode === 'encode'
                     ? t('app.converter.html.encode_placeholder')
@@ -338,7 +472,7 @@ export default function HtmlClient() {
                     size="sm"
                     variant="ghost"
                     icon={<ArrowRightLeft className="h-4 w-4" />}
-                    disabled={!conversion.success || !conversion.output}
+                    disabled={!conversion.success || !safeInput}
                     onClick={handleSwap}
                   >
                     {t('app.converter.html.use_output')}
@@ -346,9 +480,19 @@ export default function HtmlClient() {
                   <Button
                     type="button"
                     size="sm"
+                    variant="ghost"
+                    icon={<Download className="h-4 w-4" />}
+                    disabled={!conversion.success || !safeInput}
+                    onClick={handleDownload}
+                  >
+                    {t('app.converter.html.download')}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
                     icon={<Copy className="h-4 w-4" />}
-                    disabled={!conversion.success || !conversion.output}
-                    onClick={() => copy(conversion.output)}
+                    disabled={!conversion.success || !safeInput}
+                    onClick={handleCopyOutput}
                   >
                     {t('public.copy')}
                   </Button>
@@ -356,12 +500,20 @@ export default function HtmlClient() {
               </div>
               <Textarea
                 id="html-output"
-                value={conversion.output}
+                value={outputPreview}
                 readOnly
                 rows={12}
                 placeholder={t('app.converter.html.result_placeholder')}
                 className="resize-none font-mono"
               />
+              {outputPreviewLimited && (
+                <p className="text-xs leading-5 text-amber-600 dark:text-amber-300">
+                  {t('public.output_preview_action_limited', {
+                    total: conversion.output.length.toLocaleString(),
+                    visible: OUTPUT_PREVIEW_CHARS.toLocaleString()
+                  })}
+                </p>
+              )}
             </div>
           </div>
 

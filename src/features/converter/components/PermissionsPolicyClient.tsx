@@ -12,16 +12,22 @@ import {
   SlidersHorizontal,
   Trash2
 } from 'lucide-react'
-import { useDeferredValue, useMemo, useState } from 'react'
+import { useCallback, useDeferredValue, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { InputCapNotice } from '@/components/ui/input-cap-notice'
 import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
+import {
+  createOutputPreview,
+  isOutputPreviewLimited,
+  OUTPUT_PREVIEW_CHARS
+} from '@/utils/outputPreview'
 
 const FEATURE_GROUPS = [
   'all',
@@ -44,6 +50,7 @@ const OUTPUT_TYPES = [
 ] as const
 const POLICY_INPUT_LIMIT = 28000
 const POLICY_ROW_LIMIT = 160
+const POLICY_RENDER_LIMIT = 48
 
 type FeatureGroup = (typeof FEATURE_GROUPS)[number]
 type AllowlistMode = (typeof ALLOWLIST_MODES)[number]
@@ -609,6 +616,11 @@ export default function PermissionsPolicyClient() {
     () => parsePolicyWorkspace(deferredWorkspace),
     [deferredWorkspace]
   )
+  const visibleParsedDirectives = useMemo(
+    () => parsedDirectives.slice(0, POLICY_RENDER_LIMIT),
+    [parsedDirectives]
+  )
+  const parsedDirectivesLimited = parsedDirectives.length > visibleParsedDirectives.length
   const hasReportingEndpoint = useMemo(
     () => /(^|\n)\s*reporting-endpoints\s*:/iu.test(deferredWorkspace),
     [deferredWorkspace]
@@ -617,7 +629,13 @@ export default function PermissionsPolicyClient() {
     () => auditPolicies(parsedDirectives, hasReportingEndpoint),
     [hasReportingEndpoint, parsedDirectives]
   )
-  const output = useMemo(() => buildOutput(draft, outputType), [draft, outputType])
+  const outputPreviewSource = useMemo(() => buildOutput(draft, outputType), [draft, outputType])
+  const outputPreview = useMemo(
+    () => createOutputPreview(outputPreviewSource),
+    [outputPreviewSource]
+  )
+  const outputPreviewLimited = isOutputPreviewLimited(outputPreviewSource)
+  const buildCurrentOutput = useCallback(() => buildOutput(draft, outputType), [draft, outputType])
   const filteredFeatures = useMemo(() => {
     const normalized = deferredQuery.trim().toLowerCase()
 
@@ -653,7 +671,7 @@ export default function PermissionsPolicyClient() {
       wildcard
     }
   }, [findings, parsedDirectives])
-  const exportJson = useMemo(
+  const buildExportJson = useCallback(
     () =>
       JSON.stringify(
         {
@@ -666,7 +684,7 @@ export default function PermissionsPolicyClient() {
       ),
     [findings, metrics, parsedDirectives]
   )
-  const exportCsv = useMemo(
+  const buildExportCsv = useCallback(
     () =>
       [
         'header,feature,allowlist,reportTo',
@@ -686,9 +704,9 @@ export default function PermissionsPolicyClient() {
         `${t('app.converter.permissions_policy.metric.disabled')}: ${metrics.disabled}`,
         `${t('app.converter.permissions_policy.metric.wildcard')}: ${metrics.wildcard}`,
         `${t('app.converter.permissions_policy.metric.issues')}: ${metrics.dangerous}`,
-        output
+        outputPreviewSource
       ].join('\n'),
-    [metrics, output, t]
+    [metrics, outputPreviewSource, t]
   )
 
   const loadPreset = (preset: Preset) => {
@@ -728,7 +746,7 @@ export default function PermissionsPolicyClient() {
                 type="button"
                 size="sm"
                 icon={<Copy className="h-4 w-4" />}
-                onClick={() => copy(output)}
+                onClick={() => copy(buildCurrentOutput())}
               >
                 {t('public.copy')}
               </Button>
@@ -886,11 +904,19 @@ export default function PermissionsPolicyClient() {
               </Button>
             </div>
             <Textarea
-              value={output}
+              value={outputPreview}
               readOnly
               rows={8}
               className="min-h-[190px] resize-none font-mono"
             />
+            {outputPreviewLimited && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('public.output_preview_limited', {
+                  total: outputPreviewSource.length.toLocaleString(),
+                  visible: OUTPUT_PREVIEW_CHARS.toLocaleString()
+                })}
+              </p>
+            )}
           </CardContent>
         </Card>
 
@@ -923,6 +949,10 @@ export default function PermissionsPolicyClient() {
               rows={10}
               placeholder={t('app.converter.permissions_policy.workspace_placeholder')}
               className="min-h-[220px] resize-y font-mono"
+            />
+            <InputCapNotice
+              visible={workspace.length >= POLICY_INPUT_LIMIT}
+              limit={POLICY_INPUT_LIMIT}
             />
 
             <div className="space-y-2">
@@ -970,7 +1000,7 @@ export default function PermissionsPolicyClient() {
                 size="sm"
                 variant="ghost"
                 icon={<Copy className="h-4 w-4" />}
-                onClick={() => copy(exportJson)}
+                onClick={() => copy(buildExportJson())}
               >
                 {t('app.converter.permissions_policy.copy_json')}
               </Button>
@@ -981,7 +1011,7 @@ export default function PermissionsPolicyClient() {
                 icon={<Download className="h-4 w-4" />}
                 onClick={() =>
                   downloadText(
-                    exportCsv,
+                    buildExportCsv(),
                     'daily-tools-permissions-policy.csv',
                     'text/csv;charset=utf-8'
                   )
@@ -1003,7 +1033,7 @@ export default function PermissionsPolicyClient() {
                 <Input
                   id="permissions-search"
                   value={query}
-                  onChange={event => setQuery(event.target.value)}
+                  onChange={event => setQuery(event.target.value.slice(0, 160))}
                   placeholder={t('app.converter.permissions_policy.search_placeholder')}
                   className="pl-10"
                 />
@@ -1057,31 +1087,41 @@ export default function PermissionsPolicyClient() {
           </div>
 
           {parsedDirectives.length ? (
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {parsedDirectives.map(directive => (
-                <div
-                  key={`${directive.header}:${directive.feature}:${directive.raw}`}
-                  className="glass-input rounded-xl p-3"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <p className="break-all font-mono text-sm font-semibold text-[var(--text-primary)]">
-                      {directive.feature}
+            <>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {visibleParsedDirectives.map(directive => (
+                  <div
+                    key={`${directive.header}:${directive.feature}:${directive.raw}`}
+                    className="glass-input rounded-xl p-3"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="break-all font-mono text-sm font-semibold text-[var(--text-primary)]">
+                        {directive.feature}
+                      </p>
+                      <span className="rounded-full bg-[var(--primary-subtle)] px-2 py-0.5 text-xs text-[var(--primary)]">
+                        {directive.header}
+                      </span>
+                    </div>
+                    <p className="mt-2 break-all font-mono text-xs leading-5 text-[var(--text-secondary)]">
+                      {directive.allowlist}
                     </p>
-                    <span className="rounded-full bg-[var(--primary-subtle)] px-2 py-0.5 text-xs text-[var(--primary)]">
-                      {directive.header}
-                    </span>
+                    {directive.reportTo ? (
+                      <p className="mt-2 break-all font-mono text-xs text-[var(--text-tertiary)]">
+                        report-to={directive.reportTo}
+                      </p>
+                    ) : null}
                   </div>
-                  <p className="mt-2 break-all font-mono text-xs leading-5 text-[var(--text-secondary)]">
-                    {directive.allowlist}
-                  </p>
-                  {directive.reportTo ? (
-                    <p className="mt-2 break-all font-mono text-xs text-[var(--text-tertiary)]">
-                      report-to={directive.reportTo}
-                    </p>
-                  ) : null}
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+              {parsedDirectivesLimited && (
+                <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                  {t('public.output_preview_rows_limited', {
+                    total: parsedDirectives.length.toLocaleString(),
+                    visible: visibleParsedDirectives.length.toLocaleString()
+                  })}
+                </p>
+              )}
+            </>
           ) : (
             <div className="glass-input rounded-xl p-6 text-center text-sm text-[var(--text-secondary)]">
               {t('app.converter.permissions_policy.empty')}

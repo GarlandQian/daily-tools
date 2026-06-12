@@ -12,16 +12,22 @@ import {
   TimerReset,
   Trash2
 } from 'lucide-react'
-import { useDeferredValue, useMemo, useState } from 'react'
+import { useCallback, useDeferredValue, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { InputCapNotice } from '@/components/ui/input-cap-notice'
 import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
+import {
+  createOutputPreview,
+  isOutputPreviewLimited,
+  OUTPUT_PREVIEW_CHARS
+} from '@/utils/outputPreview'
 
 const VISIBILITY_VALUES = ['default', 'public', 'private'] as const
 const DIRECTIVE_GROUPS = [
@@ -33,8 +39,10 @@ const DIRECTIVE_GROUPS = [
   'integrity'
 ] as const
 const OUTPUT_TYPES = ['raw', 'next', 'nginx', 'vercel', 'cloudflare', 'json'] as const
+const CACHE_DIRECTIVE_TOKEN_LIMIT = 32
 const CACHE_INPUT_LIMIT = 28000
 const CACHE_ROW_LIMIT = 120
+const CACHE_RENDER_LIMIT = 48
 
 type VisibilityValue = (typeof VISIBILITY_VALUES)[number]
 type DirectiveGroup = (typeof DIRECTIVE_GROUPS)[number]
@@ -277,8 +285,10 @@ const buildCacheControl = (draft: CacheDraft) => {
 
 const parseDirectives = (value: string) => {
   const directives: ParsedPolicy['directives'] = {}
+  let parsedCount = 0
 
   for (const segment of value.split(',')) {
+    if (parsedCount >= CACHE_DIRECTIVE_TOKEN_LIMIT) break
     const trimmed = segment.trim()
     if (!trimmed) continue
     const separator = trimmed.indexOf('=')
@@ -290,6 +300,7 @@ const parseDirectives = (value: string) => {
         .trim()
         .replace(/^"|"$/gu, '')
     }
+    parsedCount += 1
   }
 
   return directives
@@ -470,8 +481,19 @@ export default function CacheControlClient() {
   const deferredWorkspace = useDeferredValue(workspace)
 
   const generatedHeader = useMemo(() => buildCacheControl(draft), [draft])
-  const output = useMemo(() => buildOutput(draft, outputType), [draft, outputType])
+  const outputPreviewSource = useMemo(() => buildOutput(draft, outputType), [draft, outputType])
+  const outputPreview = useMemo(
+    () => createOutputPreview(outputPreviewSource),
+    [outputPreviewSource]
+  )
+  const outputPreviewLimited = isOutputPreviewLimited(outputPreviewSource)
+  const buildCurrentOutput = useCallback(() => buildOutput(draft, outputType), [draft, outputType])
   const parsedPolicies = useMemo(() => parseCacheWorkspace(deferredWorkspace), [deferredWorkspace])
+  const visibleParsedPolicies = useMemo(
+    () => parsedPolicies.slice(0, CACHE_RENDER_LIMIT),
+    [parsedPolicies]
+  )
+  const parsedPoliciesLimited = parsedPolicies.length > visibleParsedPolicies.length
   const findings = useMemo(() => auditPolicies(parsedPolicies), [parsedPolicies])
   const filteredDirectives = useMemo(() => {
     const normalized = deferredQuery.trim().toLowerCase()
@@ -509,7 +531,7 @@ export default function CacheControlClient() {
       total: parsedPolicies.length
     }
   }, [findings, parsedPolicies])
-  const exportJson = useMemo(
+  const buildExportJson = useCallback(
     () =>
       JSON.stringify(
         {
@@ -522,7 +544,7 @@ export default function CacheControlClient() {
       ),
     [findings, metrics, parsedPolicies]
   )
-  const exportCsv = useMemo(
+  const buildExportCsv = useCallback(
     () =>
       [
         'source,raw,public,private,noStore,noCache,maxAge,sMaxAge,staleWhileRevalidate,staleIfError,immutable',
@@ -596,7 +618,7 @@ export default function CacheControlClient() {
                 type="button"
                 size="sm"
                 icon={<Copy className="h-4 w-4" />}
-                onClick={() => copy(output)}
+                onClick={() => copy(buildCurrentOutput())}
               >
                 {t('public.copy')}
               </Button>
@@ -776,11 +798,19 @@ export default function CacheControlClient() {
               </Button>
             </div>
             <Textarea
-              value={output}
+              value={outputPreview}
               readOnly
               rows={8}
               className="min-h-[190px] resize-none font-mono"
             />
+            {outputPreviewLimited && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('public.output_preview_limited', {
+                  total: outputPreviewSource.length.toLocaleString(),
+                  visible: OUTPUT_PREVIEW_CHARS.toLocaleString()
+                })}
+              </p>
+            )}
           </CardContent>
         </Card>
 
@@ -811,6 +841,10 @@ export default function CacheControlClient() {
               rows={10}
               placeholder={t('app.converter.cache_control.workspace_placeholder')}
               className="min-h-[220px] resize-y font-mono"
+            />
+            <InputCapNotice
+              visible={workspace.length >= CACHE_INPUT_LIMIT}
+              limit={CACHE_INPUT_LIMIT}
             />
 
             <div className="space-y-2">
@@ -858,7 +892,7 @@ export default function CacheControlClient() {
                 size="sm"
                 variant="ghost"
                 icon={<Copy className="h-4 w-4" />}
-                onClick={() => copy(exportJson)}
+                onClick={() => copy(buildExportJson())}
               >
                 {t('app.converter.cache_control.copy_json')}
               </Button>
@@ -868,7 +902,11 @@ export default function CacheControlClient() {
                 variant="ghost"
                 icon={<Download className="h-4 w-4" />}
                 onClick={() =>
-                  downloadText(exportCsv, 'daily-tools-cache-control.csv', 'text/csv;charset=utf-8')
+                  downloadText(
+                    buildExportCsv(),
+                    'daily-tools-cache-control.csv',
+                    'text/csv;charset=utf-8'
+                  )
                 }
               >
                 {t('app.converter.cache_control.download_csv')}
@@ -885,7 +923,7 @@ export default function CacheControlClient() {
                 <Input
                   id="cache-search"
                   value={query}
-                  onChange={event => setQuery(event.target.value)}
+                  onChange={event => setQuery(event.target.value.slice(0, 160))}
                   placeholder={t('app.converter.cache_control.search_placeholder')}
                   className="pl-10"
                 />
@@ -934,33 +972,48 @@ export default function CacheControlClient() {
           </div>
 
           {parsedPolicies.length ? (
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {parsedPolicies.map(policy => (
-                <div key={`${policy.source}:${policy.raw}`} className="glass-input rounded-xl p-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <p className="break-all font-mono text-sm font-semibold text-[var(--text-primary)]">
-                      {policy.source}
-                    </p>
-                    <span className="rounded-full bg-[var(--primary-subtle)] px-2 py-0.5 text-xs text-[var(--primary)]">
-                      {Object.keys(policy.directives).length}
-                    </span>
-                  </div>
-                  <p className="mt-2 break-all font-mono text-xs leading-5 text-[var(--text-secondary)]">
-                    {policy.raw}
-                  </p>
-                  <div className="mt-3 flex flex-wrap gap-1.5">
-                    {Object.entries(policy.directives).map(([name, value]) => (
-                      <span
-                        key={name}
-                        className="rounded-full bg-[var(--bg-muted)] px-2 py-0.5 font-mono text-xs text-[var(--text-secondary)]"
-                      >
-                        {value === true ? name : `${name}=${value}`}
+            <>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {visibleParsedPolicies.map(policy => (
+                  <div
+                    key={`${policy.source}:${policy.raw}`}
+                    className="glass-input rounded-xl p-3"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="break-all font-mono text-sm font-semibold text-[var(--text-primary)]">
+                        {policy.source}
+                      </p>
+                      <span className="rounded-full bg-[var(--primary-subtle)] px-2 py-0.5 text-xs text-[var(--primary)]">
+                        {Object.keys(policy.directives).length}
                       </span>
-                    ))}
+                    </div>
+                    <p className="mt-2 break-all font-mono text-xs leading-5 text-[var(--text-secondary)]">
+                      {policy.raw}
+                    </p>
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                      {Object.entries(policy.directives)
+                        .slice(0, CACHE_DIRECTIVE_TOKEN_LIMIT)
+                        .map(([name, value]) => (
+                          <span
+                            key={name}
+                            className="inline-block min-w-0 max-w-full break-all rounded-full bg-[var(--bg-muted)] px-2 py-0.5 font-mono text-xs leading-5 text-[var(--text-secondary)]"
+                          >
+                            {value === true ? name : `${name}=${value}`}
+                          </span>
+                        ))}
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+              {parsedPoliciesLimited && (
+                <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                  {t('public.output_preview_rows_limited', {
+                    total: parsedPolicies.length.toLocaleString(),
+                    visible: visibleParsedPolicies.length.toLocaleString()
+                  })}
+                </p>
+              )}
+            </>
           ) : (
             <div className="glass-input rounded-xl p-6 text-center text-sm text-[var(--text-secondary)]">
               {t('app.converter.cache_control.empty')}

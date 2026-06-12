@@ -21,6 +21,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
+import { InputCapNotice } from '@/components/ui/input-cap-notice'
 import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
@@ -48,6 +49,7 @@ interface AuditItem {
 
 interface ParsedUtmUrl {
   baseUrl: string
+  candidateCapped: boolean
   credentials: boolean
   duplicateUtmKeys: string[]
   error: BuildError | null
@@ -59,12 +61,14 @@ interface ParsedUtmUrl {
   original: string
   preservedParams: Array<{ key: string; value: string }>
   protocol: string
+  queryParamLimitReached: boolean
   utm: Omit<UtmFormData, 'url'>
 }
 
 interface ParsedWorkspace {
   capped: boolean
   invalidRows: number
+  truncatedUrls: number
   urls: ParsedUtmUrl[]
 }
 
@@ -109,8 +113,12 @@ const BULK_CHANNELS = [
 ]
 
 const UTM_WORKSPACE_LIMIT = 40000
+const UTM_URL_LIMIT = 1200
+const UTM_FIELD_LIMIT = 160
 const MAX_WORKSPACE_LINES = 120
 const MAX_PARSED_URLS = 16
+const MAX_UTM_QUERY_PARAMS = 160
+const MAX_UTM_PRESERVED_PARAMS = 80
 const HOST_PORT_PATTERN = /^(?:localhost|(?:[\w-]+\.)+[\w-]+|\[[^\]]+\]):\d+(?:[/?#]|$)/iu
 const HAS_SCHEME_PATTERN = /^[a-z][a-z\d+.-]*:/iu
 const URL_CANDIDATE_PATTERN =
@@ -226,12 +234,25 @@ const buildBaseUrlWithoutTracking = (url: URL) => {
 }
 
 const parseUtmCandidate = (candidate: string): ParsedUtmUrl | null => {
-  if (!candidate.trim()) return null
+  const candidateCapped = candidate.length > UTM_URL_LIMIT
+  const safeCandidate = candidate.slice(0, UTM_URL_LIMIT)
+  if (!safeCandidate.trim()) return null
 
-  const normalized = normalizeUrl(candidate)
+  const normalized = normalizeUrl(safeCandidate)
   try {
     const url = new URL(normalized)
-    const entries = Array.from(url.searchParams.entries())
+    const entries: Array<[string, string]> = []
+    let queryParamLimitReached = false
+
+    url.searchParams.forEach((value, key) => {
+      if (entries.length >= MAX_UTM_QUERY_PARAMS) {
+        queryParamLimitReached = true
+        return
+      }
+
+      entries.push([key, value])
+    })
+
     const keyCounts = new Map<string, number>()
     const mixedCaseUtmKeys = new Set<string>()
     const duplicateUtmKeys = new Set<string>()
@@ -254,9 +275,9 @@ const parseUtmCandidate = (candidate: string): ParsedUtmUrl | null => {
         if (!UTM_PARAM_KEYS.has(normalizedKey)) extraTrackingKeys.add(key)
       } else if (TRACKING_PARAM_KEYS.has(normalizedKey)) {
         extraTrackingKeys.add(key)
-        preservedParams.push({ key, value })
+        if (preservedParams.length < MAX_UTM_PRESERVED_PARAMS) preservedParams.push({ key, value })
       } else {
-        preservedParams.push({ key, value })
+        if (preservedParams.length < MAX_UTM_PRESERVED_PARAMS) preservedParams.push({ key, value })
       }
     })
 
@@ -266,6 +287,7 @@ const parseUtmCandidate = (candidate: string): ParsedUtmUrl | null => {
 
     return {
       baseUrl: isWebProtocol(url.protocol) ? buildBaseUrlWithoutTracking(url) : '',
+      candidateCapped,
       credentials: Boolean(url.username || url.password),
       duplicateUtmKeys: Array.from(duplicateUtmKeys),
       error: isWebProtocol(url.protocol) ? null : 'scheme',
@@ -274,14 +296,16 @@ const parseUtmCandidate = (candidate: string): ParsedUtmUrl | null => {
       hostname: url.hostname,
       isHttps: url.protocol === 'https:',
       mixedCaseUtmKeys: Array.from(mixedCaseUtmKeys),
-      original: candidate,
+      original: safeCandidate,
       preservedParams,
       protocol: url.protocol.replace(/:$/u, ''),
+      queryParamLimitReached,
       utm
     }
   } catch {
     return {
       baseUrl: '',
+      candidateCapped,
       credentials: false,
       duplicateUtmKeys: [],
       error: 'invalid',
@@ -290,9 +314,10 @@ const parseUtmCandidate = (candidate: string): ParsedUtmUrl | null => {
       hostname: '',
       isHttps: false,
       mixedCaseUtmKeys: [],
-      original: candidate,
+      original: safeCandidate,
       preservedParams: [],
       protocol: '',
+      queryParamLimitReached: false,
       utm: {
         campaign: '',
         content: '',
@@ -310,10 +335,12 @@ const parseUtmWorkspace = (input: string): ParsedWorkspace => {
   const safeInput = input.slice(0, UTM_WORKSPACE_LIMIT)
   const candidates: string[] = []
   let invalidRows = 0
+  let truncatedUrls = 0
 
   for (const line of safeInput.split(/\r?\n/u).slice(0, MAX_WORKSPACE_LINES)) {
     const candidate = extractUrlCandidate(line)
     if (!candidate) continue
+    if (candidate.length > UTM_URL_LIMIT) truncatedUrls += 1
     candidates.push(candidate)
     if (candidates.length >= MAX_PARSED_URLS) break
   }
@@ -326,7 +353,7 @@ const parseUtmWorkspace = (input: string): ParsedWorkspace => {
     return items
   }, [])
 
-  return { capped, invalidRows, urls }
+  return { capped, invalidRows, truncatedUrls, urls }
 }
 
 const normalizeDiffFields = (formData: UtmFormData) => {
@@ -403,6 +430,7 @@ const UtmBuilderClient = () => {
   const [autoNormalize, setAutoNormalize] = useState(true)
   const [auditQuery, setAuditQuery] = useState('')
   const [workspace, setWorkspace] = useState(DEFAULT_WORKSPACE)
+  const [isWorkspaceCapped, setIsWorkspaceCapped] = useState(false)
   const deferredWorkspace = useDeferredValue(workspace)
 
   const effectiveFormData = useMemo(
@@ -410,7 +438,10 @@ const UtmBuilderClient = () => {
     [autoNormalize, formData]
   )
   const result = useMemo(() => buildUtmUrl(effectiveFormData), [effectiveFormData])
-  const parsedWorkspace = useMemo(() => parseUtmWorkspace(deferredWorkspace), [deferredWorkspace])
+  const parsedWorkspace = useMemo(() => {
+    const parsed = parseUtmWorkspace(deferredWorkspace)
+    return isWorkspaceCapped ? { ...parsed, capped: true } : parsed
+  }, [deferredWorkspace, isWorkspaceCapped])
   const parsedPrimary = parsedWorkspace.urls.find(item => !item.error)
   const baseAudit = useMemo(() => auditExistingBaseUrl(formData.url), [formData.url])
   const normalizationDiffs = useMemo(() => normalizeDiffFields(formData), [formData])
@@ -462,7 +493,6 @@ const UtmBuilderClient = () => {
     ],
     [bulkRows, canCopy, effectiveFormData, requiredMissing, result.error, result.url]
   )
-  const csvOutput = useMemo(() => buildVariantsCsv(variantRows), [variantRows])
   const jsonSummary = useMemo(
     () =>
       JSON.stringify(
@@ -524,6 +554,12 @@ const UtmBuilderClient = () => {
           level: 'warn',
           subject: baseAudit.extraTrackingKeys.join(', ')
         })
+      if (baseAudit.queryParamLimitReached)
+        items.push({
+          key: 'query_params_limited',
+          level: 'warn',
+          subject: String(MAX_UTM_QUERY_PARAMS)
+        })
       if (baseHasUtm)
         items.push({ key: 'existing_utm', level: 'warn', subject: baseAudit.original })
       if (baseAudit.preservedParams.length > 0)
@@ -538,6 +574,12 @@ const UtmBuilderClient = () => {
 
     if (parsedWorkspace.capped)
       items.push({ key: 'workspace_capped', level: 'warn', subject: String(UTM_WORKSPACE_LIMIT) })
+    if (parsedWorkspace.truncatedUrls > 0)
+      items.push({
+        key: 'workspace_url_capped',
+        level: 'warn',
+        subject: String(parsedWorkspace.truncatedUrls)
+      })
     if (workspace.trim() && parsedWorkspace.urls.length === 0)
       items.push({ key: 'parser_empty', level: 'warn', subject: 'workspace' })
     if (parsedWorkspace.invalidRows > 0)
@@ -580,6 +622,12 @@ const UtmBuilderClient = () => {
           key: 'parsed_extra_tracking',
           level: 'warn',
           subject: parsedPrimary.extraTrackingKeys.join(', ')
+        })
+      if (parsedPrimary.queryParamLimitReached)
+        items.push({
+          key: 'parsed_query_params_limited',
+          level: 'warn',
+          subject: String(MAX_UTM_QUERY_PARAMS)
         })
       if (parsedPrimary.preservedParams.length > 0)
         items.push({
@@ -629,11 +677,22 @@ const UtmBuilderClient = () => {
     setFormData(prev => ({ ...prev, ...PRESETS[key] }))
   }
 
+  const updateFormField = <Key extends keyof UtmFormData>(field: Key, value: UtmFormData[Key]) => {
+    const limit = field === 'url' ? UTM_URL_LIMIT : UTM_FIELD_LIMIT
+    setFormData(prev => ({ ...prev, [field]: value.slice(0, limit) }))
+  }
+
   const reset = () => {
     setFormData(DEFAULT_FORM_DATA)
     setAutoNormalize(true)
     setAuditQuery('')
-    setWorkspace(DEFAULT_WORKSPACE)
+    updateWorkspace(DEFAULT_WORKSPACE)
+  }
+
+  function updateWorkspace(value: string) {
+    const capped = value.length > UTM_WORKSPACE_LIMIT
+    setIsWorkspaceCapped(capped)
+    setWorkspace(capped ? value.slice(0, UTM_WORKSPACE_LIMIT) : value)
   }
 
   const applyParsedUrl = () => {
@@ -670,7 +729,7 @@ const UtmBuilderClient = () => {
               <Input
                 id="utm-url"
                 value={formData.url}
-                onChange={event => setFormData(prev => ({ ...prev, url: event.target.value }))}
+                onChange={event => updateFormField('url', event.target.value)}
                 placeholder="example.com/pricing"
                 className="font-mono"
               />
@@ -699,7 +758,7 @@ const UtmBuilderClient = () => {
               id="utm-source"
               label={t('app.generation.utm.source')}
               value={formData.source}
-              onChange={value => setFormData(prev => ({ ...prev, source: value }))}
+              onChange={value => updateFormField('source', value)}
               placeholder="newsletter"
               required
             />
@@ -707,7 +766,7 @@ const UtmBuilderClient = () => {
               id="utm-medium"
               label={t('app.generation.utm.medium')}
               value={formData.medium}
-              onChange={value => setFormData(prev => ({ ...prev, medium: value }))}
+              onChange={value => updateFormField('medium', value)}
               placeholder="email"
               required
             />
@@ -715,7 +774,7 @@ const UtmBuilderClient = () => {
               id="utm-campaign"
               label={t('app.generation.utm.campaign')}
               value={formData.campaign}
-              onChange={value => setFormData(prev => ({ ...prev, campaign: value }))}
+              onChange={value => updateFormField('campaign', value)}
               placeholder="launch"
               required
             />
@@ -723,21 +782,21 @@ const UtmBuilderClient = () => {
               id="utm-term"
               label={t('app.generation.utm.term')}
               value={formData.term}
-              onChange={value => setFormData(prev => ({ ...prev, term: value }))}
+              onChange={value => updateFormField('term', value)}
               placeholder="keyword"
             />
             <UtmInput
               id="utm-content"
               label={t('app.generation.utm.content')}
               value={formData.content}
-              onChange={value => setFormData(prev => ({ ...prev, content: value }))}
+              onChange={value => updateFormField('content', value)}
               placeholder="button-a"
             />
             <UtmInput
               id="utm-id"
               label={t('app.generation.utm.id')}
               value={formData.id}
-              onChange={value => setFormData(prev => ({ ...prev, id: value }))}
+              onChange={value => updateFormField('id', value)}
               placeholder="spring-2026"
             />
             <div className="flex items-end">
@@ -776,11 +835,12 @@ const UtmBuilderClient = () => {
           <CardContent className="space-y-4">
             <Textarea
               value={workspace}
-              onChange={event => setWorkspace(event.target.value)}
+              onChange={event => updateWorkspace(event.target.value)}
               placeholder={t('app.generation.utm.workspace_placeholder')}
               className="min-h-[180px] font-mono text-sm"
               spellCheck={false}
             />
+            <InputCapNotice visible={isWorkspaceCapped} limit={UTM_WORKSPACE_LIMIT} />
 
             <div className="grid grid-cols-3 gap-3">
               <UtmMetric label={t('app.generation.utm.metric.valid_urls')} value={metrics.valid} />
@@ -809,7 +869,7 @@ const UtmBuilderClient = () => {
                 variant="outline"
                 icon={<Link2 className="h-4 w-4" />}
                 disabled={!result.url}
-                onClick={() => setWorkspace(result.url)}
+                onClick={() => updateWorkspace(result.url)}
               >
                 {t('app.generation.utm.use_current')}
               </Button>
@@ -817,7 +877,7 @@ const UtmBuilderClient = () => {
                 type="button"
                 variant="ghost"
                 icon={<Trash2 className="h-4 w-4" />}
-                onClick={() => setWorkspace('')}
+                onClick={() => updateWorkspace('')}
               >
                 {t('public.clear')}
               </Button>
@@ -873,7 +933,7 @@ const UtmBuilderClient = () => {
               <Input
                 id="utm-audit-search"
                 value={auditQuery}
-                onChange={event => setAuditQuery(event.target.value)}
+                onChange={event => setAuditQuery(event.target.value.slice(0, 160))}
                 placeholder={t('app.generation.utm.audit_search_placeholder')}
               />
             </div>
@@ -928,7 +988,7 @@ const UtmBuilderClient = () => {
                   size="sm"
                   variant="outline"
                   icon={<ClipboardCheck className="h-4 w-4" />}
-                  onClick={() => copy(csvOutput)}
+                  onClick={() => copy(buildVariantsCsv(variantRows))}
                 >
                   {t('app.generation.utm.copy_csv')}
                 </Button>
@@ -937,7 +997,11 @@ const UtmBuilderClient = () => {
                   variant="outline"
                   icon={<Download className="h-4 w-4" />}
                   onClick={() =>
-                    downloadText(csvOutput, 'utm-variants.csv', 'text/csv;charset=utf-8')
+                    downloadText(
+                      buildVariantsCsv(variantRows),
+                      'utm-variants.csv',
+                      'text/csv;charset=utf-8'
+                    )
                   }
                 >
                   {t('app.generation.utm.download_csv')}
@@ -1040,6 +1104,7 @@ const UtmBuilderClient = () => {
 const UtmInput = ({
   id,
   label,
+  limit = UTM_FIELD_LIMIT,
   onChange,
   placeholder,
   required,
@@ -1047,6 +1112,7 @@ const UtmInput = ({
 }: {
   id: string
   label: string
+  limit?: number
   onChange: (value: string) => void
   placeholder: string
   required?: boolean
@@ -1060,7 +1126,7 @@ const UtmInput = ({
     <Input
       id={id}
       value={value}
-      onChange={event => onChange(event.target.value)}
+      onChange={event => onChange(event.target.value.slice(0, limit))}
       placeholder={placeholder}
       className="font-mono"
     />

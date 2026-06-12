@@ -64,6 +64,26 @@ const result = useMemo(() => {
 
 (To be filled by the team)
 
+### Convention: Route Smoke Tests in Next Dev
+
+**What**: When smoke-testing many App Router pages against `next dev`, request routes sequentially with normal `GET` requests. Avoid high-concurrency `HEAD` sweeps against large route sets.
+
+**Why**: In this project, a 6-wide `HEAD` sweep across tool routes corrupted `.next/dev/prerender-manifest.json` by appending a duplicate JSON tail. After that, unrelated pages returned 500 with `SyntaxError: Unexpected non-whitespace character after JSON` until the generated manifest was moved away and the dev server restarted. Sequential `GET` smoke over the same 116 tool routes returned 200 for every route and left the regenerated manifest valid JSON.
+
+**Example**:
+
+```ts
+for (const route of routes) {
+  const response = await fetch(`http://localhost:3000${route}`, {
+    method: 'GET',
+    headers: { Accept: 'text/html' }
+  })
+  assert(response.status === 200)
+}
+```
+
+**Recovery**: If this dev-cache corruption appears, stop `next dev`, move or delete `.next/dev/prerender-manifest.json`, restart the dev server, and rerun the smoke test sequentially.
+
 ---
 
 ## Code Review Checklist

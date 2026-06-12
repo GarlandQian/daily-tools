@@ -26,6 +26,12 @@ import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
+import {
+  createOutputPreview,
+  isOutputPreviewLimited,
+  OUTPUT_PREVIEW_CHARS,
+  OUTPUT_PREVIEW_ROWS
+} from '@/utils/outputPreview'
 
 const PAGE_TYPES = ['content', 'dashboard', 'checkout', 'auth', 'embedded'] as const
 const OUTPUT_TYPES = ['probe', 'next', 'headers', 'playbook', 'markdown', 'json', 'csv'] as const
@@ -682,6 +688,7 @@ export default function BfcacheAuditClient() {
   const { copy } = useCopy()
   const [draft, setDraft] = useState<BfcacheDraft>(DEFAULT_DRAFT)
   const [workspace, setWorkspace] = useState(PRESETS[0]?.workspace ?? '')
+  const [isWorkspaceCapped, setIsWorkspaceCapped] = useState(false)
   const [outputType, setOutputType] = useState<OutputType>('probe')
   const [auditQuery, setAuditQuery] = useState('')
   const [reasonQuery, setReasonQuery] = useState('')
@@ -690,14 +697,48 @@ export default function BfcacheAuditClient() {
   const deferredAuditQuery = useDeferredValue(auditQuery)
   const deferredReasonQuery = useDeferredValue(reasonQuery)
 
-  const parsed = useMemo(() => parseWorkspace(deferredWorkspace), [deferredWorkspace])
+  const parsed = useMemo(() => {
+    const next = parseWorkspace(deferredWorkspace)
+
+    if (!isWorkspaceCapped || next.errors.includes('capped_input')) return next
+
+    return { ...next, errors: [...next.errors, 'capped_input'] }
+  }, [deferredWorkspace, isWorkspaceCapped])
   const findings = useMemo(() => auditBfcache(draft, parsed), [draft, parsed])
   const score = useMemo(() => getScore(findings), [findings])
-  const output = useMemo(
+  const outputPreviewParsed = useMemo<ParsedWorkspace>(
+    () => ({
+      errors: parsed.errors.slice(0, OUTPUT_PREVIEW_ROWS),
+      reasons: parsed.reasons.slice(0, OUTPUT_PREVIEW_ROWS)
+    }),
+    [parsed.errors, parsed.reasons]
+  )
+  const outputPreviewFindings = useMemo(() => findings.slice(0, OUTPUT_PREVIEW_ROWS), [findings])
+  const outputPreviewSource = useMemo(
+    () => buildOutput(draft, outputPreviewParsed, outputPreviewFindings, outputType),
+    [draft, outputPreviewFindings, outputPreviewParsed, outputType]
+  )
+  const outputPreview = useMemo(
+    () => createOutputPreview(outputPreviewSource),
+    [outputPreviewSource]
+  )
+  const outputPreviewLimited = isOutputPreviewLimited(outputPreviewSource)
+  const outputPreviewUsesParsedRows =
+    outputType === 'markdown' || outputType === 'json' || outputType === 'csv'
+  const outputPreviewUsesFindings =
+    outputType === 'playbook' || outputType === 'markdown' || outputType === 'json'
+  const outputPreviewVisibleRows =
+    (outputPreviewUsesParsedRows ? outputPreviewParsed.reasons.length : 0) +
+    (outputPreviewUsesFindings ? outputPreviewFindings.length : 0)
+  const outputPreviewTotalRows =
+    (outputPreviewUsesParsedRows ? parsed.reasons.length : 0) +
+    (outputPreviewUsesFindings ? findings.length : 0)
+  const outputPreviewRowsLimited = outputPreviewTotalRows > outputPreviewVisibleRows
+  const buildCurrentOutput = useCallback(
     () => buildOutput(draft, parsed, findings, outputType),
     [draft, findings, outputType, parsed]
   )
-  const csvOutput = useMemo(() => buildCsv(draft, parsed), [draft, parsed])
+  const buildCurrentCsv = useCallback(() => buildCsv(draft, parsed), [draft, parsed])
   const filteredFindings = useMemo(() => {
     const query = deferredAuditQuery.trim().toLowerCase()
     if (!query) return findings
@@ -736,18 +777,28 @@ export default function BfcacheAuditClient() {
     setDraft(current => ({ ...current, [key]: value }))
   }
 
-  const applyPreset = useCallback((preset: Preset) => {
-    setDraft(preset.draft)
-    setWorkspace(preset.workspace)
+  const updateWorkspace = useCallback((value: string) => {
+    const capped = value.length > WORKSPACE_LIMIT
+
+    setIsWorkspaceCapped(capped)
+    setWorkspace(capped ? value.slice(0, WORKSPACE_LIMIT) : value)
   }, [])
+
+  const applyPreset = useCallback(
+    (preset: Preset) => {
+      setDraft(preset.draft)
+      updateWorkspace(preset.workspace)
+    },
+    [updateWorkspace]
+  )
 
   const reset = useCallback(() => {
     setDraft(DEFAULT_DRAFT)
-    setWorkspace(PRESETS[0]?.workspace ?? '')
+    updateWorkspace(PRESETS[0]?.workspace ?? '')
     setOutputType('probe')
     setAuditQuery('')
     setReasonQuery('')
-  }, [])
+  }, [updateWorkspace])
 
   const copySummary = () => {
     copy(
@@ -926,7 +977,7 @@ export default function BfcacheAuditClient() {
           <CardContent className="space-y-4">
             <Textarea
               value={workspace}
-              onChange={event => setWorkspace(event.target.value.slice(0, WORKSPACE_LIMIT))}
+              onChange={event => updateWorkspace(event.target.value)}
               placeholder={t('app.converter.bfcache.workspace_placeholder')}
               className="min-h-[470px] font-mono"
               spellCheck={false}
@@ -944,7 +995,7 @@ export default function BfcacheAuditClient() {
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => setWorkspace('')}
+                onClick={() => updateWorkspace('')}
                 className="w-full sm:w-auto"
               >
                 <Trash2 className="h-4 w-4" />
@@ -968,7 +1019,7 @@ export default function BfcacheAuditClient() {
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-tertiary)]" />
               <Input
                 value={auditQuery}
-                onChange={event => setAuditQuery(event.target.value)}
+                onChange={event => setAuditQuery(event.target.value.slice(0, 160))}
                 placeholder={t('app.converter.bfcache.audit_search')}
                 className="pl-10"
               />
@@ -980,12 +1031,12 @@ export default function BfcacheAuditClient() {
                   className={`rounded-xl border px-3 py-2 text-xs ${levelClass(finding.level)}`}
                 >
                   <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
-                    <span className="min-w-0 break-words">
+                    <span className="min-w-0 break-all leading-5">
                       <span className="font-semibold">{finding.subject}</span>
-                      <span className="mx-2">/</span>
+                      <span className="mx-2 inline-block">/</span>
                       {t(`app.converter.bfcache.audit.${finding.key}`)}
                     </span>
-                    <span className="font-medium">
+                    <span className="shrink-0 font-medium">
                       {t(`app.converter.bfcache.level.${finding.level}`)}
                     </span>
                   </div>
@@ -1019,12 +1070,28 @@ export default function BfcacheAuditClient() {
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Textarea readOnly value={output} className="min-h-[360px] font-mono" />
+            <Textarea readOnly value={outputPreview} className="min-h-[360px] font-mono" />
+            {outputPreviewLimited && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('public.output_preview_limited', {
+                  total: outputPreviewSource.length.toLocaleString(),
+                  visible: OUTPUT_PREVIEW_CHARS.toLocaleString()
+                })}
+              </p>
+            )}
+            {outputPreviewRowsLimited && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('public.output_preview_rows_limited', {
+                  total: outputPreviewTotalRows.toLocaleString(),
+                  visible: outputPreviewVisibleRows.toLocaleString()
+                })}
+              </p>
+            )}
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => copy(output)}
+                onClick={() => copy(buildCurrentOutput())}
                 className="w-full sm:w-auto"
               >
                 <Copy className="h-4 w-4" />
@@ -1034,7 +1101,11 @@ export default function BfcacheAuditClient() {
                 type="button"
                 variant="outline"
                 onClick={() =>
-                  downloadText(output, 'bfcache-output.txt', 'text/plain;charset=utf-8')
+                  downloadText(
+                    buildCurrentOutput(),
+                    'bfcache-output.txt',
+                    'text/plain;charset=utf-8'
+                  )
                 }
                 className="w-full sm:w-auto"
               >
@@ -1044,7 +1115,9 @@ export default function BfcacheAuditClient() {
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => downloadText(csvOutput, 'bfcache.csv', 'text/csv;charset=utf-8')}
+                onClick={() =>
+                  downloadText(buildCurrentCsv(), 'bfcache.csv', 'text/csv;charset=utf-8')
+                }
                 className="w-full sm:w-auto"
               >
                 <Download className="h-4 w-4" />
@@ -1068,7 +1141,7 @@ export default function BfcacheAuditClient() {
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-tertiary)]" />
               <Input
                 value={reasonQuery}
-                onChange={event => setReasonQuery(event.target.value)}
+                onChange={event => setReasonQuery(event.target.value.slice(0, 160))}
                 placeholder={t('app.converter.bfcache.parsed_search')}
                 className="pl-10"
               />

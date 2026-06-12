@@ -66,8 +66,15 @@ DT-003\tIcon Set\t120\tfalse`
 } as const
 
 const MAX_CSV_INPUT_CHARS = 200000
+const MAX_CSV_PREVIEW_COLUMNS = 32
 const MAX_CSV_PREVIEW_ROWS = 12
+const MAX_CSV_SEARCH_COLUMNS = 64
 const MAX_CSV_COLUMN_PROFILES = 12
+const MAX_CSV_QUALITY_COLUMNS = 256
+const MAX_CSV_QUALITY_ROWS = 600
+const MAX_CSV_OUTPUT_PREVIEW_COLUMNS = 48
+const MAX_CSV_OUTPUT_PREVIEW_ROWS = 80
+const MAX_CSV_OUTPUT_PREVIEW_CHARS = 60000
 const csvNumberFormatter = new Intl.NumberFormat()
 
 const DELIMITER_CHARS: Record<Exclude<DelimiterOption, 'auto'>, string> = {
@@ -282,6 +289,26 @@ const buildOutput = (
   return toDelimited(normalizedRows, delimiter)
 }
 
+const limitCsvColumns = (rows: string[][], limit: number) => rows.map(row => row.slice(0, limit))
+
+const getCsvOutputPreviewRows = (normalizedRows: string[][], headerRow: boolean) => {
+  if (!headerRow) {
+    return limitCsvColumns(
+      normalizedRows.slice(0, MAX_CSV_OUTPUT_PREVIEW_ROWS),
+      MAX_CSV_OUTPUT_PREVIEW_COLUMNS
+    )
+  }
+  const header = normalizedRows[0]
+  if (!header) return []
+  return limitCsvColumns(
+    [header, ...normalizedRows.slice(1, MAX_CSV_OUTPUT_PREVIEW_ROWS + 1)],
+    MAX_CSV_OUTPUT_PREVIEW_COLUMNS
+  )
+}
+
+const toOutputPreview = (value: string, limit: number) =>
+  value.length > limit ? `${value.slice(0, limit)}\n...` : value
+
 const isNumericValue = (value: string) => {
   const normalized = value.trim().replaceAll(',', '')
   return normalized !== '' && Number.isFinite(Number(normalized))
@@ -330,6 +357,7 @@ const CsvClient = () => {
   const { t } = useTranslation()
   const { copy } = useCopy()
   const [input, setInput] = useState(SAMPLE_CSV)
+  const [isInputCapped, setIsInputCapped] = useState(false)
   const [delimiterOption, setDelimiterOption] = useState<DelimiterOption>('auto')
   const [outputFormat, setOutputFormat] = useState<OutputFormat>('json')
   const [headerRow, setHeaderRow] = useState(true)
@@ -350,15 +378,25 @@ const CsvClient = () => {
         : deferredInput,
     [deferredInput]
   )
-  const isInputTruncated = deferredInput.length > MAX_CSV_INPUT_CHARS
+  const isInputTruncated = isInputCapped || deferredInput.length > MAX_CSV_INPUT_CHARS
   const parsed = useMemo(() => parseCsv(safeInput, delimiterOption), [delimiterOption, safeInput])
   const normalizedRows = useMemo(() => normalizeRows(parsed.rows, options), [options, parsed.rows])
-  const output = useMemo(() => {
-    if (parsed.error || !normalizedRows.length) return ''
-    return buildOutput(normalizedRows, outputFormat, headerRow, parsed.delimiter)
-  }, [headerRow, normalizedRows, outputFormat, parsed.delimiter, parsed.error])
+  const outputPreviewRows = useMemo(
+    () => getCsvOutputPreviewRows(normalizedRows, headerRow),
+    [headerRow, normalizedRows]
+  )
+  const rawOutputPreview = useMemo(() => {
+    if (parsed.error || !outputPreviewRows.length) return ''
+    return buildOutput(outputPreviewRows, outputFormat, headerRow, parsed.delimiter)
+  }, [headerRow, outputFormat, outputPreviewRows, parsed.delimiter, parsed.error])
+  const outputPreview = useMemo(
+    () => toOutputPreview(rawOutputPreview, MAX_CSV_OUTPUT_PREVIEW_CHARS),
+    [rawOutputPreview]
+  )
 
   const headers = useMemo(() => getHeaders(normalizedRows, headerRow), [headerRow, normalizedRows])
+  const visibleHeaders = useMemo(() => headers.slice(0, MAX_CSV_PREVIEW_COLUMNS), [headers])
+  const previewColumnsLimited = headers.length > visibleHeaders.length
   const dataRows = useMemo(
     () => getDataRows(normalizedRows, headerRow),
     [headerRow, normalizedRows]
@@ -367,9 +405,20 @@ const CsvClient = () => {
     const query = deferredPreviewQuery.trim().toLowerCase()
     if (!query) return dataRows
 
-    return dataRows.filter(row => row.some(cell => cell.toLowerCase().includes(query)))
+    return dataRows.filter(row =>
+      row.slice(0, MAX_CSV_SEARCH_COLUMNS).some(cell => cell.toLowerCase().includes(query))
+    )
   }, [dataRows, deferredPreviewQuery])
-  const hasOutput = Boolean(output)
+  const visiblePreviewRows = useMemo(
+    () => previewRows.slice(0, MAX_CSV_PREVIEW_ROWS),
+    [previewRows]
+  )
+  const hasOutput = !parsed.error && normalizedRows.length > 0
+  const outputPreviewColumnsLimited = headers.length > MAX_CSV_OUTPUT_PREVIEW_COLUMNS
+  const isOutputPreviewLimited =
+    normalizedRows.length > outputPreviewRows.length ||
+    outputPreviewColumnsLimited ||
+    rawOutputPreview.length > MAX_CSV_OUTPUT_PREVIEW_CHARS
   const delimiterKey = delimiterLabelKey(parsed.delimiter)
   const metrics = useMemo(
     () => ({
@@ -384,10 +433,13 @@ const CsvClient = () => {
     const sourceHeaderRow = headerRow ? (normalizedRows[0] ?? []) : []
     const expectedColumns = parsed.rows[0]?.length ?? headers.length
     const unevenRows = parsed.rows.filter(row => row.length !== expectedColumns).length
-    const emptyCells = dataRows.reduce(
-      (total, row) => total + row.filter(cell => !cell.trim()).length,
-      0
-    )
+    const emptyCells = dataRows
+      .slice(0, MAX_CSV_QUALITY_ROWS)
+      .reduce(
+        (total, row) =>
+          total + row.slice(0, MAX_CSV_QUALITY_COLUMNS).filter(cell => !cell.trim()).length,
+        0
+      )
 
     return {
       duplicateHeaders: headerRow ? getDuplicateHeaderCount(sourceHeaderRow) : 0,
@@ -400,17 +452,30 @@ const CsvClient = () => {
   const qualityIssueCount =
     quality.duplicateHeaders + quality.emptyHeaders + quality.unevenRows + quality.emptyCells
 
-  const handleDownload = () => {
-    if (!output) return
+  const buildCurrentOutput = () =>
+    buildOutput(normalizedRows, outputFormat, headerRow, parsed.delimiter)
 
+  const updateInput = (value: string) => {
+    const capped = value.length > MAX_CSV_INPUT_CHARS
+    setIsInputCapped(capped)
+    setInput(capped ? value.slice(0, MAX_CSV_INPUT_CHARS) : value)
+  }
+
+  const handleCopyOutput = () => {
+    if (!hasOutput) return
+    void copy(buildCurrentOutput())
+  }
+
+  const handleDownload = () => {
+    if (!hasOutput) return
     const extension = outputFormat === 'markdown' ? 'md' : outputFormat
     const type =
       outputFormat === 'json' ? 'application/json;charset=utf-8' : 'text/plain;charset=utf-8'
-    downloadText(output, `daily-tools-csv.${extension}`, type)
+    downloadText(buildCurrentOutput(), `daily-tools-csv.${extension}`, type)
   }
 
   const handleReset = () => {
-    setInput(SAMPLE_CSV)
+    updateInput(SAMPLE_CSV)
     setDelimiterOption('auto')
     setOutputFormat('json')
     setHeaderRow(true)
@@ -440,7 +505,7 @@ const CsvClient = () => {
                 variant="ghost"
                 icon={<Trash2 className="h-4 w-4" />}
                 onClick={() => {
-                  setInput('')
+                  updateInput('')
                   setPreviewQuery('')
                 }}
               >
@@ -456,7 +521,7 @@ const CsvClient = () => {
               <Textarea
                 id="csv-input"
                 value={input}
-                onChange={event => setInput(event.target.value)}
+                onChange={event => updateInput(event.target.value)}
                 rows={12}
                 className="min-h-[280px] resize-y font-mono"
                 placeholder="name,email&#10;Ada,ada@example.com"
@@ -469,7 +534,7 @@ const CsvClient = () => {
                     variant="outline"
                     size="sm"
                     icon={<Sparkles className="h-3.5 w-3.5" />}
-                    onClick={() => setInput(SAMPLE_CSVS[sample])}
+                    onClick={() => updateInput(SAMPLE_CSVS[sample])}
                   >
                     {t(`app.format.csv.sample.${sample}`)}
                   </Button>
@@ -654,7 +719,7 @@ const CsvClient = () => {
                   size="sm"
                   icon={<Copy className="h-4 w-4" />}
                   disabled={!hasOutput}
-                  onClick={() => copy(output)}
+                  onClick={handleCopyOutput}
                 >
                   {t('public.copy')}
                 </Button>
@@ -672,12 +737,28 @@ const CsvClient = () => {
           </CardHeader>
           <CardContent className="flex min-h-0 flex-1 flex-col">
             <Textarea
-              value={output}
+              value={outputPreview}
               readOnly
               rows={16}
               className="min-h-[300px] flex-1 resize-none font-mono"
               placeholder={t('app.format.csv.empty')}
             />
+            {isOutputPreviewLimited && (
+              <p className="mt-3 rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('app.format.csv.warning.output_preview_limited', {
+                  total: formatCsvNumber(normalizedRows.length),
+                  visible: formatCsvNumber(outputPreviewRows.length)
+                })}
+              </p>
+            )}
+            {outputPreviewColumnsLimited && (
+              <p className="mt-3 rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('app.format.csv.warning.output_preview_columns_limited', {
+                  total: formatCsvNumber(headers.length),
+                  visible: formatCsvNumber(MAX_CSV_OUTPUT_PREVIEW_COLUMNS)
+                })}
+              </p>
+            )}
           </CardContent>
         </Card>
 
@@ -692,7 +773,7 @@ const CsvClient = () => {
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-tertiary)]" />
                 <Input
                   value={previewQuery}
-                  onChange={event => setPreviewQuery(event.target.value)}
+                  onChange={event => setPreviewQuery(event.target.value.slice(0, 160))}
                   placeholder={t('app.format.csv.search')}
                   className="pl-9"
                 />
@@ -706,7 +787,7 @@ const CsvClient = () => {
                   <table className="min-w-full text-left text-sm">
                     <thead className="sticky top-0 bg-[var(--glass-panel-bg)] backdrop-blur-xl">
                       <tr>
-                        {headers.map((header, index) => (
+                        {visibleHeaders.map((header, index) => (
                           <th
                             key={`${header}-${index}`}
                             className="whitespace-nowrap px-3 py-2 font-medium text-[var(--text-secondary)]"
@@ -717,12 +798,12 @@ const CsvClient = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {previewRows.slice(0, MAX_CSV_PREVIEW_ROWS).map((row, rowIndex) => (
+                      {visiblePreviewRows.map((row, rowIndex) => (
                         <tr
                           key={`row-${rowIndex}`}
                           className="border-t border-[var(--border-base)]"
                         >
-                          {headers.map((header, columnIndex) => (
+                          {visibleHeaders.map((header, columnIndex) => (
                             <td
                               key={`${header}-${columnIndex}`}
                               className="max-w-[220px] truncate px-3 py-2 font-mono text-xs"
@@ -745,6 +826,14 @@ const CsvClient = () => {
                   <p className="text-sm text-[var(--text-secondary)]">
                     {t('app.format.csv.preview_more', {
                       count: previewRows.length - MAX_CSV_PREVIEW_ROWS
+                    })}
+                  </p>
+                )}
+                {previewColumnsLimited && (
+                  <p className="text-sm text-[var(--text-secondary)]">
+                    {t('app.format.csv.preview_columns_limited', {
+                      total: formatCsvNumber(headers.length),
+                      visible: formatCsvNumber(visibleHeaders.length)
                     })}
                   </p>
                 )}

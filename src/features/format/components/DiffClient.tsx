@@ -1,8 +1,7 @@
 'use client'
 
-import * as Diff from 'diff'
 import { ArrowLeftRight, Copy, FileDiff, FlaskConical, Trash2 } from 'lucide-react'
-import { useCallback, useDeferredValue, useMemo, useState } from 'react'
+import { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
@@ -12,6 +11,11 @@ import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
+import {
+  createOutputPreview,
+  isOutputPreviewLimited,
+  OUTPUT_PREVIEW_CHARS
+} from '@/utils/outputPreview'
 
 interface DiffPart {
   value: string
@@ -19,10 +23,26 @@ interface DiffPart {
   removed?: boolean
 }
 
+interface DiffState {
+  diffResult: DiffPart[]
+  error: string | null
+  patch: string
+  requestKey: string
+}
+
 type DiffMode = 'chars' | 'words' | 'lines' | 'sentences'
+type DiffModule = typeof import('diff')
 
 const MAX_DIFF_CHARS = 20000
 const MAX_DIFF_PREVIEW_CHARS = 10000
+const MAX_DIFF_RENDERED_PARTS = 800
+const EMPTY_DIFF_STATE: DiffState = {
+  diffResult: [],
+  error: null,
+  patch: '',
+  requestKey: ''
+}
+let diffModulePromise: Promise<DiffModule> | null = null
 
 const SAMPLE_OLD = `function greet(name) {
   return 'Hello, ' + name
@@ -51,17 +71,38 @@ const normalizeText = ({
   return nextText
 }
 
-const countLines = (value: string) => (value ? value.split(/\r\n|\r|\n/).length : 0)
+const countLines = (value: string, maxChars = MAX_DIFF_CHARS) => {
+  if (!value) return 0
 
-const createDiff = (mode: DiffMode, oldValue: string, newValue: string): DiffPart[] => {
-  if (mode === 'words') return Diff.diffWordsWithSpace(oldValue, newValue) as DiffPart[]
-  if (mode === 'lines') return Diff.diffLines(oldValue, newValue) as DiffPart[]
-  if (mode === 'sentences') return Diff.diffSentences(oldValue, newValue) as DiffPart[]
-  return Diff.diffChars(oldValue, newValue) as DiffPart[]
+  const limit = Math.min(value.length, maxChars)
+  let lines = 1
+
+  for (let index = 0; index < limit; index += 1) {
+    if (value.charCodeAt(index) === 10) lines += 1
+  }
+
+  return lines
 }
 
-const buildUnifiedPatch = (oldValue: string, newValue: string) =>
-  Diff.createTwoFilesPatch('original.txt', 'modified.txt', oldValue, newValue, '', '', {
+const loadDiffModule = () => {
+  diffModulePromise ??= import('diff')
+  return diffModulePromise
+}
+
+const createDiff = (
+  diffModule: DiffModule,
+  mode: DiffMode,
+  oldValue: string,
+  newValue: string
+): DiffPart[] => {
+  if (mode === 'words') return diffModule.diffWordsWithSpace(oldValue, newValue) as DiffPart[]
+  if (mode === 'lines') return diffModule.diffLines(oldValue, newValue) as DiffPart[]
+  if (mode === 'sentences') return diffModule.diffSentences(oldValue, newValue) as DiffPart[]
+  return diffModule.diffChars(oldValue, newValue) as DiffPart[]
+}
+
+const buildUnifiedPatch = (diffModule: DiffModule, oldValue: string, newValue: string) =>
+  diffModule.createTwoFilesPatch('original.txt', 'modified.txt', oldValue, newValue, '', '', {
     context: 3
   })
 
@@ -71,6 +112,8 @@ const DiffClient = () => {
 
   const [oldText, setOldText] = useState('')
   const [newText, setNewText] = useState('')
+  const [isOldTextCapped, setIsOldTextCapped] = useState(false)
+  const [isNewTextCapped, setIsNewTextCapped] = useState(false)
   const [mode, setMode] = useState<DiffMode>('chars')
   const [ignoreCase, setIgnoreCase] = useState(false)
   const [ignoreWhitespace, setIgnoreWhitespace] = useState(false)
@@ -80,61 +123,114 @@ const DiffClient = () => {
   const deferredIgnoreCase = useDeferredValue(ignoreCase)
   const deferredIgnoreWhitespace = useDeferredValue(ignoreWhitespace)
 
+  const safeDiffSource = useMemo(() => {
+    const totalChars = deferredOldText.length + deferredNewText.length
+    const isPreview = isOldTextCapped || isNewTextCapped || totalChars > MAX_DIFF_CHARS
+
+    return {
+      isPreview,
+      newText: isPreview ? deferredNewText.slice(0, MAX_DIFF_PREVIEW_CHARS) : deferredNewText,
+      oldText: isPreview ? deferredOldText.slice(0, MAX_DIFF_PREVIEW_CHARS) : deferredOldText
+    }
+  }, [deferredNewText, deferredOldText, isNewTextCapped, isOldTextCapped])
   const normalizedOldText = useMemo(
     () =>
       normalizeText({
         ignoreCase: deferredIgnoreCase,
         ignoreWhitespace: deferredIgnoreWhitespace,
-        text: deferredOldText
+        text: safeDiffSource.oldText
       }),
-    [deferredIgnoreCase, deferredIgnoreWhitespace, deferredOldText]
+    [deferredIgnoreCase, deferredIgnoreWhitespace, safeDiffSource.oldText]
   )
   const normalizedNewText = useMemo(
     () =>
       normalizeText({
         ignoreCase: deferredIgnoreCase,
         ignoreWhitespace: deferredIgnoreWhitespace,
-        text: deferredNewText
+        text: safeDiffSource.newText
       }),
-    [deferredIgnoreCase, deferredIgnoreWhitespace, deferredNewText]
+    [deferredIgnoreCase, deferredIgnoreWhitespace, safeDiffSource.newText]
   )
 
-  const { diffResult, warning } = useMemo(() => {
-    if (!deferredOldText && !deferredNewText) {
-      return { diffResult: [] as DiffPart[], warning: null as string | null }
-    }
+  const hasDiffInput = Boolean(deferredOldText || deferredNewText)
+  const diffRequestKey = hasDiffInput
+    ? [deferredMode, normalizedOldText, normalizedNewText].join('\u0000')
+    : ''
+  const [diffState, setDiffState] = useState<DiffState>(EMPTY_DIFF_STATE)
 
-    const totalChars = normalizedOldText.length + normalizedNewText.length
-    if (totalChars > MAX_DIFF_CHARS) {
-      return {
-        diffResult: createDiff(
-          deferredMode,
-          normalizedOldText.slice(0, MAX_DIFF_PREVIEW_CHARS),
-          normalizedNewText.slice(0, MAX_DIFF_PREVIEW_CHARS)
-        ),
-        warning: t('app.format.diff.warning.preview', {
+  useEffect(() => {
+    if (!hasDiffInput) return
+
+    let isCurrent = true
+
+    void loadDiffModule()
+      .then(diffModule => {
+        if (!isCurrent) return
+
+        setDiffState({
+          diffResult: createDiff(diffModule, deferredMode, normalizedOldText, normalizedNewText),
+          error: null,
+          patch: buildUnifiedPatch(diffModule, normalizedOldText, normalizedNewText),
+          requestKey: diffRequestKey
+        })
+      })
+      .catch(error => {
+        if (!isCurrent) return
+
+        setDiffState({
+          diffResult: [],
+          error: error instanceof Error ? error.message : String(error),
+          patch: '',
+          requestKey: diffRequestKey
+        })
+      })
+
+    return () => {
+      isCurrent = false
+    }
+  }, [deferredMode, diffRequestKey, hasDiffInput, normalizedNewText, normalizedOldText])
+
+  const isDiffStateCurrent = hasDiffInput && diffState.requestKey === diffRequestKey
+  const isDiffLoading = hasDiffInput && !isDiffStateCurrent
+  const currentDiffState = isDiffStateCurrent ? diffState : EMPTY_DIFF_STATE
+  const diffResult = currentDiffState.diffResult
+  const patch = currentDiffState.patch
+  const warning =
+    hasDiffInput && safeDiffSource.isPreview
+      ? t('app.format.diff.warning.preview', {
           count: MAX_DIFF_PREVIEW_CHARS
         })
-      }
-    }
-
-    return {
-      diffResult: createDiff(deferredMode, normalizedOldText, normalizedNewText),
-      warning: null
-    }
-  }, [deferredMode, deferredNewText, deferredOldText, normalizedNewText, normalizedOldText, t])
-
-  const patch = useMemo(
-    () => buildUnifiedPatch(normalizedOldText, normalizedNewText),
-    [normalizedNewText, normalizedOldText]
+      : null
+  const patchPreview = useMemo(() => createOutputPreview(patch), [patch])
+  const patchPreviewLimited = isOutputPreviewLimited(patch)
+  const visibleDiffResult = useMemo(
+    () => diffResult.slice(0, MAX_DIFF_RENDERED_PARTS),
+    [diffResult]
   )
+  const isDiffResultLimited = diffResult.length > visibleDiffResult.length
+
+  const updateOldText = useCallback((value: string) => {
+    const capped = value.length > MAX_DIFF_CHARS
+    setIsOldTextCapped(capped)
+    setOldText(capped ? value.slice(0, MAX_DIFF_CHARS) : value)
+  }, [])
+
+  const updateNewText = useCallback((value: string) => {
+    const capped = value.length > MAX_DIFF_CHARS
+    setIsNewTextCapped(capped)
+    setNewText(capped ? value.slice(0, MAX_DIFF_CHARS) : value)
+  }, [])
 
   const handleSwap = useCallback(() => {
+    setIsOldTextCapped(isNewTextCapped)
+    setIsNewTextCapped(isOldTextCapped)
     setOldText(newText)
     setNewText(oldText)
-  }, [oldText, newText])
+  }, [isNewTextCapped, isOldTextCapped, oldText, newText])
 
   const handleClear = useCallback(() => {
+    setIsOldTextCapped(false)
+    setIsNewTextCapped(false)
     setOldText('')
     setNewText('')
   }, [])
@@ -164,6 +260,8 @@ const DiffClient = () => {
   }, [diffResult, normalizedNewText, normalizedOldText])
 
   const loadSample = useCallback(() => {
+    setIsOldTextCapped(false)
+    setIsNewTextCapped(false)
     setOldText(SAMPLE_OLD)
     setNewText(SAMPLE_NEW)
     setMode('lines')
@@ -252,7 +350,7 @@ const DiffClient = () => {
               </span>
               <Textarea
                 value={oldText}
-                onChange={e => setOldText(e.target.value)}
+                onChange={e => updateOldText(e.target.value)}
                 placeholder={t('app.format.diff.original_placeholder')}
                 rows={8}
                 className="font-mono"
@@ -270,7 +368,7 @@ const DiffClient = () => {
               </span>
               <Textarea
                 value={newText}
-                onChange={e => setNewText(e.target.value)}
+                onChange={e => updateNewText(e.target.value)}
                 placeholder={t('app.format.diff.modified_placeholder')}
                 rows={8}
                 className="font-mono"
@@ -288,6 +386,16 @@ const DiffClient = () => {
               {warning}
             </p>
           )}
+          {isDiffLoading && (
+            <p className="mt-4 rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-sm text-[var(--text-secondary)]">
+              {t('public.loading')}
+            </p>
+          )}
+          {currentDiffState.error && (
+            <p className="mt-4 rounded-lg border border-[var(--error)] bg-[var(--error-subtle)] px-3 py-2 text-sm text-[var(--error)]">
+              {t('app.format.diff.warning.parser_failed')}
+            </p>
+          )}
         </CardContent>
       </Card>
 
@@ -301,6 +409,7 @@ const DiffClient = () => {
                 variant="ghost"
                 icon={<Copy className="h-4 w-4" />}
                 onClick={() => copy(patch)}
+                disabled={!patch || isDiffLoading}
               >
                 {t('app.format.diff.copy_patch')}
               </Button>
@@ -312,7 +421,7 @@ const DiffClient = () => {
         </CardHeader>
         <CardContent className="flex-1 overflow-auto">
           <div className="font-mono text-sm whitespace-pre-wrap break-all leading-relaxed">
-            {diffResult.map((part, index) => {
+            {visibleDiffResult.map((part, index) => {
               let className = ''
               if (part.added) {
                 className = 'bg-[var(--success-subtle)] text-[var(--success)]'
@@ -326,6 +435,14 @@ const DiffClient = () => {
               )
             })}
           </div>
+          {isDiffResultLimited && (
+            <p className="mt-4 rounded-lg border border-[var(--warning)] bg-[var(--warning-subtle)] px-3 py-2 text-sm text-[var(--warning)]">
+              {t('app.format.diff.warning.parts_limited', {
+                total: diffResult.length,
+                visible: visibleDiffResult.length
+              })}
+            </p>
+          )}
         </CardContent>
       </Card>
 
@@ -338,13 +455,22 @@ const DiffClient = () => {
               variant="ghost"
               icon={<Copy className="h-4 w-4" />}
               onClick={() => copy(patch)}
+              disabled={!patch || isDiffLoading}
             >
               {t('public.copy')}
             </Button>
           </div>
         </CardHeader>
         <CardContent>
-          <Textarea value={patch} readOnly rows={10} className="resize-none font-mono" />
+          <Textarea value={patchPreview} readOnly rows={10} className="resize-none font-mono" />
+          {patchPreviewLimited && (
+            <p className="mt-3 rounded-lg border border-[var(--warning)] bg-[var(--warning-subtle)] px-3 py-2 text-sm text-[var(--warning)]">
+              {t('public.output_preview_limited', {
+                total: patch.length.toLocaleString(),
+                visible: OUTPUT_PREVIEW_CHARS.toLocaleString()
+              })}
+            </p>
+          )}
         </CardContent>
       </Card>
     </div>

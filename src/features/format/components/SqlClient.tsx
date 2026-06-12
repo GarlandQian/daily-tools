@@ -10,9 +10,8 @@ import {
   Sparkles,
   Trash2
 } from 'lucide-react'
-import { useDeferredValue, useMemo, useState } from 'react'
+import { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { format } from 'sql-formatter'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -47,6 +46,12 @@ interface SqlStats {
   parameters: string[]
   statements: number
   tables: string[]
+}
+
+interface SqlFormatResult {
+  error: string
+  isLoading: boolean
+  output: string
 }
 
 const SQL_SAMPLES: Record<SqlSampleId, { language: SqlLanguage; value: string }> = {
@@ -105,12 +110,47 @@ const SQL_RESERVED_WORDS = new Set([
 ])
 
 const MAX_SQL_FORMAT_INPUT_CHARS = 200000
+const MAX_SQL_LIVE_OUTPUT_INPUT_CHARS = 60000
+const MAX_SQL_OUTPUT_PREVIEW_CHARS = 60000
 const sqlNumberFormatter = new Intl.NumberFormat()
 
 const formatSqlNumber = (value: number) => sqlNumberFormatter.format(value)
+const toOutputPreview = (value: string, limit: number) =>
+  value.length > limit ? `${value.slice(0, limit)}\n...` : value
 
 const getTabWidth = (indentWidth: IndentWidth) => (indentWidth === 'tab' ? 2 : Number(indentWidth))
 const getUseTabs = (indentWidth: IndentWidth) => indentWidth === 'tab'
+type SqlFormatterModule = typeof import('sql-formatter')
+
+const formatSqlWithOptions = (
+  format: SqlFormatterModule['format'],
+  input: string,
+  {
+    denseOperators,
+    indentWidth,
+    keywordCase,
+    language,
+    logicalOperatorNewline,
+    newlineBeforeSemicolon
+  }: {
+    denseOperators: boolean
+    indentWidth: IndentWidth
+    keywordCase: KeywordCase
+    language: SqlLanguage
+    logicalOperatorNewline: LogicalOperatorNewline
+    newlineBeforeSemicolon: boolean
+  }
+) =>
+  format(input, {
+    denseOperators,
+    keywordCase,
+    language,
+    linesBetweenQueries: 1,
+    logicalOperatorNewline,
+    newlineBeforeSemicolon,
+    tabWidth: getTabWidth(indentWidth),
+    useTabs: getUseTabs(indentWidth)
+  })
 
 const stripSqlComments = (value: string) =>
   value.replace(/--.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '')
@@ -180,6 +220,7 @@ const SqlClient = () => {
   const { copy } = useCopy()
 
   const [input, setInput] = useState('')
+  const [isInputCapped, setIsInputCapped] = useState(false)
   const [language, setLanguage] = useState<SqlLanguage>('sql')
   const [keywordCase, setKeywordCase] = useState<KeywordCase>('upper')
   const [indentWidth, setIndentWidth] = useState<IndentWidth>('2')
@@ -187,8 +228,14 @@ const SqlClient = () => {
     useState<LogicalOperatorNewline>('before')
   const [denseOperators, setDenseOperators] = useState(false)
   const [newlineBeforeSemicolon, setNewlineBeforeSemicolon] = useState(false)
+  const [isActionProcessing, setIsActionProcessing] = useState(false)
+  const [formatted, setFormatted] = useState<SqlFormatResult>({
+    error: '',
+    isLoading: false,
+    output: ''
+  })
   const deferredInput = useDeferredValue(input)
-  const isInputTooLarge = deferredInput.length > MAX_SQL_FORMAT_INPUT_CHARS
+  const isInputTooLarge = isInputCapped || deferredInput.length > MAX_SQL_FORMAT_INPUT_CHARS
   const safeInput = useMemo(
     () =>
       deferredInput.length > MAX_SQL_FORMAT_INPUT_CHARS
@@ -197,26 +244,66 @@ const SqlClient = () => {
     [deferredInput]
   )
 
-  const formatted = useMemo(() => {
-    const trimmed = safeInput.trim()
-    if (!trimmed || isInputTooLarge) return { error: '', output: '' }
+  const updateInput = (value: string) => {
+    const capped = value.length > MAX_SQL_FORMAT_INPUT_CHARS
+    setIsInputCapped(capped)
+    setInput(capped ? value.slice(0, MAX_SQL_FORMAT_INPUT_CHARS) : value)
+  }
 
-    try {
-      return {
-        error: '',
-        output: format(trimmed, {
-          denseOperators,
-          keywordCase,
-          language,
-          linesBetweenQueries: 1,
-          logicalOperatorNewline,
-          newlineBeforeSemicolon,
-          tabWidth: getTabWidth(indentWidth),
-          useTabs: getUseTabs(indentWidth)
+  const liveOutputDeferred =
+    safeInput.trim().length > MAX_SQL_LIVE_OUTPUT_INPUT_CHARS && !isInputTooLarge
+
+  useEffect(() => {
+    const trimmed = safeInput.trim()
+    if (!trimmed || isInputTooLarge) {
+      setFormatted({ error: '', isLoading: false, output: '' })
+      return
+    }
+
+    if (liveOutputDeferred) {
+      setFormatted({ error: '', isLoading: false, output: '' })
+      return
+    }
+
+    let isCurrent = true
+    setFormatted({ error: '', isLoading: true, output: '' })
+
+    void import('sql-formatter')
+      .then(({ format }) => {
+        if (!isCurrent) return
+
+        try {
+          setFormatted({
+            error: '',
+            isLoading: false,
+            output: formatSqlWithOptions(format, trimmed, {
+              denseOperators,
+              indentWidth,
+              keywordCase,
+              language,
+              logicalOperatorNewline,
+              newlineBeforeSemicolon
+            })
+          })
+        } catch (error) {
+          setFormatted({
+            error: error instanceof Error ? error.message : String(error),
+            isLoading: false,
+            output: ''
+          })
+        }
+      })
+      .catch(error => {
+        if (!isCurrent) return
+        setFormatted({
+          error: error instanceof Error ? error.message : String(error),
+          isLoading: false,
+          output: ''
         })
-      }
-    } catch (error) {
-      return { error: error instanceof Error ? error.message : String(error), output: '' }
+      })
+
+    return () => {
+      isCurrent = false
     }
   }, [
     denseOperators,
@@ -224,15 +311,79 @@ const SqlClient = () => {
     isInputTooLarge,
     keywordCase,
     language,
+    liveOutputDeferred,
     logicalOperatorNewline,
     newlineBeforeSemicolon,
     safeInput
   ])
 
-  const stats = useMemo(() => analyzeSql(safeInput), [safeInput])
+  const analysisInput = useMemo(
+    () => safeInput.slice(0, MAX_SQL_LIVE_OUTPUT_INPUT_CHARS),
+    [safeInput]
+  )
+  const stats = useMemo(
+    () => ({
+      ...analyzeSql(analysisInput),
+      characters: safeInput.length,
+      lines: safeInput ? safeInput.split(/\r?\n/).length : 0
+    }),
+    [analysisInput, safeInput]
+  )
   const hasInput = input.trim().length > 0
+  const outputPreviewSource = liveOutputDeferred ? safeInput.trim() : formatted.output
+  const outputPreview = useMemo(
+    () => toOutputPreview(outputPreviewSource, MAX_SQL_OUTPUT_PREVIEW_CHARS),
+    [outputPreviewSource]
+  )
+  const isOutputPreviewLimited = outputPreviewSource.length > MAX_SQL_OUTPUT_PREVIEW_CHARS
+  const canBuildOutput =
+    Boolean(safeInput.trim()) &&
+    !isInputTooLarge &&
+    !formatted.isLoading &&
+    !formatted.error &&
+    !isActionProcessing &&
+    (liveOutputDeferred || Boolean(formatted.output))
 
-  const handleValidate = () => {
+  const buildCurrentOutput = useCallback(async () => {
+    const trimmed = safeInput.trim()
+    if (!trimmed || isInputTooLarge) return ''
+    if (!liveOutputDeferred && formatted.output) return formatted.output
+
+    setIsActionProcessing(true)
+    try {
+      const { format } = await import('sql-formatter')
+      return formatSqlWithOptions(format, trimmed, {
+        denseOperators,
+        indentWidth,
+        keywordCase,
+        language,
+        logicalOperatorNewline,
+        newlineBeforeSemicolon
+      })
+    } catch (error) {
+      toast.error(
+        `${t('app.format.sql.error')}: ${error instanceof Error ? error.message : String(error)}`
+      )
+      return ''
+    } finally {
+      setIsActionProcessing(false)
+    }
+  }, [
+    denseOperators,
+    formatted.output,
+    indentWidth,
+    isInputTooLarge,
+    keywordCase,
+    language,
+    liveOutputDeferred,
+    logicalOperatorNewline,
+    newlineBeforeSemicolon,
+    safeInput,
+    t,
+    toast
+  ])
+
+  const handleValidate = async () => {
     if (!hasInput) {
       toast.warning(t('app.format.sql.empty'))
       return
@@ -247,6 +398,17 @@ const SqlClient = () => {
       return
     }
 
+    if (liveOutputDeferred) {
+      const output = await buildCurrentOutput()
+      if (output) toast.success(t('app.format.sql.valid'))
+      return
+    }
+
+    if (formatted.isLoading) {
+      toast.warning(t('app.format.sql.formatting'))
+      return
+    }
+
     if (formatted.error) {
       toast.error(`${t('app.format.sql.error')}: ${formatted.error}`)
     } else {
@@ -254,9 +416,19 @@ const SqlClient = () => {
     }
   }
 
+  const handleCopyFormatted = async () => {
+    const output = await buildCurrentOutput()
+    if (output) await copy(output)
+  }
+
+  const handleDownload = async () => {
+    const output = await buildCurrentOutput()
+    if (output) downloadText(output, 'daily-tools-query.sql', 'text/sql;charset=utf-8')
+  }
+
   const handleUseSample = (sampleId: SqlSampleId) => {
     const sample = SQL_SAMPLES[sampleId]
-    setInput(sample.value)
+    updateInput(sample.value)
     setLanguage(sample.language)
     setKeywordCase('upper')
     setIndentWidth('2')
@@ -266,11 +438,14 @@ const SqlClient = () => {
   }
 
   const handleUseOutput = () => {
-    if (formatted.output) setInput(formatted.output)
+    void (async () => {
+      const output = await buildCurrentOutput()
+      if (output) updateInput(output)
+    })()
   }
 
   const handleClear = () => {
-    setInput('')
+    updateInput('')
     setLanguage('sql')
     setKeywordCase('upper')
     setIndentWidth('2')
@@ -378,10 +553,12 @@ const SqlClient = () => {
               type="button"
               variant="primary"
               icon={<Paintbrush className="h-4 w-4" />}
-              disabled={!hasInput || Boolean(formatted.error) || isInputTooLarge}
-              onClick={() => formatted.output && void copy(formatted.output)}
+              disabled={!hasInput || !canBuildOutput}
+              onClick={() => void handleCopyFormatted()}
             >
-              {t('app.format.sql.copy_formatted')}
+              {isActionProcessing
+                ? t('app.format.sql.formatting')
+                : t('app.format.sql.copy_formatted')}
             </Button>
             <Button
               type="button"
@@ -394,17 +571,15 @@ const SqlClient = () => {
             <Button
               type="button"
               icon={<Download className="h-4 w-4" />}
-              disabled={!formatted.output}
-              onClick={() =>
-                downloadText(formatted.output, 'daily-tools-query.sql', 'text/sql;charset=utf-8')
-              }
+              disabled={!canBuildOutput}
+              onClick={() => void handleDownload()}
             >
               {t('app.format.sql.download')}
             </Button>
             <Button
               type="button"
               icon={<RotateCcw className="h-4 w-4" />}
-              disabled={!formatted.output}
+              disabled={!canBuildOutput}
               onClick={handleUseOutput}
             >
               {t('app.format.sql.use_output')}
@@ -481,8 +656,9 @@ const SqlClient = () => {
           </CardHeader>
           <CardContent className="flex min-h-0 flex-1 flex-col">
             <Textarea
+              id="sql-input"
               value={input}
-              onChange={event => setInput(event.target.value)}
+              onChange={event => updateInput(event.target.value)}
               placeholder={t('app.format.sql.input_placeholder')}
               className="min-h-[320px] flex-1 resize-none font-mono"
             />
@@ -493,16 +669,39 @@ const SqlClient = () => {
           <CardHeader>
             <CardTitle className="text-base">{t('app.format.sql.output')}</CardTitle>
             <CardDescription>
-              {formatted.output ? t('app.format.sql.valid') : t('app.format.sql.output_hint')}
+              {formatted.isLoading
+                ? t('app.format.sql.formatting')
+                : liveOutputDeferred
+                  ? t('app.format.sql.preview_deferred')
+                  : formatted.output
+                    ? t('app.format.sql.valid')
+                    : t('app.format.sql.output_hint')}
             </CardDescription>
           </CardHeader>
           <CardContent className="flex min-h-0 flex-1 flex-col">
             <Textarea
-              value={formatted.output}
+              id="sql-output"
+              value={outputPreview}
               readOnly
               placeholder={t('app.format.sql.output_placeholder')}
               className="min-h-[320px] flex-1 resize-none font-mono"
             />
+            {isOutputPreviewLimited && !liveOutputDeferred && (
+              <p className="mt-3 rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('app.format.sql.warning.output_preview_limited', {
+                  total: formatSqlNumber(outputPreviewSource.length),
+                  visible: formatSqlNumber(MAX_SQL_OUTPUT_PREVIEW_CHARS)
+                })}
+              </p>
+            )}
+            {liveOutputDeferred && (
+              <p className="mt-3 rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('app.format.sql.warning.live_output_deferred', {
+                  total: formatSqlNumber(safeInput.trim().length),
+                  visible: formatSqlNumber(MAX_SQL_OUTPUT_PREVIEW_CHARS)
+                })}
+              </p>
+            )}
           </CardContent>
         </Card>
       </div>

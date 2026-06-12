@@ -21,15 +21,23 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
+import { InputCapNotice } from '@/components/ui/input-cap-notice'
 import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
+import {
+  createOutputPreview,
+  isOutputPreviewLimited,
+  OUTPUT_PREVIEW_CHARS
+} from '@/utils/outputPreview'
 
 const APP_TYPES = ['reverse_proxy', 'static', 'spa', 'api'] as const
 const OUTPUT_TYPES = ['caddyfile', 'json', 'docker', 'commands', 'headers', 'markdown'] as const
 const SITE_RENDER_LIMIT = 80
+const FINDING_RENDER_LIMIT = 80
 const WORKSPACE_LIMIT = 80000
+const DRAFT_FIELD_LIMIT = 1200
 const UNSAFE_DIRECTIVE_PATTERN = /[\r\n;{}]/u
 
 type AppType = (typeof APP_TYPES)[number]
@@ -86,8 +94,10 @@ interface ParsedSite {
 
 interface ParsedCaddy {
   capped: boolean
+  siteLimited: boolean
   sites: ParsedSite[]
   syntaxHints: string[]
+  totalSites: number
 }
 
 interface Finding {
@@ -544,6 +554,7 @@ function parseTopLevelBlocks(input: string) {
   let collecting = false
   let current: string[] = []
   let header = ''
+  let totalBlocks = 0
 
   for (const line of lines) {
     const openCount = (line.match(/\{/gu) || []).length
@@ -563,15 +574,15 @@ function parseTopLevelBlocks(input: string) {
     depth += openCount - closeCount
 
     if (collecting && depth === 0) {
-      blocks.push({ body: current.join('\n'), header })
-      if (blocks.length >= SITE_RENDER_LIMIT) break
+      totalBlocks += 1
+      if (blocks.length < SITE_RENDER_LIMIT) blocks.push({ body: current.join('\n'), header })
       collecting = false
       current = []
       header = ''
     }
   }
 
-  return blocks
+  return { blocks, totalBlocks }
 }
 
 function parseCaddyWorkspace(input: string): ParsedCaddy {
@@ -583,7 +594,8 @@ function parseCaddyWorkspace(input: string): ParsedCaddy {
 
   if (openBraces !== closeBraces) syntaxHints.push('brace_mismatch')
 
-  const sites = parseTopLevelBlocks(source).map(({ body, header }) => {
+  const { blocks, totalBlocks } = parseTopLevelBlocks(source)
+  const sites = blocks.map(({ body, header }) => {
     const upstreams = Array.from(
       body.matchAll(/reverse_proxy\s+([^\s{]+)/giu),
       match => match[1] || ''
@@ -612,7 +624,13 @@ function parseCaddyWorkspace(input: string): ParsedCaddy {
     }
   })
 
-  return { capped, sites, syntaxHints }
+  return {
+    capped,
+    siteLimited: totalBlocks > sites.length,
+    sites,
+    syntaxHints,
+    totalSites: totalBlocks
+  }
 }
 
 function auditDraft(draft: CaddyDraft, parsed: ParsedCaddy): Finding[] {
@@ -732,15 +750,20 @@ export default function CaddyClient() {
   const { copy } = useCopy()
   const [draft, setDraft] = useState<CaddyDraft>(DEFAULT_DRAFT)
   const [workspace, setWorkspace] = useState(PRESETS[0].workspace)
+  const [isWorkspaceCapped, setIsWorkspaceCapped] = useState(false)
   const [auditQuery, setAuditQuery] = useState('')
   const [outputType, setOutputType] = useState<OutputType>('caddyfile')
   const deferredWorkspace = useDeferredValue(workspace)
 
   const caddyfileOutput = useMemo(() => buildCaddyfile(draft), [draft])
-  const parsed = useMemo(() => parseCaddyWorkspace(deferredWorkspace), [deferredWorkspace])
+  const parsed = useMemo(() => {
+    const next = parseCaddyWorkspace(deferredWorkspace)
+
+    return isWorkspaceCapped ? { ...next, capped: true } : next
+  }, [deferredWorkspace, isWorkspaceCapped])
   const findings = useMemo(() => auditDraft(draft, parsed), [draft, parsed])
   const csvOutput = useMemo(() => buildCsv(findings), [findings])
-  const outputValue = useMemo(() => {
+  const buildCurrentOutput = useCallback(() => {
     if (outputType === 'caddyfile') return caddyfileOutput
     if (outputType === 'json') return buildCaddyJson(draft)
     if (outputType === 'docker') return buildDockerOutput(draft)
@@ -749,6 +772,12 @@ export default function CaddyClient() {
 
     return buildMarkdown(draft, findings, parsed)
   }, [caddyfileOutput, draft, findings, outputType, parsed])
+  const outputPreviewSource = useMemo(() => buildCurrentOutput(), [buildCurrentOutput])
+  const outputPreview = useMemo(
+    () => createOutputPreview(outputPreviewSource),
+    [outputPreviewSource]
+  )
+  const outputPreviewLimited = isOutputPreviewLimited(outputPreviewSource)
 
   const filteredFindings = useMemo(() => {
     const query = auditQuery.trim().toLowerCase()
@@ -760,6 +789,11 @@ export default function CaddyClient() {
         .includes(query)
     )
   }, [auditQuery, findings, t])
+  const visibleFindings = useMemo(
+    () => filteredFindings.slice(0, FINDING_RENDER_LIMIT),
+    [filteredFindings]
+  )
+  const findingsLimited = filteredFindings.length > visibleFindings.length
 
   const metrics = useMemo(() => {
     const critical = findings.filter(item => item.level === 'danger').length
@@ -781,20 +815,32 @@ export default function CaddyClient() {
   }, [findings, parsed.sites, t])
 
   const updateDraft = useCallback(<K extends keyof CaddyDraft>(key: K, value: CaddyDraft[K]) => {
-    setDraft(current => ({ ...current, [key]: value }))
+    const nextValue =
+      typeof value === 'string' ? (value.slice(0, DRAFT_FIELD_LIMIT) as CaddyDraft[K]) : value
+    setDraft(current => ({ ...current, [key]: nextValue }))
   }, [])
 
-  const applyPreset = useCallback((preset: Preset) => {
-    setDraft(preset.draft)
-    setWorkspace(preset.workspace)
+  const updateWorkspace = useCallback((value: string) => {
+    const capped = value.length > WORKSPACE_LIMIT
+
+    setIsWorkspaceCapped(capped)
+    setWorkspace(capped ? value.slice(0, WORKSPACE_LIMIT) : value)
   }, [])
+
+  const applyPreset = useCallback(
+    (preset: Preset) => {
+      setDraft(preset.draft)
+      updateWorkspace(preset.workspace)
+    },
+    [updateWorkspace]
+  )
 
   const reset = useCallback(() => {
     setDraft(DEFAULT_DRAFT)
-    setWorkspace(PRESETS[0].workspace)
+    updateWorkspace(PRESETS[0].workspace)
     setAuditQuery('')
     setOutputType('caddyfile')
-  }, [])
+  }, [updateWorkspace])
 
   const copySummary = useCallback(() => {
     copy(
@@ -1058,12 +1104,12 @@ export default function CaddyClient() {
                 <Input
                   className="pl-9"
                   value={auditQuery}
-                  onChange={event => setAuditQuery(event.target.value)}
+                  onChange={event => setAuditQuery(event.target.value.slice(0, 160))}
                   placeholder={t('app.generation.caddy.audit_search')}
                 />
               </div>
               <div className="grid max-h-[420px] gap-2 overflow-auto pr-1">
-                {filteredFindings.map((finding, index) => (
+                {visibleFindings.map((finding, index) => (
                   <div
                     key={`${finding.key}-${finding.subject}-${index}`}
                     className="glass-panel flex min-w-0 items-start gap-3 rounded-2xl p-3"
@@ -1079,13 +1125,21 @@ export default function CaddyClient() {
                       <p className="text-sm font-semibold text-[var(--text-primary)]">
                         {t(`app.generation.caddy.audit.${finding.key}`)}
                       </p>
-                      <p className="mt-1 truncate text-xs text-[var(--text-muted)]">
+                      <p className="mt-1 break-all font-mono text-xs leading-5 text-[var(--text-muted)]">
                         {finding.subject}
                       </p>
                     </div>
                   </div>
                 ))}
               </div>
+              {findingsLimited && (
+                <p className="text-xs leading-5 text-amber-600 dark:text-amber-300">
+                  {t('public.rows_render_limited', {
+                    total: filteredFindings.length,
+                    visible: visibleFindings.length
+                  })}
+                </p>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -1099,21 +1153,22 @@ export default function CaddyClient() {
             <CardContent className="grid gap-3">
               <Textarea
                 value={workspace}
-                onChange={event => setWorkspace(event.target.value)}
+                onChange={event => updateWorkspace(event.target.value)}
                 placeholder={t('app.generation.caddy.workspace_placeholder')}
                 className="min-h-[260px] font-mono text-sm"
                 spellCheck={false}
               />
+              <InputCapNotice visible={isWorkspaceCapped} limit={WORKSPACE_LIMIT} />
               <div className="flex flex-wrap gap-2">
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => setWorkspace(caddyfileOutput)}
+                  onClick={() => updateWorkspace(caddyfileOutput)}
                 >
                   <Sparkles className="mr-2 h-4 w-4" />
                   {t('app.generation.caddy.use_output')}
                 </Button>
-                <Button type="button" variant="outline" onClick={() => setWorkspace('')}>
+                <Button type="button" variant="outline" onClick={() => updateWorkspace('')}>
                   <Trash2 className="mr-2 h-4 w-4" />
                   {t('public.clear')}
                 </Button>
@@ -1142,15 +1197,23 @@ export default function CaddyClient() {
                 </Select>
               </div>
               <Textarea
-                value={outputValue}
+                value={outputPreview}
                 readOnly
                 className="min-h-[300px] font-mono text-sm"
                 spellCheck={false}
               />
+              {outputPreviewLimited && (
+                <p className="text-xs leading-5 text-amber-600 dark:text-amber-300">
+                  {t('public.output_preview_limited', {
+                    total: outputPreviewSource.length.toLocaleString(),
+                    visible: OUTPUT_PREVIEW_CHARS.toLocaleString()
+                  })}
+                </p>
+              )}
               <div className="flex flex-wrap gap-2">
                 <Button
                   type="button"
-                  onClick={() => copy(outputValue)}
+                  onClick={() => copy(buildCurrentOutput())}
                   className="w-full sm:w-auto"
                 >
                   <Copy className="mr-2 h-4 w-4" />
@@ -1159,7 +1222,7 @@ export default function CaddyClient() {
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => downloadText(outputValue, getOutputFilename(outputType))}
+                  onClick={() => downloadText(buildCurrentOutput(), getOutputFilename(outputType))}
                   className="w-full sm:w-auto"
                 >
                   <Download className="mr-2 h-4 w-4" />
@@ -1193,45 +1256,55 @@ export default function CaddyClient() {
                 {t('app.generation.caddy.empty')}
               </div>
             ) : (
-              parsed.sites.map((site, index) => (
-                <div
-                  key={`${site.header}-${index}`}
-                  className="glass-panel min-w-0 rounded-2xl p-4"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="min-w-0 truncate text-sm font-semibold text-[var(--text-primary)]">
-                      {site.header}
-                    </p>
-                    <span className="rounded-full border border-[var(--border-subtle)] px-2 py-1 text-xs text-[var(--text-muted)]">
-                      {site.hasReverseProxy
-                        ? t('app.generation.caddy.parsed.proxy')
-                        : site.hasFileServer
-                          ? t('app.generation.caddy.parsed.files')
-                          : t('app.generation.caddy.parsed.site')}
-                    </span>
+              <>
+                {parsed.sites.map((site, index) => (
+                  <div
+                    key={`${site.header}-${index}`}
+                    className="glass-panel min-w-0 rounded-2xl p-4"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="min-w-0 break-all font-mono text-sm font-semibold leading-5 text-[var(--text-primary)]">
+                        {site.header}
+                      </p>
+                      <span className="rounded-full border border-[var(--border-subtle)] px-2 py-1 text-xs text-[var(--text-muted)]">
+                        {site.hasReverseProxy
+                          ? t('app.generation.caddy.parsed.proxy')
+                          : site.hasFileServer
+                            ? t('app.generation.caddy.parsed.files')
+                            : t('app.generation.caddy.parsed.site')}
+                      </span>
+                    </div>
+                    <div className="mt-3 grid gap-2 text-xs text-[var(--text-muted)] sm:grid-cols-2">
+                      <span>
+                        {t('app.generation.caddy.parsed.upstreams')}: {site.upstreams.length || '-'}
+                      </span>
+                      <span>
+                        {t('app.generation.caddy.parsed.root')}: {site.rootPath || '-'}
+                      </span>
+                      <span>
+                        {t('app.generation.caddy.parsed.headers')}:{' '}
+                        {site.hasSecurityHeaders
+                          ? t('app.generation.caddy.level.good')
+                          : t('app.generation.caddy.level.warn')}
+                      </span>
+                      <span>
+                        {t('app.generation.caddy.parsed.compression')}:{' '}
+                        {site.hasCompression
+                          ? t('app.generation.caddy.level.good')
+                          : t('app.generation.caddy.level.warn')}
+                      </span>
+                    </div>
                   </div>
-                  <div className="mt-3 grid gap-2 text-xs text-[var(--text-muted)] sm:grid-cols-2">
-                    <span>
-                      {t('app.generation.caddy.parsed.upstreams')}: {site.upstreams.length || '-'}
-                    </span>
-                    <span>
-                      {t('app.generation.caddy.parsed.root')}: {site.rootPath || '-'}
-                    </span>
-                    <span>
-                      {t('app.generation.caddy.parsed.headers')}:{' '}
-                      {site.hasSecurityHeaders
-                        ? t('app.generation.caddy.level.good')
-                        : t('app.generation.caddy.level.warn')}
-                    </span>
-                    <span>
-                      {t('app.generation.caddy.parsed.compression')}:{' '}
-                      {site.hasCompression
-                        ? t('app.generation.caddy.level.good')
-                        : t('app.generation.caddy.level.warn')}
-                    </span>
-                  </div>
-                </div>
-              ))
+                ))}
+                {parsed.siteLimited && (
+                  <p className="text-xs leading-5 text-amber-600 dark:text-amber-300">
+                    {t('public.rows_render_limited', {
+                      total: parsed.totalSites,
+                      visible: parsed.sites.length
+                    })}
+                  </p>
+                )}
+              </>
             )}
           </CardContent>
         </Card>

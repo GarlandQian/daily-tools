@@ -23,10 +23,16 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
+import { InputCapNotice } from '@/components/ui/input-cap-notice'
 import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
+import {
+  createOutputPreview,
+  isOutputPreviewLimited,
+  OUTPUT_PREVIEW_CHARS
+} from '@/utils/outputPreview'
 
 const RESOURCE_KINDS = ['image', 'preload', 'script', 'iframe', 'fetch'] as const
 const PRIORITIES = ['auto', 'high', 'low'] as const
@@ -37,6 +43,9 @@ const INTENTS = ['lcp', 'above_fold', 'below_fold', 'background', 'third_party']
 const OUTPUT_TYPES = ['html', 'next', 'fetch', 'json', 'csv'] as const
 const WORKSPACE_LIMIT = 50000
 const HINT_LIMIT = 160
+const OUTPUT_PREVIEW_HINT_LIMIT = 80
+const VISIBLE_FINDING_LIMIT = 24
+const VISIBLE_HINT_LIMIT = 42
 
 type ResourceKind = (typeof RESOURCE_KINDS)[number]
 type Priority = (typeof PRIORITIES)[number]
@@ -361,7 +370,7 @@ const parseWorkspace = (input: string) => {
     })
   })
 
-  return { hints, truncated: input.length > WORKSPACE_LIMIT }
+  return { hints, truncated: input.length >= WORKSPACE_LIMIT }
 }
 
 const draftToHint = (draft: PriorityDraft): PriorityHint => ({
@@ -597,8 +606,18 @@ export default function PriorityHintsClient() {
   )
   const findings = useMemo(() => auditHints(hints, parsed.truncated), [hints, parsed.truncated])
   const score = useMemo(() => getScore(findings), [findings])
-  const output = useMemo(() => buildOutput(hints, outputType), [hints, outputType])
-  const csvOutput = useMemo(() => buildCsv(hints), [hints])
+  const outputPreviewHints = useMemo(() => hints.slice(0, OUTPUT_PREVIEW_HINT_LIMIT), [hints])
+  const outputPreviewSource = useMemo(
+    () => buildOutput(outputPreviewHints, outputType),
+    [outputPreviewHints, outputType]
+  )
+  const outputPreview = useMemo(
+    () => createOutputPreview(outputPreviewSource),
+    [outputPreviewSource]
+  )
+  const outputPreviewLimited = isOutputPreviewLimited(outputPreviewSource)
+  const outputPreviewRowsLimited = hints.length > outputPreviewHints.length
+  const buildCurrentOutput = useCallback(() => buildOutput(hints, outputType), [hints, outputType])
   const filteredFindings = useMemo(() => {
     const query = deferredAuditQuery.trim().toLowerCase()
     if (!query) return findings
@@ -615,6 +634,11 @@ export default function PriorityHintsClient() {
       `${hint.kind} ${hint.intent} ${hint.href} ${hint.fetchPriority}`.toLowerCase().includes(query)
     )
   }, [deferredParsedQuery, hints])
+  const visibleFindings = useMemo(
+    () => filteredFindings.slice(0, VISIBLE_FINDING_LIMIT),
+    [filteredFindings]
+  )
+  const visibleHints = useMemo(() => filteredHints.slice(0, VISIBLE_HINT_LIMIT), [filteredHints])
   const metrics = useMemo(
     () => ({
       critical: findings.filter(item => item.level === 'danger').length,
@@ -936,6 +960,7 @@ export default function PriorityHintsClient() {
               className="min-h-[390px] font-mono"
               spellCheck={false}
             />
+            <InputCapNotice visible={workspace.length >= WORKSPACE_LIMIT} limit={WORKSPACE_LIMIT} />
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
@@ -973,29 +998,37 @@ export default function PriorityHintsClient() {
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-tertiary)]" />
               <Input
                 value={auditQuery}
-                onChange={event => setAuditQuery(event.target.value)}
+                onChange={event => setAuditQuery(event.target.value.slice(0, 160))}
                 placeholder={t('app.converter.priority_hints.audit_search')}
                 className="pl-10"
               />
             </div>
             <div className="space-y-2">
-              {filteredFindings.slice(0, 24).map((finding, index) => (
+              {visibleFindings.map((finding, index) => (
                 <div
                   key={`${finding.key}:${finding.subject}:${index}`}
                   className={`rounded-xl border px-3 py-2 text-xs ${levelClass(finding.level)}`}
                 >
                   <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
-                    <span className="min-w-0 break-words">
+                    <span className="min-w-0 break-all leading-5">
                       <span className="font-semibold">{finding.subject}</span>
-                      <span className="mx-2">/</span>
+                      <span className="mx-2 inline-block">/</span>
                       {t(`app.converter.priority_hints.audit.${finding.key}`)}
                     </span>
-                    <span className="font-medium">
+                    <span className="shrink-0 font-medium">
                       {t(`app.converter.priority_hints.level.${finding.level}`)}
                     </span>
                   </div>
                 </div>
               ))}
+              {filteredFindings.length > visibleFindings.length && (
+                <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                  {t('public.rows_render_limited', {
+                    total: filteredFindings.length.toLocaleString(),
+                    visible: visibleFindings.length.toLocaleString()
+                  })}
+                </p>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -1028,12 +1061,28 @@ export default function PriorityHintsClient() {
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Textarea readOnly value={output} className="min-h-[320px] font-mono" />
+            <Textarea readOnly value={outputPreview} className="min-h-[320px] font-mono" />
+            {outputPreviewLimited && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('public.output_preview_limited', {
+                  total: outputPreviewSource.length.toLocaleString(),
+                  visible: OUTPUT_PREVIEW_CHARS.toLocaleString()
+                })}
+              </p>
+            )}
+            {outputPreviewRowsLimited && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('public.output_preview_rows_limited', {
+                  total: hints.length.toLocaleString(),
+                  visible: outputPreviewHints.length.toLocaleString()
+                })}
+              </p>
+            )}
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => copy(output)}
+                onClick={() => copy(buildCurrentOutput())}
                 className="w-full sm:w-auto"
               >
                 <Copy className="h-4 w-4" />
@@ -1043,7 +1092,11 @@ export default function PriorityHintsClient() {
                 type="button"
                 variant="outline"
                 onClick={() =>
-                  downloadText(output, 'priority-hints.txt', 'text/plain;charset=utf-8')
+                  downloadText(
+                    buildCurrentOutput(),
+                    'priority-hints.txt',
+                    'text/plain;charset=utf-8'
+                  )
                 }
                 className="w-full sm:w-auto"
               >
@@ -1054,7 +1107,7 @@ export default function PriorityHintsClient() {
                 type="button"
                 variant="outline"
                 onClick={() =>
-                  downloadText(csvOutput, 'priority-hints.csv', 'text/csv;charset=utf-8')
+                  downloadText(buildCsv(hints), 'priority-hints.csv', 'text/csv;charset=utf-8')
                 }
                 className="w-full sm:w-auto"
               >
@@ -1081,14 +1134,14 @@ export default function PriorityHintsClient() {
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-tertiary)]" />
               <Input
                 value={parsedQuery}
-                onChange={event => setParsedQuery(event.target.value)}
+                onChange={event => setParsedQuery(event.target.value.slice(0, 160))}
                 placeholder={t('app.converter.priority_hints.parsed_search')}
                 className="pl-10"
               />
             </div>
             {filteredHints.length ? (
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {filteredHints.slice(0, 42).map(hint => (
+                {visibleHints.map(hint => (
                   <div key={hint.id} className="glass-input min-w-0 rounded-xl p-3">
                     <div className="flex items-start justify-between gap-3">
                       <p className="break-all font-mono text-sm font-semibold text-[var(--text-primary)]">
@@ -1107,6 +1160,14 @@ export default function PriorityHintsClient() {
                     </p>
                   </div>
                 ))}
+                {filteredHints.length > visibleHints.length && (
+                  <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)] md:col-span-2 xl:col-span-3">
+                    {t('public.rows_render_limited', {
+                      total: filteredHints.length.toLocaleString(),
+                      visible: visibleHints.length.toLocaleString()
+                    })}
+                  </p>
+                )}
               </div>
             ) : (
               <div className="glass-input rounded-xl p-6 text-center text-sm text-[var(--text-secondary)]">

@@ -1,7 +1,5 @@
 'use client'
 
-import CronParser from 'cron-parser'
-import dayjs from 'dayjs'
 import {
   AlertTriangle,
   CalendarClock,
@@ -15,12 +13,13 @@ import {
   Sparkles,
   Trash2
 } from 'lucide-react'
-import { useCallback, useDeferredValue, useMemo, useState } from 'react'
+import { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { InputCapNotice } from '@/components/ui/input-cap-notice'
 import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Slider } from '@/components/ui/slider'
@@ -51,13 +50,14 @@ interface ParsedCronCandidate {
   id: string
   line: number
   source: ParsedCronSource
-  valid: boolean
+  valid: boolean | null
 }
 
 interface ParsedCronWorkspace {
   candidates: ParsedCronCandidate[]
   capped: boolean
   invalidLines: number
+  lineCapped: boolean
   systemdSchedules: string[]
 }
 
@@ -65,6 +65,22 @@ interface CronFinding {
   key: string
   level: CronFindingLevel
   subject: string
+}
+
+interface CronParserApi {
+  parse: (
+    expression: string,
+    options?: { tz?: string }
+  ) => {
+    next: () => { toDate: () => Date }
+  }
+}
+
+interface CronPreview {
+  error: string
+  loading: boolean
+  results: string[]
+  timestamps: number[]
 }
 
 const DEFAULT_FORM_DATA: CronFormData = {
@@ -104,7 +120,10 @@ const commonOptionValues = ['*', '0', '1', '5', '9', '10', '12', '15', '30']
 const dayOptionValues = ['*', '1', '5', '10', '15', '20', '25', '30']
 const weekdayOptionValues = ['*', '0', '1', '1-5', '2', '3', '4', '5', '6']
 const MAX_CRON_WORKSPACE_CHARS = 60000
+const MAX_CRON_MANUAL_CHARS = 240
+const MAX_CRON_WORKSPACE_LINES = 800
 const MAX_PARSED_CRON_CANDIDATES = 24
+const MAX_SYSTEMD_SCHEDULES = 12
 const CRON_MACROS = new Set([
   '@annually',
   '@daily',
@@ -130,6 +149,38 @@ const CRON_MONTH_NAMES = new Set([
   'SEP'
 ])
 const CRON_WEEKDAY_NAMES = new Set(['FRI', 'MON', 'SAT', 'SUN', 'THU', 'TUE', 'WED'])
+const cronDateFormatters = new Map<string, Intl.DateTimeFormat>()
+let cronParserPromise: Promise<CronParserApi> | null = null
+
+const loadCronParser = () => {
+  cronParserPromise ??= import('cron-parser').then(module => module.CronExpressionParser)
+  return cronParserPromise
+}
+
+const getCronDateFormatter = (timezone: string) => {
+  const cached = cronDateFormatters.get(timezone)
+  if (cached) return cached
+
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    day: '2-digit',
+    hour: '2-digit',
+    hour12: false,
+    hourCycle: 'h23',
+    minute: '2-digit',
+    month: '2-digit',
+    second: '2-digit',
+    timeZone: timezone,
+    year: 'numeric'
+  })
+  cronDateFormatters.set(timezone, formatter)
+  return formatter
+}
+
+const formatCronDate = (date: Date, timezone: string) => {
+  const parts = getCronDateFormatter(timezone).formatToParts(date)
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]))
+  return `${values.year}-${values.month}-${values.day} ${values.hour}:${values.minute}:${values.second}`
+}
 
 const clampNumber = (value: number, min: number, max: number) => {
   if (!Number.isFinite(value)) return min
@@ -198,10 +249,16 @@ const extractQuotedSchedule = (line: string, key: string) => {
   return bareMatch?.[1]?.replace(/\s+#.*$/u, '').trim() ?? ''
 }
 
-const validateCronExpression = (expression: string, timezone: string) => {
+const validateCronExpression = (
+  expression: string,
+  timezone: string,
+  cronParser: CronParserApi | null
+) => {
+  if (!cronParser) return null
+
   try {
     if (expression.trim().toLowerCase() === '@reboot') return false
-    CronParser.parse(toFiveFieldExpression(expression), { tz: timezone })
+    cronParser.parse(toFiveFieldExpression(expression), { tz: timezone })
     return true
   } catch {
     return false
@@ -214,10 +271,12 @@ const pushCronCandidate = ({
   expression,
   line,
   source,
+  cronParser,
   timezone
 }: {
   candidates: ParsedCronCandidate[]
   command?: string
+  cronParser: CronParserApi | null
   expression: string
   line: number
   source: ParsedCronSource
@@ -230,51 +289,68 @@ const pushCronCandidate = ({
     id: `${source}-${line}-${candidates.length}`,
     line,
     source,
-    valid: validateCronExpression(expression, timezone)
+    valid: validateCronExpression(expression, timezone, cronParser)
   })
 }
 
-const parseCronWorkspace = (input: string, timezone: string): ParsedCronWorkspace => {
+const parseCronWorkspace = (
+  input: string,
+  timezone: string,
+  cronParser: CronParserApi | null
+): ParsedCronWorkspace => {
   const source = input.slice(0, MAX_CRON_WORKSPACE_CHARS)
   const candidates: ParsedCronCandidate[] = []
   const systemdSchedules: string[] = []
   let invalidLines = 0
+  const lines = source.split(/\r?\n/u)
+  const inspectedLines = lines.slice(0, MAX_CRON_WORKSPACE_LINES)
 
-  source.split(/\r?\n/u).forEach((line, index) => {
+  for (const [index, line] of inspectedLines.entries()) {
+    if (
+      candidates.length >= MAX_PARSED_CRON_CANDIDATES &&
+      systemdSchedules.length >= MAX_SYSTEMD_SCHEDULES
+    ) {
+      break
+    }
+
     const trimmed = line.trim()
-    if (!trimmed || trimmed.startsWith('#')) return
+    if (!trimmed || trimmed.startsWith('#')) continue
 
     const githubSchedule = extractQuotedSchedule(trimmed, 'cron')
     if (githubSchedule) {
       pushCronCandidate({
         candidates,
+        cronParser,
         expression: githubSchedule,
         line: index + 1,
         source: 'github',
         timezone
       })
-      return
+      continue
     }
 
     const kubernetesSchedule = extractQuotedSchedule(trimmed, 'schedule')
     if (kubernetesSchedule) {
       pushCronCandidate({
         candidates,
+        cronParser,
         expression: kubernetesSchedule,
         line: index + 1,
         source: 'kubernetes',
         timezone
       })
-      return
+      continue
     }
 
     const systemdMatch = trimmed.match(/^On(?:Calendar|UnitActiveSec|BootSec)\s*=\s*(.+)$/iu)
     if (systemdMatch?.[1]) {
-      systemdSchedules.push(systemdMatch[1].trim())
-      return
+      if (systemdSchedules.length < MAX_SYSTEMD_SCHEDULES) {
+        systemdSchedules.push(systemdMatch[1].trim())
+      }
+      continue
     }
 
-    if (/^[A-Z_][A-Z0-9_]*=/u.test(trimmed)) return
+    if (/^[A-Z_][A-Z0-9_]*=/u.test(trimmed)) continue
 
     const parts = getExpressionParts(trimmed)
     const first = parts[0] ?? ''
@@ -283,55 +359,61 @@ const parseCronWorkspace = (input: string, timezone: string): ParsedCronWorkspac
       pushCronCandidate({
         candidates,
         command: parts.slice(1).join(' '),
+        cronParser,
         expression: first,
         line: index + 1,
         source: 'macro',
         timezone
       })
-      return
+      continue
     }
 
     if (isSixFieldCron(parts)) {
       pushCronCandidate({
         candidates,
+        cronParser,
         expression: parts.join(' '),
         line: index + 1,
         source: 'six-field',
         timezone
       })
-      return
+      continue
     }
 
     if (isFiveFieldCron(parts)) {
       pushCronCandidate({
         candidates,
         command: parts.slice(5).join(' '),
+        cronParser,
         expression: parts.slice(0, 5).join(' '),
         line: index + 1,
         source: 'crontab',
         timezone
       })
-      return
+      continue
     }
 
     invalidLines += 1
-  })
+  }
 
   return {
     candidates,
     capped: input.length > MAX_CRON_WORKSPACE_CHARS,
     invalidLines,
+    lineCapped: lines.length > MAX_CRON_WORKSPACE_LINES,
     systemdSchedules
   }
 }
 
 const buildCronFindings = ({
   activeExpression,
+  parserReady,
   parsedWorkspace,
   previewError,
   timezone
 }: {
   activeExpression: string
+  parserReady: boolean
   parsedWorkspace: ParsedCronWorkspace
   previewError: string
   timezone: string
@@ -340,6 +422,10 @@ const buildCronFindings = ({
   const parts = getExpressionParts(activeExpression)
   const isMacro = parts.length === 1 && isCronMacro(parts[0] ?? '')
   const expressionParts = parts.length === 6 ? parts.slice(1) : parts
+
+  if (!parserReady) {
+    findings.push({ key: 'parser_loading', level: 'warn', subject: activeExpression || 'cron' })
+  }
 
   if (!activeExpression.trim())
     findings.push({ key: 'empty_expression', level: 'danger', subject: 'cron' })
@@ -394,6 +480,12 @@ const buildCronFindings = ({
       level: 'warn',
       subject: `${MAX_CRON_WORKSPACE_CHARS}`
     })
+  if (parsedWorkspace.lineCapped)
+    findings.push({
+      key: 'workspace_line_capped',
+      level: 'warn',
+      subject: `${MAX_CRON_WORKSPACE_LINES}`
+    })
   if (parsedWorkspace.invalidLines > 0)
     findings.push({
       key: 'workspace_invalid_lines',
@@ -406,12 +498,12 @@ const buildCronFindings = ({
       level: 'warn',
       subject: parsedWorkspace.systemdSchedules.slice(0, 2).join(', ')
     })
-  if (parsedWorkspace.candidates.some(candidate => !candidate.valid))
+  if (parsedWorkspace.candidates.some(candidate => candidate.valid === false))
     findings.push({
       key: 'workspace_invalid_schedule',
       level: 'danger',
       subject: parsedWorkspace.candidates
-        .filter(candidate => !candidate.valid)
+        .filter(candidate => candidate.valid === false)
         .map(candidate => `#${candidate.line}`)
         .join(', ')
     })
@@ -430,7 +522,7 @@ const buildCronFindings = ({
       level: 'warn',
       subject: String(MAX_PARSED_CRON_CANDIDATES)
     })
-  if (!previewError && findings.length === 0)
+  if (parserReady && !previewError && findings.length === 0)
     findings.push({ key: 'ready', level: 'good', subject: toFiveFieldExpression(activeExpression) })
 
   return findings
@@ -469,7 +561,31 @@ const CronClient = () => {
   const [workspace, setWorkspace] = useState(
     '# crontab\n0 9 * * 1-5 npm run report\n\n# GitHub Actions\n- cron: "0 2 * * *"\n\n# Kubernetes CronJob\nschedule: "*/15 * * * *"'
   )
+  const [isWorkspaceCapped, setIsWorkspaceCapped] = useState(false)
+  const [cronParser, setCronParser] = useState<CronParserApi | null>(null)
+  const [parserLoadFailed, setParserLoadFailed] = useState(false)
   const deferredWorkspace = useDeferredValue(workspace)
+
+  useEffect(() => {
+    let cancelled = false
+
+    void loadCronParser()
+      .then(parser => {
+        if (!cancelled) {
+          setCronParser(() => parser)
+          setParserLoadFailed(false)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setParserLoadFailed(true)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const commonOptions = useMemo(
     () =>
@@ -508,49 +624,74 @@ const CronClient = () => {
     () => toFiveFieldExpression(activeExpression),
     [activeExpression]
   )
-  const parsedWorkspace = useMemo(
-    () => parseCronWorkspace(deferredWorkspace, timezone),
-    [deferredWorkspace, timezone]
-  )
+  const parsedWorkspace = useMemo(() => {
+    const parsed = parseCronWorkspace(deferredWorkspace, timezone, cronParser)
+    return isWorkspaceCapped ? { ...parsed, capped: true } : parsed
+  }, [cronParser, deferredWorkspace, isWorkspaceCapped, timezone])
 
-  const preview = useMemo(() => {
+  const preview = useMemo<CronPreview>(() => {
+    if (!cronParser) {
+      return {
+        error: parserLoadFailed ? t('public.generate_failed') : '',
+        loading: !parserLoadFailed,
+        results: [],
+        timestamps: []
+      }
+    }
+
     try {
-      const interval = CronParser.parse(fiveFieldExpression, { tz: timezone })
-      const results = Array.from({ length: normalizedPreviewCount }, () => {
+      const interval = cronParser.parse(fiveFieldExpression, { tz: timezone })
+      const nextDates = Array.from({ length: normalizedPreviewCount }, () => {
         const next = interval.next()
-        return dayjs(next.toDate()).format('YYYY-MM-DD HH:mm:ss')
+        return next.toDate()
       })
-      return { error: '', results }
+      return {
+        error: '',
+        loading: false,
+        results: nextDates.map(date => formatCronDate(date, timezone)),
+        timestamps: nextDates.map(date => date.getTime())
+      }
     } catch (error) {
       return {
         error: error instanceof Error ? error.message : t('app.generation.cron.invalid'),
-        results: []
+        loading: false,
+        results: [],
+        timestamps: []
       }
     }
-  }, [fiveFieldExpression, normalizedPreviewCount, t, timezone])
+  }, [cronParser, fiveFieldExpression, normalizedPreviewCount, parserLoadFailed, t, timezone])
   const findings = useMemo(
     () =>
       buildCronFindings({
         activeExpression,
+        parserReady: Boolean(cronParser),
         parsedWorkspace,
         previewError: preview.error,
         timezone
       }),
-    [activeExpression, parsedWorkspace, preview.error, timezone]
+    [activeExpression, cronParser, parsedWorkspace, preview.error, timezone]
   )
   const findingsCsv = useMemo(() => buildFindingsCsv(findings), [findings])
-  const firstParsedCandidate = parsedWorkspace.candidates.find(candidate => candidate.valid)
+  const firstParsedCandidate = parsedWorkspace.candidates.find(
+    candidate => candidate.valid === true
+  )
   const runGapMinutes = useMemo(() => {
-    if (preview.results.length < 2) return '-'
-    const gap = dayjs(preview.results[1]).diff(dayjs(preview.results[0]), 'minute')
+    if (preview.timestamps.length < 2) return '-'
+    const gap = Math.round((preview.timestamps[1] - preview.timestamps[0]) / 60000)
     if (!Number.isFinite(gap)) return '-'
     return String(gap)
-  }, [preview.results])
+  }, [preview.timestamps])
 
   const handleApplyPreset = useCallback((preset: CronPreset) => {
     setMode('builder')
     setFormData(preset.value)
     setManualExpression(toFiveFieldExpression(buildSixFieldExpression(preset.value)))
+  }, [])
+
+  const updateWorkspace = useCallback((value: string) => {
+    const capped = value.length > MAX_CRON_WORKSPACE_CHARS
+    setIsWorkspaceCapped(capped)
+    setWorkspace(capped ? value.slice(0, MAX_CRON_WORKSPACE_CHARS) : value)
   }, [])
 
   const handleReset = useCallback(() => {
@@ -559,10 +700,10 @@ const CronClient = () => {
     setManualExpression('0 * * * *')
     setTimezone('Asia/Shanghai')
     setPreviewCount(5)
-    setWorkspace(
+    updateWorkspace(
       '# crontab\n0 9 * * 1-5 npm run report\n\n# GitHub Actions\n- cron: "0 2 * * *"\n\n# Kubernetes CronJob\nschedule: "*/15 * * * *"'
     )
-  }, [])
+  }, [updateWorkspace])
 
   const handleApplyParsed = useCallback((candidate: ParsedCronCandidate) => {
     setMode('manual')
@@ -673,7 +814,9 @@ const CronClient = () => {
                   <Input
                     id="cron-manual"
                     value={manualExpression}
-                    onChange={event => setManualExpression(event.target.value)}
+                    onChange={event =>
+                      setManualExpression(event.target.value.slice(0, MAX_CRON_MANUAL_CHARS))
+                    }
                     className="font-mono"
                     placeholder="0 9 * * 1-5"
                   />
@@ -742,11 +885,12 @@ const CronClient = () => {
           <CardContent className="space-y-4">
             <Textarea
               value={workspace}
-              onChange={event => setWorkspace(event.target.value)}
+              onChange={event => updateWorkspace(event.target.value)}
               placeholder={t('app.generation.cron.workspace_placeholder')}
               className="min-h-[220px] font-mono text-xs"
               spellCheck={false}
             />
+            <InputCapNotice visible={isWorkspaceCapped} limit={MAX_CRON_WORKSPACE_CHARS} />
             <div className="grid grid-cols-3 gap-3">
               <CronMetric
                 label={t('app.generation.cron.metric.parsed')}
@@ -774,7 +918,7 @@ const CronClient = () => {
                 type="button"
                 variant="outline"
                 icon={<FileSearch className="h-4 w-4" />}
-                onClick={() => setWorkspace(activeExpression)}
+                onClick={() => updateWorkspace(activeExpression)}
               >
                 {t('app.generation.cron.use_current')}
               </Button>
@@ -782,7 +926,7 @@ const CronClient = () => {
                 type="button"
                 variant="ghost"
                 icon={<Trash2 className="h-4 w-4" />}
-                onClick={() => setWorkspace('')}
+                onClick={() => updateWorkspace('')}
               >
                 {t('public.clear')}
               </Button>
@@ -796,9 +940,11 @@ const CronClient = () => {
                     sourceLabel={t(`app.generation.cron.source.${candidate.source}`)}
                     useLabel={t('app.generation.cron.use_schedule')}
                     validLabel={
-                      candidate.valid
-                        ? t('app.generation.cron.parsed.valid')
-                        : t('app.generation.cron.parsed.invalid')
+                      candidate.valid === null
+                        ? t('public.loading')
+                        : candidate.valid
+                          ? t('app.generation.cron.parsed.valid')
+                          : t('app.generation.cron.parsed.invalid')
                     }
                     onUse={() => handleApplyParsed(candidate)}
                   />
@@ -900,14 +1046,18 @@ const CronClient = () => {
             <Button
               variant="ghost"
               icon={<Copy className="h-4 w-4" />}
-              disabled={!preview.results.length}
+              disabled={!preview.results.length || preview.loading}
               onClick={() => copy(preview.results.join('\n'))}
             >
               {t('app.generation.cron.copy_next')}
             </Button>
           </CardHeader>
           <CardContent className="min-h-0 flex-1 space-y-3 overflow-auto">
-            {preview.results.length > 0 ? (
+            {preview.loading ? (
+              <div className="flex min-h-[220px] items-center justify-center rounded-xl border border-dashed border-[var(--border-base)] px-4 text-center text-sm text-[var(--text-tertiary)]">
+                {t('public.loading')}
+              </div>
+            ) : preview.results.length > 0 ? (
               preview.results.map((time, index) => (
                 <div key={`${time}-${index}`} className="glass-input rounded-xl p-3">
                   <code className="text-sm text-[var(--text-primary)]">
@@ -983,7 +1133,11 @@ const ParsedCronRow = ({
           </span>
           <span
             className={
-              candidate.valid ? 'text-xs text-[var(--success)]' : 'text-xs text-[var(--error)]'
+              candidate.valid === null
+                ? 'text-xs text-[var(--text-tertiary)]'
+                : candidate.valid
+                  ? 'text-xs text-[var(--success)]'
+                  : 'text-xs text-[var(--error)]'
             }
           >
             {validLabel}
@@ -1003,7 +1157,7 @@ const ParsedCronRow = ({
         type="button"
         size="sm"
         variant="ghost"
-        disabled={!candidate.valid}
+        disabled={candidate.valid !== true}
         icon={<ClipboardCheck className="h-4 w-4" />}
         onClick={onUse}
       >

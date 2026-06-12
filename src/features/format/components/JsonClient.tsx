@@ -12,7 +12,7 @@ import {
   SearchCode,
   Trash2
 } from 'lucide-react'
-import { useDeferredValue, useMemo, useState } from 'react'
+import { useCallback, useDeferredValue, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
@@ -73,7 +73,10 @@ const JSON_SAMPLE = JSON.stringify(
 )
 
 const MAX_JSON_FORMAT_INPUT_CHARS = 200000
+const MAX_JSON_LIVE_OUTPUT_INPUT_CHARS = 60000
 const MAX_JSON_PATH_ROWS = 80
+const MAX_JSON_PATH_CHARS = 500
+const MAX_JSON_OUTPUT_PREVIEW_CHARS = 60000
 const jsonNumberFormatter = new Intl.NumberFormat()
 
 const formatJsonNumber = (value: number) => jsonNumberFormatter.format(value)
@@ -103,11 +106,44 @@ const getJsonType = (value: unknown) => {
   return typeof value
 }
 
+const previewPrimitive = (value: unknown) => {
+  if (typeof value === 'string')
+    return JSON.stringify(value.length > 48 ? `${value.slice(0, 48)}...` : value)
+  if (value === null || typeof value === 'number' || typeof value === 'boolean')
+    return String(value)
+  return getJsonType(value)
+}
+
 const previewJsonValue = (value: unknown) => {
-  const next = typeof value === 'string' ? value : JSON.stringify(value)
+  if (Array.isArray(value)) {
+    const items = value.slice(0, 4).map(previewPrimitive)
+    return `[${items.join(', ')}${value.length > items.length ? ', ...' : ''}]`
+  }
+
+  if (isRecord(value)) {
+    const keys: string[] = []
+    let hasMore = false
+
+    for (const key in value) {
+      if (!Object.hasOwn(value, key)) continue
+      if (keys.length >= 5) {
+        hasMore = true
+        break
+      }
+      keys.push(key)
+    }
+
+    const preview = keys.map(key => `${JSON.stringify(key)}: ${previewPrimitive(value[key])}`)
+    return `{${preview.join(', ')}${hasMore ? ', ...' : ''}}`
+  }
+
+  const next = previewPrimitive(value)
   if (!next) return ''
   return next.length > 96 ? `${next.slice(0, 96)}...` : next
 }
+
+const toOutputPreview = (value: string, limit: number) =>
+  value.length > limit ? `${value.slice(0, limit)}\n...` : value
 
 const appendJsonPath = (basePath: string, key: string | number) => {
   if (typeof key === 'number') return `${basePath}[${key}]`
@@ -283,13 +319,14 @@ const JsonClient = () => {
   const toast = useToast()
 
   const [input, setInput] = useState('')
+  const [isInputCapped, setIsInputCapped] = useState(false)
   const [mode, setMode] = useState<JsonMode>('format')
   const [indentSize, setIndentSize] = useState<IndentSize>('2')
   const [sortKeys, setSortKeys] = useState(false)
   const [jsonPath, setJsonPath] = useState('$.release.channels[0].name')
   const deferredInput = useDeferredValue(input)
   const deferredPath = useDeferredValue(jsonPath)
-  const isInputTooLarge = deferredInput.length > MAX_JSON_FORMAT_INPUT_CHARS
+  const isInputTooLarge = isInputCapped || deferredInput.length > MAX_JSON_FORMAT_INPUT_CHARS
   const safeInput = useMemo(
     () =>
       deferredInput.length > MAX_JSON_FORMAT_INPUT_CHARS
@@ -297,6 +334,12 @@ const JsonClient = () => {
         : deferredInput,
     [deferredInput]
   )
+
+  const updateInput = (value: string) => {
+    const capped = value.length > MAX_JSON_FORMAT_INPUT_CHARS
+    setIsInputCapped(capped)
+    setInput(capped ? value.slice(0, MAX_JSON_FORMAT_INPUT_CHARS) : value)
+  }
 
   const parsed = useMemo(() => {
     const trimmed = safeInput.trim()
@@ -315,15 +358,30 @@ const JsonClient = () => {
     }
   }, [isInputTooLarge, safeInput])
 
+  const liveOutputDeferred =
+    parsed.valid && parsed.data !== undefined && safeInput.length > MAX_JSON_LIVE_OUTPUT_INPUT_CHARS
   const normalizedJson = useMemo<JsonValue | undefined>(() => {
     if (!parsed.valid || parsed.data === undefined) return undefined
+    if (liveOutputDeferred) return parsed.data
     return (sortKeys ? sortJsonKeys(parsed.data) : parsed.data) as JsonValue
-  }, [parsed.data, parsed.valid, sortKeys])
+  }, [liveOutputDeferred, parsed.data, parsed.valid, sortKeys])
 
-  const output = useMemo(() => {
+  const buildCurrentOutput = useCallback(() => {
+    if (!parsed.valid || parsed.data === undefined || isInputTooLarge) return ''
+    const value = (sortKeys ? sortJsonKeys(parsed.data) : parsed.data) as JsonValue
+    return JSON.stringify(value, null, mode === 'minify' ? 0 : getIndent(indentSize))
+  }, [indentSize, isInputTooLarge, mode, parsed.data, parsed.valid, sortKeys])
+
+  const outputPreviewSource = useMemo(() => {
     if (!parsed.valid || normalizedJson === undefined) return ''
+    if (liveOutputDeferred) return safeInput.trim()
     return JSON.stringify(normalizedJson, null, mode === 'minify' ? 0 : getIndent(indentSize))
-  }, [indentSize, mode, normalizedJson, parsed.valid])
+  }, [indentSize, liveOutputDeferred, mode, normalizedJson, parsed.valid, safeInput])
+  const outputPreview = useMemo(
+    () => toOutputPreview(outputPreviewSource, MAX_JSON_OUTPUT_PREVIEW_CHARS),
+    [outputPreviewSource]
+  )
+  const isOutputPreviewLimited = outputPreviewSource.length > MAX_JSON_OUTPUT_PREVIEW_CHARS
 
   const stats = useMemo(
     () => (parsed.valid && parsed.data !== undefined ? analyzeJson(parsed.data, safeInput) : null),
@@ -337,23 +395,51 @@ const JsonClient = () => {
 
   const extracted = useMemo(() => {
     if (!parsed.valid || parsed.data === undefined || !deferredPath.trim()) {
-      return { error: '', output: '' }
+      return {
+        error: '',
+        output: '',
+        previewDeferred: false,
+        value: undefined as JsonValue | undefined
+      }
     }
 
     const result = getPathValue(parsed.data, deferredPath)
-    if (result.error) return { error: result.error, output: '' }
-    return { error: '', output: JSON.stringify(result.value, null, 2) }
-  }, [deferredPath, parsed.data, parsed.valid])
+    if (result.error)
+      return {
+        error: result.error,
+        output: '',
+        previewDeferred: false,
+        value: undefined as JsonValue | undefined
+      }
+    const value = result.value as JsonValue
+    if (liveOutputDeferred && (Array.isArray(value) || isRecord(value))) {
+      return { error: '', output: '', previewDeferred: true, value }
+    }
+    return { error: '', output: JSON.stringify(value, null, 2), previewDeferred: false, value }
+  }, [deferredPath, liveOutputDeferred, parsed.data, parsed.valid])
+  const extractedPreview = useMemo(
+    () => toOutputPreview(extracted.output, MAX_JSON_OUTPUT_PREVIEW_CHARS),
+    [extracted.output]
+  )
+  const isExtractedPreviewLimited = extracted.output.length > MAX_JSON_OUTPUT_PREVIEW_CHARS
 
   const hasInput = input.trim().length > 0
-  const canUseOutput = Boolean(output)
+  const canBuildOutput = parsed.valid && parsed.data !== undefined && !isInputTooLarge
+  const canUseOutput = canBuildOutput
 
   const handleCopyOutput = () => {
+    const output = buildCurrentOutput()
     if (output) void copy(output)
   }
 
   const handleCopyExtracted = () => {
-    if (extracted.output) void copy(extracted.output)
+    if (extracted.output) {
+      void copy(extracted.output)
+      return
+    }
+    if (extracted.previewDeferred && extracted.value !== undefined) {
+      void copy(JSON.stringify(extracted.value, null, 2))
+    }
   }
 
   const handleValidate = () => {
@@ -379,6 +465,7 @@ const JsonClient = () => {
   }
 
   const handleDownload = () => {
+    const output = buildCurrentOutput()
     if (!output) return
     downloadText(
       output,
@@ -388,7 +475,7 @@ const JsonClient = () => {
   }
 
   const handleUseSample = () => {
-    setInput(JSON_SAMPLE)
+    updateInput(JSON_SAMPLE)
     setMode('format')
     setIndentSize('2')
     setSortKeys(false)
@@ -396,12 +483,13 @@ const JsonClient = () => {
   }
 
   const handleUseOutput = () => {
+    const output = buildCurrentOutput()
     if (!output) return
-    setInput(output)
+    updateInput(output)
   }
 
   const handleClear = () => {
-    setInput('')
+    updateInput('')
     setMode('format')
     setIndentSize('2')
     setSortKeys(false)
@@ -450,7 +538,7 @@ const JsonClient = () => {
               type="button"
               icon={<Copy className="h-4 w-4" />}
               onClick={handleCopyOutput}
-              disabled={!output}
+              disabled={!canBuildOutput}
             >
               {t('public.copy')}
             </Button>
@@ -458,7 +546,7 @@ const JsonClient = () => {
               type="button"
               icon={<Download className="h-4 w-4" />}
               onClick={handleDownload}
-              disabled={!output}
+              disabled={!canBuildOutput}
             >
               {t('app.format.json.download')}
             </Button>
@@ -580,7 +668,7 @@ const JsonClient = () => {
           <CardContent className="flex min-h-0 flex-1 flex-col">
             <Textarea
               value={input}
-              onChange={event => setInput(event.target.value)}
+              onChange={event => updateInput(event.target.value)}
               placeholder={t('app.format.json.input_placeholder')}
               className="min-h-[320px] flex-1 resize-none font-mono"
             />
@@ -598,11 +686,27 @@ const JsonClient = () => {
           </CardHeader>
           <CardContent className="flex min-h-0 flex-1 flex-col">
             <Textarea
-              value={output}
+              value={outputPreview}
               readOnly
               placeholder={t('app.format.json.output_placeholder')}
               className="min-h-[320px] flex-1 resize-none font-mono"
             />
+            {isOutputPreviewLimited && (
+              <p className="mt-3 rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('app.format.json.warning.output_preview_limited', {
+                  total: formatJsonNumber(outputPreviewSource.length),
+                  visible: formatJsonNumber(MAX_JSON_OUTPUT_PREVIEW_CHARS)
+                })}
+              </p>
+            )}
+            {liveOutputDeferred && (
+              <p className="mt-3 rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('app.format.json.warning.live_output_deferred', {
+                  total: formatJsonNumber(safeInput.trim().length),
+                  visible: formatJsonNumber(MAX_JSON_OUTPUT_PREVIEW_CHARS)
+                })}
+              </p>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -622,8 +726,9 @@ const JsonClient = () => {
               <Input
                 id="json-path"
                 value={jsonPath}
-                onChange={event => setJsonPath(event.target.value)}
+                onChange={event => setJsonPath(event.target.value.slice(0, MAX_JSON_PATH_CHARS))}
                 placeholder="$.release.channels[0].name"
+                maxLength={MAX_JSON_PATH_CHARS}
                 className="font-mono"
               />
             </div>
@@ -631,19 +736,33 @@ const JsonClient = () => {
               <p className="rounded-lg border border-[var(--warning)] bg-[var(--warning-subtle)] px-3 py-2 text-sm text-[var(--warning)]">
                 {t(`app.format.json.path_${extracted.error}`)}
               </p>
+            ) : extracted.previewDeferred ? (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-sm leading-6 text-[var(--text-secondary)]">
+                {t('app.format.json.warning.path_live_preview_deferred', {
+                  limit: formatJsonNumber(MAX_JSON_LIVE_OUTPUT_INPUT_CHARS)
+                })}
+              </p>
             ) : (
               <Textarea
-                value={extracted.output}
+                value={extractedPreview}
                 readOnly
                 placeholder={t('app.format.json.path_empty')}
                 className="min-h-32 resize-none font-mono"
               />
             )}
+            {isExtractedPreviewLimited && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('app.format.json.warning.path_preview_limited', {
+                  total: formatJsonNumber(extracted.output.length),
+                  visible: formatJsonNumber(MAX_JSON_OUTPUT_PREVIEW_CHARS)
+                })}
+              </p>
+            )}
             <Button
               type="button"
               size="sm"
               icon={<Copy className="h-3.5 w-3.5" />}
-              disabled={!extracted.output}
+              disabled={!extracted.output && !extracted.previewDeferred}
               onClick={handleCopyExtracted}
             >
               {t('app.format.json.copy_path')}

@@ -10,9 +10,8 @@ import {
   Minimize2,
   Sparkles
 } from 'lucide-react'
-import { useCallback, useDeferredValue, useMemo, useState } from 'react'
+import { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import YAML from 'yaml'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -28,6 +27,7 @@ type YamlSample = 'yaml' | 'json' | 'docker' | 'github'
 interface ParsedOutput {
   output: string
   error: string
+  isLoading: boolean
   mode: YamlAction
   value: unknown
 }
@@ -47,6 +47,12 @@ interface YamlPathItem {
   path: string
   type: string
   value: string
+}
+
+interface YamlWalkContext {
+  truncatedDepth: boolean
+  truncatedNodes: boolean
+  visitedNodes: number
 }
 
 const YAML_SAMPLE = `name: Daily Tools
@@ -112,18 +118,32 @@ const YAML_SAMPLES: Record<YamlSample, string> = {
 const MAX_YAML_INPUT_CHARS = 200000
 const MAX_YAML_PATH_ITEMS = 80
 const MAX_YAML_KEY_FREQUENCIES = 16
+const MAX_YAML_ANALYSIS_NODES = 5000
+const MAX_YAML_ANALYSIS_DEPTH = 80
+const MAX_YAML_LIVE_OUTPUT_INPUT_CHARS = 60000
+const MAX_YAML_OUTPUT_PREVIEW_CHARS = 60000
 const yamlNumberFormatter = new Intl.NumberFormat()
 
 const formatYamlNumber = (value: number) => yamlNumberFormatter.format(value)
 
-const parseYaml = (input: string) => YAML.parse(input)
+type YamlModule = typeof import('yaml')
 
-const stringifyYaml = (value: unknown, minify = false, indent = 2, sortMapEntries = false) =>
-  YAML.stringify(value, {
-    indent: minify ? 0 : indent,
-    lineWidth: minify ? 0 : 100,
-    sortMapEntries
-  }).trim()
+const parseYaml = (yaml: YamlModule, input: string) => yaml.parse(input)
+
+const stringifyYaml = (
+  yaml: YamlModule,
+  value: unknown,
+  minify = false,
+  indent = 2,
+  sortMapEntries = false
+) =>
+  yaml
+    .stringify(value, {
+      indent: minify ? 0 : indent,
+      lineWidth: minify ? 0 : 100,
+      sortMapEntries
+    })
+    .trim()
 
 const getValueType = (value: unknown) => {
   if (value === null) return 'null'
@@ -140,14 +160,24 @@ const formatPathValue = (value: unknown) => {
   return ''
 }
 
+const toOutputPreview = (value: string, limit: number) =>
+  value.length > limit ? `${value.slice(0, limit)}\n...` : value
+
 const walkYamlValue = (
   value: unknown,
   path: string,
   metrics: YamlMetrics,
   paths: YamlPathItem[],
   keyCounts: Map<string, number>,
+  context: YamlWalkContext,
   depth = 0
 ) => {
+  if (context.visitedNodes >= MAX_YAML_ANALYSIS_NODES) {
+    context.truncatedNodes = true
+    return
+  }
+
+  context.visitedNodes += 1
   metrics.depth = Math.max(metrics.depth, depth)
   const type = getValueType(value)
 
@@ -164,10 +194,20 @@ const walkYamlValue = (
     return
   }
 
+  if (depth >= MAX_YAML_ANALYSIS_DEPTH) {
+    if (
+      (Array.isArray(value) && value.length > 0) ||
+      (typeof value === 'object' && value !== null && Object.keys(value).length > 0)
+    ) {
+      context.truncatedDepth = true
+    }
+    return
+  }
+
   if (Array.isArray(value)) {
     metrics.arrays += 1
     value.forEach((item, index) =>
-      walkYamlValue(item, `${path || '$'}[${index}]`, metrics, paths, keyCounts, depth + 1)
+      walkYamlValue(item, `${path || '$'}[${index}]`, metrics, paths, keyCounts, context, depth + 1)
     )
     return
   }
@@ -177,7 +217,7 @@ const walkYamlValue = (
     Object.entries(value as Record<string, unknown>).forEach(([key, child]) => {
       metrics.keys += 1
       keyCounts.set(key, (keyCounts.get(key) ?? 0) + 1)
-      walkYamlValue(child, `${path || '$'}.${key}`, metrics, paths, keyCounts, depth + 1)
+      walkYamlValue(child, `${path || '$'}.${key}`, metrics, paths, keyCounts, context, depth + 1)
     })
     return
   }
@@ -200,8 +240,13 @@ const analyzeYamlValue = (value: unknown) => {
   }
   const paths: YamlPathItem[] = []
   const keyCounts = new Map<string, number>()
+  const context: YamlWalkContext = {
+    truncatedDepth: false,
+    truncatedNodes: false,
+    visitedNodes: 0
+  }
 
-  walkYamlValue(value, '$', metrics, paths, keyCounts)
+  walkYamlValue(value, '$', metrics, paths, keyCounts, context)
 
   return {
     keyFrequencies: [...keyCounts.entries()]
@@ -209,11 +254,14 @@ const analyzeYamlValue = (value: unknown) => {
       .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key))
       .slice(0, MAX_YAML_KEY_FREQUENCIES),
     metrics,
-    paths
+    paths,
+    truncatedDepth: context.truncatedDepth,
+    truncatedNodes: context.truncatedNodes
   }
 }
 
 const runAction = (
+  yaml: YamlModule,
   input: string,
   action: YamlAction,
   indent: number,
@@ -225,6 +273,7 @@ const runAction = (
       value: null,
       output: '',
       error: '',
+      isLoading: false,
       mode: action
     }
   }
@@ -234,27 +283,30 @@ const runAction = (
       const parsed = JSON.parse(trimmed) as unknown
       return {
         value: parsed,
-        output: stringifyYaml(parsed, false, indent, sortKeys),
+        output: stringifyYaml(yaml, parsed, false, indent, sortKeys),
         error: '',
+        isLoading: false,
         mode: action
       }
     }
 
-    const parsed = parseYaml(trimmed)
+    const parsed = parseYaml(yaml, trimmed)
 
     if (action === 'yamlToJson') {
       return {
         value: parsed,
         output: JSON.stringify(parsed, null, 2),
         error: '',
+        isLoading: false,
         mode: action
       }
     }
 
     return {
       value: parsed,
-      output: stringifyYaml(parsed, action === 'minify', indent, sortKeys),
+      output: stringifyYaml(yaml, parsed, action === 'minify', indent, sortKeys),
       error: '',
+      isLoading: false,
       mode: action
     }
   } catch (error) {
@@ -262,6 +314,7 @@ const runAction = (
       value: null,
       output: '',
       error: error instanceof Error ? error.message : String(error),
+      isLoading: false,
       mode: action
     }
   }
@@ -281,11 +334,20 @@ const YamlClient = () => {
   const { t } = useTranslation()
   const toast = useToast()
   const [input, setInput] = useState(YAML_SAMPLE)
+  const [isInputCapped, setIsInputCapped] = useState(false)
   const [action, setAction] = useState<YamlAction>('format')
   const [indent, setIndent] = useState(2)
   const [sortKeys, setSortKeys] = useState(false)
+  const [isActionProcessing, setIsActionProcessing] = useState(false)
+  const [parsed, setParsed] = useState<ParsedOutput>({
+    error: '',
+    isLoading: false,
+    mode: 'format',
+    output: '',
+    value: null
+  })
   const deferredInput = useDeferredValue(input)
-  const isInputTooLarge = deferredInput.length > MAX_YAML_INPUT_CHARS
+  const isInputTooLarge = isInputCapped || deferredInput.length > MAX_YAML_INPUT_CHARS
   const safeInput = useMemo(
     () =>
       deferredInput.length > MAX_YAML_INPUT_CHARS
@@ -294,19 +356,62 @@ const YamlClient = () => {
     [deferredInput]
   )
 
-  const parsed = useMemo(
-    () =>
-      isInputTooLarge
-        ? { error: '', mode: action, output: '', value: null }
-        : runAction(safeInput, action, indent, sortKeys),
-    [action, indent, isInputTooLarge, safeInput, sortKeys]
-  )
+  const updateInput = useCallback((value: string) => {
+    const capped = value.length > MAX_YAML_INPUT_CHARS
+    setIsInputCapped(capped)
+    setInput(capped ? value.slice(0, MAX_YAML_INPUT_CHARS) : value)
+  }, [])
+
+  const liveOutputDeferred =
+    safeInput.trim().length > MAX_YAML_LIVE_OUTPUT_INPUT_CHARS && !isInputTooLarge
+
+  useEffect(() => {
+    if (!safeInput.trim() || isInputTooLarge) {
+      setParsed({ error: '', isLoading: false, mode: action, output: '', value: null })
+      return
+    }
+
+    if (liveOutputDeferred) {
+      setParsed({ error: '', isLoading: false, mode: action, output: '', value: null })
+      return
+    }
+
+    let isCurrent = true
+    setParsed({ error: '', isLoading: true, mode: action, output: '', value: null })
+
+    void import('yaml')
+      .then(yaml => {
+        if (!isCurrent) return
+        setParsed(runAction(yaml, safeInput, action, indent, sortKeys))
+      })
+      .catch(error => {
+        if (!isCurrent) return
+        setParsed({
+          error: error instanceof Error ? error.message : String(error),
+          isLoading: false,
+          mode: action,
+          output: '',
+          value: null
+        })
+      })
+
+    return () => {
+      isCurrent = false
+    }
+  }, [action, indent, isInputTooLarge, liveOutputDeferred, safeInput, sortKeys])
+
   const hasInput = input.trim().length > 0
   const lineCount = useMemo(() => safeInput.split(/\r\n|\r|\n/).length, [safeInput])
   const outputLineCount = useMemo(
     () => (parsed.output ? parsed.output.split(/\r\n|\r|\n/).length : 0),
     [parsed.output]
   )
+  const outputPreviewSource = liveOutputDeferred ? safeInput.trim() : parsed.output
+  const outputPreview = useMemo(
+    () => toOutputPreview(outputPreviewSource, MAX_YAML_OUTPUT_PREVIEW_CHARS),
+    [outputPreviewSource]
+  )
+  const isOutputPreviewLimited = outputPreviewSource.length > MAX_YAML_OUTPUT_PREVIEW_CHARS
   const analysis = useMemo(() => {
     if (parsed.error || !hasInput || parsed.value === null) return null
     return analyzeYamlValue(parsed.value)
@@ -314,33 +419,76 @@ const YamlClient = () => {
   const outputExtension = parsed.mode === 'yamlToJson' ? 'json' : 'yaml'
   const outputMime =
     parsed.mode === 'yamlToJson' ? 'application/json;charset=utf-8' : 'text/yaml;charset=utf-8'
+  const canBuildOutput =
+    Boolean(safeInput.trim()) &&
+    !isInputTooLarge &&
+    !parsed.isLoading &&
+    !parsed.error &&
+    !isActionProcessing &&
+    (liveOutputDeferred || Boolean(parsed.output))
+
+  const buildCurrentOutput = useCallback(async () => {
+    if (!safeInput.trim() || isInputTooLarge) return ''
+    if (!liveOutputDeferred && parsed.output) return parsed.output
+
+    setIsActionProcessing(true)
+    try {
+      const yaml = await import('yaml')
+      const result = runAction(yaml, safeInput, action, indent, sortKeys)
+      if (result.error) {
+        toast.error(result.error)
+        return ''
+      }
+      return result.output
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error))
+      return ''
+    } finally {
+      setIsActionProcessing(false)
+    }
+  }, [
+    action,
+    indent,
+    isInputTooLarge,
+    liveOutputDeferred,
+    parsed.output,
+    safeInput,
+    sortKeys,
+    toast
+  ])
 
   const handleCopy = useCallback(async () => {
-    if (!parsed.output) return
+    const output = await buildCurrentOutput()
+    if (!output) return
 
     try {
-      await navigator.clipboard.writeText(parsed.output)
+      await navigator.clipboard.writeText(output)
       toast.success(t('public.copy.success'))
     } catch {
       toast.error(t('public.error'))
     }
-  }, [parsed.output, toast, t])
+  }, [buildCurrentOutput, toast, t])
 
-  const handleDownload = useCallback(() => {
-    if (!parsed.output) return
-    downloadText(parsed.output, `daily-tools.${outputExtension}`, outputMime)
-  }, [outputExtension, outputMime, parsed.output])
+  const handleDownload = useCallback(async () => {
+    const output = await buildCurrentOutput()
+    if (!output) return
+    downloadText(output, `daily-tools.${outputExtension}`, outputMime)
+  }, [buildCurrentOutput, outputExtension, outputMime])
 
-  const handleUseSample = useCallback((sample: YamlSample) => {
-    setInput(YAML_SAMPLES[sample])
-    setAction(sample === 'json' ? 'jsonToYaml' : 'format')
-  }, [])
+  const handleUseSample = useCallback(
+    (sample: YamlSample) => {
+      updateInput(YAML_SAMPLES[sample])
+      setAction(sample === 'json' ? 'jsonToYaml' : 'format')
+    },
+    [updateInput]
+  )
 
-  const handleApplyOutput = useCallback(() => {
-    if (!parsed.output) return
-    setInput(parsed.output)
+  const handleApplyOutput = useCallback(async () => {
+    const output = await buildCurrentOutput()
+    if (!output) return
+    updateInput(output)
     setAction(parsed.mode === 'yamlToJson' ? 'jsonToYaml' : 'format')
-  }, [parsed.mode, parsed.output])
+  }, [buildCurrentOutput, parsed.mode, updateInput])
 
   return (
     <div className="flex size-full flex-col gap-5">
@@ -475,7 +623,7 @@ const YamlClient = () => {
                 })}
               </CardDescription>
             </div>
-            <Button type="button" variant="ghost" onClick={() => setInput('')}>
+            <Button type="button" variant="ghost" onClick={() => updateInput('')}>
               {t('public.clear')}
             </Button>
           </CardHeader>
@@ -493,7 +641,7 @@ const YamlClient = () => {
             <Textarea
               id="yaml-input"
               value={input}
-              onChange={event => setInput(event.target.value)}
+              onChange={event => updateInput(event.target.value)}
               placeholder={t('app.format.yaml.placeholder')}
               spellCheck={false}
               className="min-h-[320px] flex-1 resize-none font-mono text-sm leading-6"
@@ -506,11 +654,15 @@ const YamlClient = () => {
             <div className="space-y-1.5">
               <CardTitle className="text-base">{t('app.format.yaml.output')}</CardTitle>
               <CardDescription>
-                {parsed.error
-                  ? t('app.format.yaml.invalid')
-                  : hasInput
-                    ? t('app.format.yaml.valid')
-                    : t('app.format.yaml.empty')}
+                {parsed.isLoading
+                  ? t('app.format.yaml.processing')
+                  : parsed.error
+                    ? t('app.format.yaml.invalid')
+                    : liveOutputDeferred
+                      ? t('app.format.yaml.preview_deferred')
+                      : hasInput
+                        ? t('app.format.yaml.valid')
+                        : t('app.format.yaml.empty')}
               </CardDescription>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -518,16 +670,16 @@ const YamlClient = () => {
                 type="button"
                 variant="default"
                 icon={<Copy className="h-4 w-4" />}
-                disabled={!parsed.output}
+                disabled={!canBuildOutput}
                 onClick={handleCopy}
               >
-                {t('public.copy')}
+                {isActionProcessing ? t('app.format.yaml.processing') : t('public.copy')}
               </Button>
               <Button
                 type="button"
                 variant="default"
                 icon={<Download className="h-4 w-4" />}
-                disabled={!parsed.output}
+                disabled={!canBuildOutput}
                 onClick={handleDownload}
               >
                 {t('app.format.yaml.download')}
@@ -536,7 +688,7 @@ const YamlClient = () => {
                 type="button"
                 variant="default"
                 icon={<ArrowRightLeft className="h-4 w-4" />}
-                disabled={!parsed.output}
+                disabled={!canBuildOutput}
                 onClick={handleApplyOutput}
               >
                 {t('app.format.yaml.use_output')}
@@ -548,9 +700,20 @@ const YamlClient = () => {
               <div className="rounded-2xl border border-[var(--error)] bg-[var(--error-subtle)] p-4 font-mono text-sm leading-6 text-[var(--text-primary)]">
                 {parsed.error}
               </div>
-            ) : parsed.output ? (
+            ) : parsed.isLoading ? (
+              <div className="flex min-h-[320px] flex-1 items-center justify-center rounded-2xl border border-[var(--glass-border)] bg-[var(--glass-bg)] p-6 text-center">
+                <div className="max-w-sm space-y-3">
+                  <div className="glass-panel glass-shimmer glass-clip mx-auto flex h-14 w-14 items-center justify-center rounded-2xl">
+                    <FileCode2 className="h-7 w-7 animate-pulse text-[var(--text-secondary)]" />
+                  </div>
+                  <p className="text-sm leading-6 text-[var(--text-secondary)]">
+                    {t('app.format.yaml.processing')}
+                  </p>
+                </div>
+              </div>
+            ) : outputPreviewSource ? (
               <pre className="glass-input min-h-[320px] flex-1 overflow-auto rounded-lg p-4 text-sm leading-6">
-                <code className="font-mono text-[var(--text-primary)]">{parsed.output}</code>
+                <code className="font-mono text-[var(--text-primary)]">{outputPreview}</code>
               </pre>
             ) : (
               <div className="flex min-h-[320px] flex-1 items-center justify-center rounded-2xl border border-[var(--glass-border)] bg-[var(--glass-bg)] p-6 text-center">
@@ -563,6 +726,22 @@ const YamlClient = () => {
                   </p>
                 </div>
               </div>
+            )}
+            {isOutputPreviewLimited && !liveOutputDeferred && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('app.format.yaml.warning.output_preview_limited', {
+                  total: formatYamlNumber(outputPreviewSource.length),
+                  visible: formatYamlNumber(MAX_YAML_OUTPUT_PREVIEW_CHARS)
+                })}
+              </p>
+            )}
+            {liveOutputDeferred && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('app.format.yaml.warning.live_output_deferred', {
+                  total: formatYamlNumber(safeInput.trim().length),
+                  visible: formatYamlNumber(MAX_YAML_OUTPUT_PREVIEW_CHARS)
+                })}
+              </p>
             )}
           </CardContent>
         </Card>
@@ -580,6 +759,14 @@ const YamlClient = () => {
           <CardContent>
             {analysis?.paths.length ? (
               <div className="grid max-h-[420px] gap-2 overflow-auto pr-1">
+                {(analysis.truncatedDepth || analysis.truncatedNodes) && (
+                  <p className="rounded-lg border border-[var(--warning)] bg-[var(--warning-subtle)] px-3 py-2 text-sm text-[var(--warning)]">
+                    {t('app.format.yaml.warning.structure_limited', {
+                      depth: formatYamlNumber(MAX_YAML_ANALYSIS_DEPTH),
+                      nodes: formatYamlNumber(MAX_YAML_ANALYSIS_NODES)
+                    })}
+                  </p>
+                )}
                 {analysis.paths.map(item => (
                   <div
                     key={`${item.path}-${item.type}`}

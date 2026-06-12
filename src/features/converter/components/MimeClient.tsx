@@ -35,6 +35,7 @@ const MIME_CATEGORIES = [
 const HEADER_TYPES = ['content_type', 'accept', 'curl', 'html', 'next'] as const
 const BATCH_INPUT_LIMIT = 24000
 const BATCH_ITEM_LIMIT = 220
+const QUERY_INPUT_LIMIT = 160
 
 type MimeCategory = (typeof MIME_CATEGORIES)[number]
 type HeaderType = (typeof HEADER_TYPES)[number]
@@ -430,28 +431,38 @@ const extractBatchTokens = (input: string) => {
   const truncated = input.slice(0, BATCH_INPUT_LIMIT)
   const tokens = new Set<string>()
   const ordered: string[] = []
+  let limited = input.length > BATCH_INPUT_LIMIT
   const addToken = (token: string) => {
     const normalized = token.toLowerCase()
-    if (!normalized || tokens.has(normalized)) return
+    if (!normalized || tokens.has(normalized)) return true
+    if (ordered.length >= BATCH_ITEM_LIMIT) {
+      limited = true
+      return false
+    }
     tokens.add(normalized)
     ordered.push(normalized)
+
+    return true
   }
 
-  for (const match of truncated.matchAll(/\b[a-z][a-z0-9.+-]+\/[a-z0-9.+-]+\b/giu)) {
-    addToken(match[0])
+  const mimePattern = /\b[a-z][a-z0-9.+-]+\/[a-z0-9.+-]+\b/giu
+  let match: RegExpExecArray | null
+  while ((match = mimePattern.exec(truncated))) {
+    if (!addToken(match[0])) break
   }
 
-  for (const match of truncated.matchAll(/\.([a-z0-9]{1,12})(?=$|[\s?#);,"'])/giu)) {
-    addToken(match[1])
+  const extensionPattern = /\.([a-z0-9]{1,12})(?=$|[\s?#);,"'])/giu
+  while (!limited && (match = extensionPattern.exec(truncated))) {
+    if (!addToken(match[1])) break
   }
 
-  return ordered.slice(0, BATCH_ITEM_LIMIT)
+  return { limited, tokens: ordered }
 }
 
 const escapeCsv = (value: boolean | number | string) => `"${String(value).replaceAll('"', '""')}"`
 
-const analyzeBatch = (input: string): BatchAnalysis => {
-  const tokens = extractBatchTokens(input)
+const analyzeBatch = (input: string, inputCapped = false): BatchAnalysis => {
+  const { limited, tokens } = extractBatchTokens(input)
   const grouped = new Map<string, BatchRow>()
   const categoryCounts = createCategoryCounts()
   let known = 0
@@ -500,7 +511,7 @@ const analyzeBatch = (input: string): BatchAnalysis => {
   ].join('\n')
 
   return {
-    capped: input.length > BATCH_INPUT_LIMIT || tokens.length >= BATCH_ITEM_LIMIT,
+    capped: inputCapped || limited,
     categoryCounts,
     exportCsv,
     exportJson: JSON.stringify(
@@ -562,6 +573,7 @@ export default function MimeClient() {
   const [category, setCategory] = useState<MimeCategory>('all')
   const [headerType, setHeaderType] = useState<HeaderType>('content_type')
   const [batchInput, setBatchInput] = useState(SCENARIOS[0].sample)
+  const [isBatchInputCapped, setIsBatchInputCapped] = useState(false)
   const deferredQuery = useDeferredValue(query)
   const deferredBatchInput = useDeferredValue(batchInput)
 
@@ -586,7 +598,10 @@ export default function MimeClient() {
     () => buildHeaderSnippet(selected, headerType),
     [headerType, selected]
   )
-  const batchAnalysis = useMemo(() => analyzeBatch(deferredBatchInput), [deferredBatchInput])
+  const batchAnalysis = useMemo(
+    () => analyzeBatch(deferredBatchInput, isBatchInputCapped),
+    [deferredBatchInput, isBatchInputCapped]
+  )
   const categoryCounts = useMemo(
     () =>
       MIME_CATEGORIES.filter(item => item !== 'all').map(item => ({
@@ -608,9 +623,20 @@ export default function MimeClient() {
   )
 
   const loadScenario = (scenario: ScenarioPreset) => {
-    setQuery(scenario.query)
+    updateQuery(scenario.query)
     setCategory(scenario.category)
-    setBatchInput(scenario.sample)
+    updateBatchInput(scenario.sample)
+  }
+
+  function updateQuery(value: string) {
+    setQuery(value.slice(0, QUERY_INPUT_LIMIT))
+  }
+
+  function updateBatchInput(value: string) {
+    const capped = value.length > BATCH_INPUT_LIMIT
+
+    setIsBatchInputCapped(capped)
+    setBatchInput(capped ? value.slice(0, BATCH_INPUT_LIMIT) : value)
   }
 
   return (
@@ -707,8 +733,9 @@ export default function MimeClient() {
                 <Input
                   id="mime-search"
                   value={query}
-                  onChange={event => setQuery(event.target.value)}
+                  onChange={event => updateQuery(event.target.value)}
                   placeholder="json, .png, text/html"
+                  maxLength={QUERY_INPUT_LIMIT}
                   className="pl-10"
                 />
               </div>
@@ -893,8 +920,9 @@ export default function MimeClient() {
               <Textarea
                 id="mime-batch"
                 value={batchInput}
-                onChange={event => setBatchInput(event.target.value.slice(0, BATCH_INPUT_LIMIT))}
+                onChange={event => updateBatchInput(event.target.value)}
                 placeholder={t('app.converter.mime.batch_placeholder')}
+                maxLength={BATCH_INPUT_LIMIT}
                 rows={9}
                 className="min-h-[220px] resize-y font-mono"
               />

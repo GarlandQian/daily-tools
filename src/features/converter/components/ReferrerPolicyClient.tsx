@@ -11,16 +11,22 @@ import {
   Sparkles,
   Trash2
 } from 'lucide-react'
-import { useDeferredValue, useMemo, useState } from 'react'
+import { useCallback, useDeferredValue, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { InputCapNotice } from '@/components/ui/input-cap-notice'
 import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
+import {
+  createOutputPreview,
+  isOutputPreviewLimited,
+  OUTPUT_PREVIEW_CHARS
+} from '@/utils/outputPreview'
 
 const POLICIES = [
   'no-referrer',
@@ -34,7 +40,10 @@ const POLICIES = [
 ] as const
 const OUTPUT_TYPES = ['header', 'meta', 'attribute', 'next', 'nginx', 'cloudflare', 'json'] as const
 const WORKSPACE_LIMIT = 32000
+const TARGET_URL_LIMIT = 2048
 const PARSED_ROW_LIMIT = 140
+const VISIBLE_FINDING_LIMIT = 10
+const VISIBLE_POLICY_LIMIT = 42
 
 type Policy = (typeof POLICIES)[number]
 type OutputType = (typeof OUTPUT_TYPES)[number]
@@ -395,7 +404,16 @@ export default function ReferrerPolicyClient() {
   const currentInfo =
     POLICY_INFO_MAP.get(policy) ?? POLICY_INFO_MAP.get('strict-origin-when-cross-origin')
 
-  const output = useMemo(
+  const outputPreviewSource = useMemo(
+    () => buildOutput(policy, includeFallback, fallback, targetUrl, outputType),
+    [fallback, includeFallback, outputType, policy, targetUrl]
+  )
+  const outputPreview = useMemo(
+    () => createOutputPreview(outputPreviewSource),
+    [outputPreviewSource]
+  )
+  const outputPreviewLimited = isOutputPreviewLimited(outputPreviewSource)
+  const buildCurrentOutput = useCallback(
     () => buildOutput(policy, includeFallback, fallback, targetUrl, outputType),
     [fallback, includeFallback, outputType, policy, targetUrl]
   )
@@ -404,6 +422,13 @@ export default function ReferrerPolicyClient() {
     () => auditPolicies(policy, includeFallback, fallback, parsedPolicies),
     [fallback, includeFallback, parsedPolicies, policy]
   )
+  const visibleFindings = useMemo(() => findings.slice(0, VISIBLE_FINDING_LIMIT), [findings])
+  const findingsLimited = findings.length > visibleFindings.length
+  const visibleParsedPolicies = useMemo(
+    () => parsedPolicies.slice(0, VISIBLE_POLICY_LIMIT),
+    [parsedPolicies]
+  )
+  const parsedPoliciesLimited = parsedPolicies.length > visibleParsedPolicies.length
   const metrics = useMemo(() => {
     const validCount = parsedPolicies.filter(parsed => parsed.valid).length
     const riskCount = findings.filter(finding => finding.level !== 'good').length
@@ -415,7 +440,7 @@ export default function ReferrerPolicyClient() {
       risks: String(riskCount)
     }
   }, [currentInfo?.privacyScore, findings, parsedPolicies])
-  const exportJson = useMemo(
+  const buildExportJson = useCallback(
     () =>
       JSON.stringify(
         {
@@ -434,7 +459,7 @@ export default function ReferrerPolicyClient() {
       ),
     [fallback, findings, includeFallback, outputType, parsedPolicies, policy, targetUrl]
   )
-  const exportCsv = useMemo(
+  const buildExportCsv = useCallback(
     () =>
       [
         ['source', 'policy', 'valid', 'raw'],
@@ -587,8 +612,9 @@ export default function ReferrerPolicyClient() {
                 <Input
                   id="referrer-target-url"
                   value={targetUrl}
-                  onChange={event => setTargetUrl(event.target.value)}
+                  onChange={event => setTargetUrl(event.target.value.slice(0, TARGET_URL_LIMIT))}
                   placeholder="https://partner.example.com/landing"
+                  maxLength={TARGET_URL_LIMIT}
                 />
               </div>
             </div>
@@ -661,13 +687,25 @@ export default function ReferrerPolicyClient() {
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Textarea readOnly value={output} className="min-h-[240px] font-mono" />
+            <Textarea readOnly value={outputPreview} className="min-h-[240px] font-mono" />
+            {outputPreviewLimited && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('public.output_preview_limited', {
+                  total: outputPreviewSource.length.toLocaleString(),
+                  visible: OUTPUT_PREVIEW_CHARS.toLocaleString()
+                })}
+              </p>
+            )}
             <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-              <Button type="button" onClick={() => copy(output)}>
+              <Button type="button" onClick={() => copy(buildCurrentOutput())}>
                 <Copy className="h-4 w-4" />
                 {t('public.copy')}
               </Button>
-              <Button type="button" variant="outline" onClick={() => setWorkspace(output)}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setWorkspace(buildCurrentOutput())}
+              >
                 <Search className="h-4 w-4" />
                 {t('app.converter.referrer_policy.use_output')}
               </Button>
@@ -679,17 +717,25 @@ export default function ReferrerPolicyClient() {
                 {t('app.converter.referrer_policy.audit')}
               </h3>
               <div className="space-y-2">
-                {findings.slice(0, 10).map((finding, index) => (
+                {visibleFindings.map((finding, index) => (
                   <div
                     key={`${finding.key}:${finding.subject}:${index}`}
-                    className={`rounded-xl border px-3 py-2 text-xs ${getFindingClass(finding.level)}`}
+                    className={`min-w-0 break-all rounded-xl border px-3 py-2 text-xs leading-5 ${getFindingClass(finding.level)}`}
                   >
                     <span className="font-semibold">{finding.subject}</span>
-                    <span className="mx-2">/</span>
+                    <span className="mx-2 inline-block">/</span>
                     {t(`app.converter.referrer_policy.audit.${finding.key}`)}
                   </div>
                 ))}
               </div>
+              {findingsLimited && (
+                <p className="text-xs leading-5 text-amber-600 dark:text-amber-300">
+                  {t('public.rows_render_limited', {
+                    total: findings.length,
+                    visible: visibleFindings.length
+                  })}
+                </p>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -705,7 +751,7 @@ export default function ReferrerPolicyClient() {
               <CardDescription>{t('app.converter.referrer_policy.workspace_hint')}</CardDescription>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button type="button" variant="outline" onClick={() => copy(exportJson)}>
+              <Button type="button" variant="outline" onClick={() => copy(buildExportJson())}>
                 <Copy className="h-4 w-4" />
                 {t('app.converter.referrer_policy.copy_json')}
               </Button>
@@ -713,7 +759,7 @@ export default function ReferrerPolicyClient() {
                 type="button"
                 variant="outline"
                 onClick={() =>
-                  downloadText(exportCsv, 'referrer-policy.csv', 'text/csv;charset=utf-8')
+                  downloadText(buildExportCsv(), 'referrer-policy.csv', 'text/csv;charset=utf-8')
                 }
               >
                 <Download className="h-4 w-4" />
@@ -733,39 +779,50 @@ export default function ReferrerPolicyClient() {
             placeholder={t('app.converter.referrer_policy.workspace_placeholder')}
             className="min-h-[180px] font-mono"
           />
+          <InputCapNotice visible={workspace.length >= WORKSPACE_LIMIT} limit={WORKSPACE_LIMIT} />
 
           {parsedPolicies.length ? (
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {parsedPolicies.map((parsed, index) => (
-                <div
-                  key={`${parsed.source}:${parsed.policy}:${index}`}
-                  className="glass-input rounded-xl p-3"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="break-all font-mono text-sm font-semibold text-[var(--text-primary)]">
-                        {parsed.policy}
-                      </p>
-                      <p className="mt-1 text-xs text-[var(--text-secondary)]">{parsed.source}</p>
+            <>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {visibleParsedPolicies.map((parsed, index) => (
+                  <div
+                    key={`${parsed.source}:${parsed.policy}:${index}`}
+                    className="glass-input rounded-xl p-3"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="break-all font-mono text-sm font-semibold text-[var(--text-primary)]">
+                          {parsed.policy}
+                        </p>
+                        <p className="mt-1 text-xs text-[var(--text-secondary)]">{parsed.source}</p>
+                      </div>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-xs ${
+                          parsed.valid
+                            ? 'bg-emerald-500/10 text-emerald-700'
+                            : 'bg-red-500/10 text-red-600'
+                        }`}
+                      >
+                        {parsed.valid
+                          ? t('app.converter.referrer_policy.valid')
+                          : t('app.converter.referrer_policy.invalid')}
+                      </span>
                     </div>
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-xs ${
-                        parsed.valid
-                          ? 'bg-emerald-500/10 text-emerald-700'
-                          : 'bg-red-500/10 text-red-600'
-                      }`}
-                    >
-                      {parsed.valid
-                        ? t('app.converter.referrer_policy.valid')
-                        : t('app.converter.referrer_policy.invalid')}
-                    </span>
+                    <p className="mt-3 line-clamp-3 break-all font-mono text-xs text-[var(--text-tertiary)]">
+                      {parsed.raw}
+                    </p>
                   </div>
-                  <p className="mt-3 line-clamp-3 break-all font-mono text-xs text-[var(--text-tertiary)]">
-                    {parsed.raw}
-                  </p>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+              {parsedPoliciesLimited && (
+                <p className="text-xs leading-5 text-amber-600 dark:text-amber-300">
+                  {t('public.rows_render_limited', {
+                    total: parsedPolicies.length,
+                    visible: visibleParsedPolicies.length
+                  })}
+                </p>
+              )}
+            </>
           ) : (
             <div className="glass-input rounded-xl p-6 text-center text-sm text-[var(--text-secondary)]">
               {t('app.converter.referrer_policy.empty')}

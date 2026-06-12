@@ -9,7 +9,7 @@ import {
   RotateCcw,
   Sparkles
 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useDeferredValue, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
@@ -46,7 +46,10 @@ const SAMPLE_BATCH = [
 ].join('\n')
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const UUID_EPOCH_OFFSET = BigInt('122192928000000000')
+const MAX_UUID_INPUT_CHARS = 128
+const MAX_BATCH_INPUT_CHARS = 100000
 const MAX_BATCH_LINES = 200
+const MAX_VISIBLE_BATCH_ROWS = 80
 
 const normalizeUuid = (value: string) => {
   const compact = value
@@ -174,6 +177,42 @@ const buildBatchExport = (items: UuidInfo[], format: ExportFormat) => {
   return ['uuid,version,variant,timestamp,compact,urn', ...rows].join('\n')
 }
 
+const parseBatchRows = (input: string) => {
+  const isInputTruncated = input.length > MAX_BATCH_INPUT_CHARS
+  const source = isInputTruncated ? input.slice(0, MAX_BATCH_INPUT_CHARS) : input
+  const rows: string[] = []
+  let current = ''
+  let hitLineLimit = false
+
+  const pushCurrent = () => {
+    const row = current.trim()
+    current = ''
+    if (!row) return false
+    if (rows.length >= MAX_BATCH_LINES) {
+      hitLineLimit = true
+      return true
+    }
+    rows.push(row)
+    return false
+  }
+
+  for (const char of source) {
+    if (char === ',' || /\s/u.test(char)) {
+      if (pushCurrent()) break
+    } else {
+      current += char
+    }
+  }
+
+  if (!hitLineLimit) pushCurrent()
+
+  return {
+    hitLineLimit,
+    isInputTruncated,
+    rows
+  }
+}
+
 const downloadText = (content: string, filename: string, type: string) => {
   const blob = new Blob([content], { type })
   const url = URL.createObjectURL(blob)
@@ -189,25 +228,29 @@ const UuidInspectorClient = () => {
   const { copy } = useCopy()
   const [input, setInput] = useState(SAMPLE_UUID)
   const [batchInput, setBatchInput] = useState(SAMPLE_BATCH)
+  const [isSingleInputTruncated, setIsSingleInputTruncated] = useState(false)
+  const [isBatchInputCapped, setIsBatchInputCapped] = useState(false)
   const [exportFormat, setExportFormat] = useState<ExportFormat>('json')
   const [uppercase, setUppercase] = useState(false)
   const [showInvalidRows, setShowInvalidRows] = useState(true)
+  const deferredBatchInput = useDeferredValue(batchInput)
 
   const info = useMemo(() => inspectUuid(input), [input])
   const displayUuid = uppercase ? info.normalized.toUpperCase() : info.normalized
   const displayCompact = uppercase ? info.compact.toUpperCase() : info.compact
   const displayUrn = uppercase ? info.urn.toUpperCase() : info.urn
-  const batchRows = useMemo(
-    () =>
-      batchInput
-        .split(/\r?\n|,|\\s+/)
-        .map(row => row.trim())
-        .filter(Boolean)
-        .slice(0, MAX_BATCH_LINES),
-    [batchInput]
-  )
+  const batchParse = useMemo(() => parseBatchRows(deferredBatchInput), [deferredBatchInput])
+  const batchRows = batchParse.rows
   const batchInfos = useMemo(() => batchRows.map(inspectUuid), [batchRows])
-  const visibleBatchInfos = showInvalidRows ? batchInfos : batchInfos.filter(item => !item.error)
+  const filteredBatchInfos = useMemo(
+    () => (showInvalidRows ? batchInfos : batchInfos.filter(item => !item.error)),
+    [batchInfos, showInvalidRows]
+  )
+  const visibleBatchInfos = useMemo(
+    () => filteredBatchInfos.slice(0, MAX_VISIBLE_BATCH_ROWS),
+    [filteredBatchInfos]
+  )
+  const isBatchPreviewLimited = filteredBatchInfos.length > visibleBatchInfos.length
   const versionCounts = useMemo(() => {
     const counts = new Map<string, number>()
     batchInfos.forEach(item => {
@@ -238,18 +281,21 @@ const UuidInspectorClient = () => {
           ),
     [info]
   )
-  const batchExport = useMemo(
-    () => buildBatchExport(batchInfos, exportFormat),
-    [batchInfos, exportFormat]
-  )
   const validCount = batchInfos.filter(item => !item.error).length
   const invalidCount = batchInfos.length - validCount
   const duplicateCount =
     batchInfos.length - new Set(batchInfos.map(item => item.normalized || item.error)).size
 
+  const handleBatchInputChange = (value: string) => {
+    const isTruncated = value.length > MAX_BATCH_INPUT_CHARS
+    setIsBatchInputCapped(isTruncated)
+    setBatchInput(isTruncated ? value.slice(0, MAX_BATCH_INPUT_CHARS) : value)
+  }
+
   const reset = () => {
     setInput(SAMPLE_UUID)
-    setBatchInput(SAMPLE_BATCH)
+    handleBatchInputChange(SAMPLE_BATCH)
+    setIsSingleInputTruncated(false)
     setExportFormat('json')
     setUppercase(false)
     setShowInvalidRows(true)
@@ -257,7 +303,16 @@ const UuidInspectorClient = () => {
 
   const applyBatchFirst = () => {
     const firstValid = batchInfos.find(item => !item.error)
-    if (firstValid) setInput(firstValid.normalized)
+    if (firstValid) {
+      setInput(firstValid.normalized)
+      setIsSingleInputTruncated(false)
+    }
+  }
+
+  const handleSingleInputChange = (value: string) => {
+    const isTruncated = value.length > MAX_UUID_INPUT_CHARS
+    setIsSingleInputTruncated(isTruncated)
+    setInput(isTruncated ? value.slice(0, MAX_UUID_INPUT_CHARS) : value)
   }
 
   return (
@@ -314,10 +369,17 @@ const UuidInspectorClient = () => {
             <Input
               id="uuid-input"
               value={input}
-              onChange={event => setInput(event.target.value)}
+              onChange={event => handleSingleInputChange(event.target.value)}
               placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
               className="font-mono"
             />
+            {isSingleInputTruncated && (
+              <p className="rounded-lg border border-[var(--warning)] bg-[var(--warning-subtle)] px-3 py-2 text-sm text-[var(--warning)]">
+                {t('app.converter.uuid.warning.single_input_truncated', {
+                  limit: MAX_UUID_INPUT_CHARS.toLocaleString()
+                })}
+              </p>
+            )}
           </div>
 
           {info.error ? (
@@ -467,7 +529,7 @@ const UuidInspectorClient = () => {
                 disabled={!validCount}
                 onClick={() =>
                   downloadText(
-                    batchExport,
+                    buildBatchExport(batchInfos, exportFormat),
                     `uuid-batch.${exportFormat === 'json' ? 'json' : exportFormat}`,
                     exportFormat === 'json'
                       ? 'application/json;charset=utf-8'
@@ -484,7 +546,7 @@ const UuidInspectorClient = () => {
           <div className="space-y-4">
             <Textarea
               value={batchInput}
-              onChange={event => setBatchInput(event.target.value)}
+              onChange={event => handleBatchInputChange(event.target.value)}
               rows={9}
               className="font-mono"
               placeholder={t('app.converter.uuid.batch_placeholder')}
@@ -508,12 +570,30 @@ const UuidInspectorClient = () => {
               <Button
                 type="button"
                 variant="ghost"
-                onClick={() => copy(batchExport)}
+                onClick={() => copy(buildBatchExport(batchInfos, exportFormat))}
                 disabled={!validCount}
               >
                 {t('public.copy')}
               </Button>
             </div>
+            {(isBatchInputCapped || batchParse.isInputTruncated || batchParse.hitLineLimit) && (
+              <div className="space-y-2">
+                {(isBatchInputCapped || batchParse.isInputTruncated) && (
+                  <p className="rounded-lg border border-[var(--warning)] bg-[var(--warning-subtle)] px-3 py-2 text-sm text-[var(--warning)]">
+                    {t('app.converter.uuid.warning.input_truncated', {
+                      limit: MAX_BATCH_INPUT_CHARS.toLocaleString()
+                    })}
+                  </p>
+                )}
+                {batchParse.hitLineLimit && (
+                  <p className="rounded-lg border border-[var(--warning)] bg-[var(--warning-subtle)] px-3 py-2 text-sm text-[var(--warning)]">
+                    {t('app.converter.uuid.warning.batch_truncated', {
+                      limit: MAX_BATCH_LINES.toLocaleString()
+                    })}
+                  </p>
+                )}
+              </div>
+            )}
             {versionCounts && (
               <p className="text-xs text-[var(--text-tertiary)]">{versionCounts}</p>
             )}
@@ -562,6 +642,14 @@ const UuidInspectorClient = () => {
                 <div className="flex min-h-40 items-center justify-center text-center text-sm text-[var(--text-secondary)]">
                   {t('app.converter.uuid.batch_empty')}
                 </div>
+              )}
+              {isBatchPreviewLimited && (
+                <p className="rounded-lg border border-[var(--warning)] bg-[var(--warning-subtle)] px-3 py-2 text-sm text-[var(--warning)]">
+                  {t('app.converter.uuid.warning.rows_limited', {
+                    total: filteredBatchInfos.length.toLocaleString(),
+                    visible: visibleBatchInfos.length.toLocaleString()
+                  })}
+                </p>
               )}
             </div>
           </div>

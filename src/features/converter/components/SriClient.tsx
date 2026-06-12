@@ -12,16 +12,22 @@ import {
   Trash2,
   Upload
 } from 'lucide-react'
-import { useDeferredValue, useEffect, useMemo, useState } from 'react'
+import { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { InputCapNotice } from '@/components/ui/input-cap-notice'
 import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
+import {
+  createOutputPreview,
+  isOutputPreviewLimited,
+  OUTPUT_PREVIEW_CHARS
+} from '@/utils/outputPreview'
 
 const ALGORITHMS = ['sha256', 'sha384', 'sha512'] as const
 const RESOURCE_TYPES = ['script', 'module', 'style', 'preload'] as const
@@ -29,7 +35,12 @@ const CROSS_ORIGIN_MODES = ['anonymous', 'use-credentials', 'none'] as const
 const OUTPUT_TYPES = ['attribute', 'script', 'link', 'next', 'csp', 'json'] as const
 const TEXT_INPUT_LIMIT = 220000
 const WORKSPACE_LIMIT = 36000
+const RESOURCE_URL_LIMIT = 2048
 const PARSED_ROW_LIMIT = 120
+const FINDING_RENDER_LIMIT = 10
+const TOKEN_PARSE_LIMIT = 160
+const TOKEN_RENDER_LIMIT = 32
+const VISIBLE_ASSET_LIMIT = 42
 const FILE_SIZE_LIMIT = 8 * 1024 * 1024
 
 type Algorithm = (typeof ALGORITHMS)[number]
@@ -297,6 +308,7 @@ const parseTokens = (value: string): ParsedToken[] => {
       known: SUPPORTED_ALGORITHM_SET.has(algorithm),
       token
     })
+    if (rows.length >= TOKEN_PARSE_LIMIT) break
   }
 
   return rows
@@ -433,6 +445,7 @@ export default function SriClient() {
   const { copy } = useCopy()
   const [sourceMode, setSourceMode] = useState<'text' | 'file'>('text')
   const [sourceText, setSourceText] = useState(PRESETS[0].source)
+  const [isSourceTextCapped, setIsSourceTextCapped] = useState(false)
   const [resourceUrl, setResourceUrl] = useState(PRESETS[0].url)
   const [resourceType, setResourceType] = useState<ResourceType>(PRESETS[0].resourceType)
   const [crossOrigin, setCrossOrigin] = useState<CrossOriginMode>(PRESETS[0].crossOrigin)
@@ -456,14 +469,14 @@ export default function SriClient() {
       }
     }
 
-    const truncated = deferredSourceText.length > TEXT_INPUT_LIMIT
+    const truncated = isSourceTextCapped || deferredSourceText.length > TEXT_INPUT_LIMIT
     const safeText = truncated ? deferredSourceText.slice(0, TEXT_INPUT_LIMIT) : deferredSourceText
 
     return {
       bytes: new TextEncoder().encode(safeText),
       truncated
     }
-  }, [deferredSourceText, fileBytes, sourceMode])
+  }, [deferredSourceText, fileBytes, isSourceTextCapped, sourceMode])
 
   useEffect(() => {
     let active = true
@@ -519,7 +532,16 @@ export default function SriClient() {
     }
   }, [algorithms, sourcePayload])
 
-  const output = useMemo(
+  const outputPreviewSource = useMemo(
+    () => buildOutput(hashes, outputType, resourceType, resourceUrl, crossOrigin),
+    [crossOrigin, hashes, outputType, resourceType, resourceUrl]
+  )
+  const outputPreview = useMemo(
+    () => createOutputPreview(outputPreviewSource),
+    [outputPreviewSource]
+  )
+  const outputPreviewLimited = isOutputPreviewLimited(outputPreviewSource)
+  const buildCurrentOutput = useCallback(
     () => buildOutput(hashes, outputType, resourceType, resourceUrl, crossOrigin),
     [crossOrigin, hashes, outputType, resourceType, resourceUrl]
   )
@@ -558,7 +580,14 @@ export default function SriClient() {
       risks: String(riskCount)
     }
   }, [findings, hashes.length, parsedAssets, sourcePayload.bytes.length])
-  const exportJson = useMemo(
+  const visibleFindings = useMemo(() => findings.slice(0, FINDING_RENDER_LIMIT), [findings])
+  const findingsLimited = findings.length > visibleFindings.length
+  const visibleParsedAssets = useMemo(
+    () => parsedAssets.slice(0, VISIBLE_ASSET_LIMIT),
+    [parsedAssets]
+  )
+  const parsedAssetsLimited = parsedAssets.length > visibleParsedAssets.length
+  const buildExportJson = useCallback(
     () =>
       JSON.stringify(
         {
@@ -577,7 +606,7 @@ export default function SriClient() {
       ),
     [crossOrigin, findings, hashes, parsedAssets, resourceType, resourceUrl]
   )
-  const exportCsv = useMemo(
+  const buildExportCsv = useCallback(
     () =>
       [
         ['kind', 'url', 'crossOrigin', 'algorithm', 'known', 'token'],
@@ -599,15 +628,26 @@ export default function SriClient() {
     [parsedAssets]
   )
 
+  const updateSourceText = useCallback((value: string) => {
+    const capped = value.length > TEXT_INPUT_LIMIT
+
+    setIsSourceTextCapped(capped)
+    setSourceText(capped ? value.slice(0, TEXT_INPUT_LIMIT) : value)
+  }, [])
+
+  const updateWorkspace = useCallback((value: string) => {
+    setWorkspace(value.slice(0, WORKSPACE_LIMIT))
+  }, [])
+
   const applyPreset = (preset: Preset) => {
     setSourceMode('text')
-    setSourceText(preset.source)
+    updateSourceText(preset.source)
     setResourceUrl(preset.url)
     setResourceType(preset.resourceType)
     setCrossOrigin(preset.crossOrigin)
     setOutputType(preset.outputType)
     setAlgorithms(preset.algorithms)
-    setWorkspace(preset.workspace)
+    updateWorkspace(preset.workspace)
     setFileInfo(null)
     setFileBytes(null)
     setFileError('')
@@ -738,8 +778,11 @@ export default function SriClient() {
                 <Input
                   id="sri-resource-url"
                   value={resourceUrl}
-                  onChange={event => setResourceUrl(event.target.value)}
+                  onChange={event =>
+                    setResourceUrl(event.target.value.slice(0, RESOURCE_URL_LIMIT))
+                  }
                   placeholder="https://cdn.example.com/app.js"
+                  maxLength={RESOURCE_URL_LIMIT}
                 />
               </div>
               <div className="space-y-3">
@@ -799,7 +842,7 @@ export default function SriClient() {
                 <Textarea
                   id="sri-source"
                   value={sourceText}
-                  onChange={event => setSourceText(event.target.value)}
+                  onChange={event => updateSourceText(event.target.value)}
                   placeholder={t('app.converter.sri.source_placeholder')}
                   className="min-h-[220px] font-mono"
                 />
@@ -893,21 +936,35 @@ export default function SriClient() {
               value={
                 isHashing
                   ? t('app.converter.sri.hashing')
-                  : output || t('app.converter.sri.output_empty')
+                  : outputPreviewSource
+                    ? outputPreview
+                    : t('app.converter.sri.output_empty')
               }
               className="min-h-[240px] font-mono"
             />
+            {outputPreviewLimited && !isHashing ? (
+              <p className="text-xs leading-5 text-amber-600 dark:text-amber-300">
+                {t('public.output_preview_limited', {
+                  total: outputPreviewSource.length.toLocaleString(),
+                  visible: OUTPUT_PREVIEW_CHARS.toLocaleString()
+                })}
+              </p>
+            ) : null}
 
             <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-              <Button type="button" onClick={() => copy(output)} disabled={!output || isHashing}>
+              <Button
+                type="button"
+                onClick={() => copy(buildCurrentOutput())}
+                disabled={!outputPreviewSource || isHashing}
+              >
                 <Copy className="h-4 w-4" />
                 {t('public.copy')}
               </Button>
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => setWorkspace(output)}
-                disabled={!output || isHashing}
+                onClick={() => updateWorkspace(buildCurrentOutput())}
+                disabled={!outputPreviewSource || isHashing}
               >
                 <Link2 className="h-4 w-4" />
                 {t('app.converter.sri.use_output')}
@@ -920,17 +977,25 @@ export default function SriClient() {
                 {t('app.converter.sri.audit')}
               </h3>
               <div className="space-y-2">
-                {findings.slice(0, 10).map((finding, index) => (
+                {visibleFindings.map((finding, index) => (
                   <div
                     key={`${finding.key}:${finding.subject}:${index}`}
-                    className={`rounded-xl border px-3 py-2 text-xs ${getFindingClass(finding.level)}`}
+                    className={`min-w-0 break-all rounded-xl border px-3 py-2 text-xs leading-5 ${getFindingClass(finding.level)}`}
                   >
                     <span className="font-semibold">{finding.subject}</span>
-                    <span className="mx-2">/</span>
+                    <span className="mx-2 inline-block">/</span>
                     {t(`app.converter.sri.audit.${finding.key}`)}
                   </div>
                 ))}
               </div>
+              {findingsLimited ? (
+                <p className="text-xs leading-5 text-amber-600 dark:text-amber-300">
+                  {t('public.rows_render_limited', {
+                    total: findings.length,
+                    visible: visibleFindings.length
+                  })}
+                </p>
+              ) : null}
             </div>
           </CardContent>
         </Card>
@@ -944,14 +1009,16 @@ export default function SriClient() {
               <CardDescription>{t('app.converter.sri.workspace_hint')}</CardDescription>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button type="button" variant="outline" onClick={() => copy(exportJson)}>
+              <Button type="button" variant="outline" onClick={() => copy(buildExportJson())}>
                 <Copy className="h-4 w-4" />
                 {t('app.converter.sri.copy_json')}
               </Button>
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => downloadText(exportCsv, 'sri-assets.csv', 'text/csv;charset=utf-8')}
+                onClick={() =>
+                  downloadText(buildExportCsv(), 'sri-assets.csv', 'text/csv;charset=utf-8')
+                }
               >
                 <Download className="h-4 w-4" />
                 {t('app.converter.sri.download_csv')}
@@ -962,52 +1029,73 @@ export default function SriClient() {
         <CardContent className="space-y-5">
           <Textarea
             value={workspace}
-            onChange={event => setWorkspace(event.target.value.slice(0, WORKSPACE_LIMIT))}
+            onChange={event => updateWorkspace(event.target.value)}
             placeholder={t('app.converter.sri.workspace_placeholder')}
             className="min-h-[180px] font-mono"
           />
+          <InputCapNotice visible={workspace.length >= WORKSPACE_LIMIT} limit={WORKSPACE_LIMIT} />
 
           {parsedAssets.length ? (
-            <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
-              {parsedAssets.map((asset, index) => (
-                <div
-                  key={`${asset.kind}:${asset.url}:${index}`}
-                  className="glass-input rounded-xl p-3"
-                >
-                  <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-                    <div className="min-w-0">
-                      <p className="font-mono text-sm font-semibold text-[var(--text-primary)]">
-                        {asset.kind}
-                      </p>
-                      <p className="mt-1 break-all text-xs text-[var(--text-secondary)]">
-                        {asset.url || t('app.converter.sri.no_url')}
-                      </p>
-                    </div>
-                    <span className="rounded-full bg-[var(--primary-subtle)] px-2 py-0.5 text-xs text-[var(--primary)]">
-                      {asset.crossOrigin || t('app.converter.sri.no_crossorigin')}
-                    </span>
-                  </div>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {asset.tokens.length ? (
-                      asset.tokens.map(token => (
-                        <button
-                          key={token.token}
-                          type="button"
-                          onClick={() => copy(token.token)}
-                          className="rounded-lg bg-[var(--bg-muted)] px-2 py-1 font-mono text-xs text-[var(--text-secondary)]"
-                        >
-                          {token.algorithm}
-                        </button>
-                      ))
-                    ) : (
-                      <span className="text-xs text-amber-600">
-                        {t('app.converter.sri.no_integrity')}
+            <>
+              <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+                {visibleParsedAssets.map((asset, index) => (
+                  <div
+                    key={`${asset.kind}:${asset.url}:${index}`}
+                    className="glass-input rounded-xl p-3"
+                  >
+                    <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                      <div className="min-w-0">
+                        <p className="font-mono text-sm font-semibold text-[var(--text-primary)]">
+                          {asset.kind}
+                        </p>
+                        <p className="mt-1 break-all text-xs text-[var(--text-secondary)]">
+                          {asset.url || t('app.converter.sri.no_url')}
+                        </p>
+                      </div>
+                      <span className="rounded-full bg-[var(--primary-subtle)] px-2 py-0.5 text-xs text-[var(--primary)]">
+                        {asset.crossOrigin || t('app.converter.sri.no_crossorigin')}
                       </span>
-                    )}
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {asset.tokens.length ? (
+                        <>
+                          {asset.tokens.slice(0, TOKEN_RENDER_LIMIT).map(token => (
+                            <button
+                              key={token.token}
+                              type="button"
+                              onClick={() => copy(token.token)}
+                              className="rounded-lg bg-[var(--bg-muted)] px-2 py-1 font-mono text-xs text-[var(--text-secondary)]"
+                            >
+                              {token.algorithm}
+                            </button>
+                          ))}
+                          {asset.tokens.length > TOKEN_RENDER_LIMIT ? (
+                            <span className="text-xs leading-5 text-amber-600 dark:text-amber-300">
+                              {t('public.rows_render_limited', {
+                                total: asset.tokens.length,
+                                visible: TOKEN_RENDER_LIMIT
+                              })}
+                            </span>
+                          ) : null}
+                        </>
+                      ) : (
+                        <span className="text-xs text-amber-600">
+                          {t('app.converter.sri.no_integrity')}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+              {parsedAssetsLimited && (
+                <p className="text-xs leading-5 text-amber-600 dark:text-amber-300">
+                  {t('public.rows_render_limited', {
+                    total: parsedAssets.length,
+                    visible: visibleParsedAssets.length
+                  })}
+                </p>
+              )}
+            </>
           ) : (
             <div className="glass-input rounded-xl p-6 text-center text-sm text-[var(--text-secondary)]">
               {t('app.converter.sri.empty')}

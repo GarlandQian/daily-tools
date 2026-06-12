@@ -1,6 +1,5 @@
 'use client'
 
-import CryptoJS from 'crypto-js'
 import {
   AlertTriangle,
   CheckCircle2,
@@ -13,7 +12,7 @@ import {
   Sparkles,
   XCircle
 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useCallback, useDeferredValue, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
@@ -26,16 +25,18 @@ import { Textarea } from '@/components/ui/textarea'
 import { useToast } from '@/components/ui/toast'
 import { commonPasswords } from '@/const/common-passwords'
 import { useCopy } from '@/hooks/useCopy'
+import { yieldToMain } from '@/utils/scheduler'
 
-type DerivedLength = 16 | 24 | 32 | 48 | 64
+import {
+  buildPBKDFOutput,
+  type DerivedLength,
+  type DerivedOutput,
+  derivePBKDFKey,
+  loadCryptoJS,
+  type PrfAlgorithm
+} from '../utils/crypto'
+
 type OutputFormat = 'base64' | 'hex' | 'json'
-type PrfAlgorithm = 'SHA1' | 'SHA256' | 'SHA512'
-
-interface DerivedOutput {
-  base64: string
-  hex: string
-  json: string
-}
 
 interface VerifyResult {
   digest: string
@@ -43,20 +44,13 @@ interface VerifyResult {
   success: boolean
 }
 
-type PBKDFOptions = NonNullable<Parameters<typeof CryptoJS.PBKDF2>[2]>
-
 const DERIVED_LENGTHS: DerivedLength[] = [16, 24, 32, 48, 64]
 const MAX_PASSWORD_CHARS = 200000
 const MAX_SALT_CHARS = 4096
 const MAX_ITERATIONS = 600000
+const MAX_PBKDF_VERIFY_DIGEST_CHARS = 512
 const ITERATION_PRESETS = [1000, 10000, 100000, 250000] as const
 const numberFormatter = new Intl.NumberFormat()
-
-const PRF_HASHERS: Record<PrfAlgorithm, PBKDFOptions['hasher']> = {
-  SHA1: CryptoJS.algo.SHA1,
-  SHA256: CryptoJS.algo.SHA256,
-  SHA512: CryptoJS.algo.SHA512
-}
 
 const SAMPLES = {
   api: {
@@ -85,53 +79,6 @@ const SAMPLES = {
   { iterations: number; length: DerivedLength; password: string; prf: PrfAlgorithm; salt: string }
 >
 
-const bytesToWords = (bytes: number) => bytes / 4
-
-const deriveKey = (
-  password: string,
-  salt: string,
-  length: DerivedLength,
-  iterations: number,
-  prf: PrfAlgorithm
-) =>
-  CryptoJS.PBKDF2(password, salt, {
-    hasher: PRF_HASHERS[prf],
-    iterations,
-    keySize: bytesToWords(length)
-  })
-
-const buildOutput = (
-  password: string,
-  salt: string,
-  length: DerivedLength,
-  iterations: number,
-  prf: PrfAlgorithm
-): DerivedOutput | null => {
-  if (!password.trim() || !salt.trim()) return null
-
-  const wordArray = deriveKey(password, salt, length, iterations, prf)
-  const hex = wordArray.toString(CryptoJS.enc.Hex)
-  const base64 = wordArray.toString(CryptoJS.enc.Base64)
-
-  return {
-    base64,
-    hex,
-    json: JSON.stringify(
-      {
-        algorithm: 'PBKDF2',
-        prf,
-        iterations,
-        salt,
-        lengthBytes: length,
-        hex,
-        base64
-      },
-      null,
-      2
-    )
-  }
-}
-
 const downloadText = (content: string, filename: string, type = 'text/plain;charset=utf-8') => {
   const blob = new Blob([content], { type })
   const url = URL.createObjectURL(blob)
@@ -148,6 +95,8 @@ const PBKDFClient = () => {
   const { copy } = useCopy()
   const [password, setPassword] = useState('')
   const [salt, setSalt] = useState('')
+  const [isPasswordCapped, setIsPasswordCapped] = useState(false)
+  const [isSaltCapped, setIsSaltCapped] = useState(false)
   const [derivedLength, setDerivedLength] = useState<DerivedLength>(32)
   const [iterations, setIterations] = useState(250000)
   const [prf, setPrf] = useState<PrfAlgorithm>('SHA256')
@@ -155,24 +104,33 @@ const PBKDFClient = () => {
   const [uppercase, setUppercase] = useState(false)
   const [verifyDigest, setVerifyDigest] = useState('')
   const [verifyResult, setVerifyResult] = useState<VerifyResult | null>(null)
+  const [derivedOutput, setDerivedOutput] = useState<DerivedOutput | null>(null)
+  const [isDeriving, setIsDeriving] = useState(false)
+  const [verifyLoading, setVerifyLoading] = useState(false)
+  const deriveRequestRef = useRef(0)
+  const verifyRequestRef = useRef(0)
+  const deferredPassword = useDeferredValue(password)
+  const deferredSalt = useDeferredValue(salt)
   const clampedIterations = Math.min(Math.max(1, iterations || 1), MAX_ITERATIONS)
-  const isPasswordTooLarge = password.length > MAX_PASSWORD_CHARS
-  const isSaltTooLarge = salt.length > MAX_SALT_CHARS
+  const isPasswordTooLarge = isPasswordCapped || password.length > MAX_PASSWORD_CHARS
+  const isSaltTooLarge = isSaltCapped || salt.length > MAX_SALT_CHARS
   const canDerive = !isPasswordTooLarge && !isSaltTooLarge && clampedIterations === iterations
-  const output = useMemo(
-    () => (canDerive ? buildOutput(password, salt, derivedLength, clampedIterations, prf) : null),
-    [canDerive, clampedIterations, derivedLength, password, prf, salt]
-  )
-  const displayedHex = uppercase ? output?.hex.toUpperCase() : output?.hex
+  const displayedHex = uppercase ? derivedOutput?.hex.toUpperCase() : derivedOutput?.hex
   const displayedOutput =
     outputFormat === 'json'
-      ? output?.json
+      ? derivedOutput?.json
       : outputFormat === 'base64'
-        ? output?.base64
+        ? derivedOutput?.base64
         : displayedHex
   const entropyBits = derivedLength * 8
-  const passwordBytes = useMemo(() => new TextEncoder().encode(password).length, [password])
-  const saltBytes = useMemo(() => new TextEncoder().encode(salt).length, [salt])
+  const passwordBytes = useMemo(
+    () => new TextEncoder().encode(deferredPassword.slice(0, MAX_PASSWORD_CHARS)).length,
+    [deferredPassword]
+  )
+  const saltBytes = useMemo(
+    () => new TextEncoder().encode(deferredSalt.slice(0, MAX_SALT_CHARS)).length,
+    [deferredSalt]
+  )
   const warnings = [
     iterations < 10000 ? t('app.hash.pbkdf.warning.low_iterations') : null,
     prf === 'SHA1' ? t('app.hash.pbkdf.warning.sha1') : null,
@@ -193,17 +151,50 @@ const PBKDFClient = () => {
       : null
   ].filter(Boolean)
 
+  const clearDerivedOutput = useCallback(() => {
+    deriveRequestRef.current += 1
+    verifyRequestRef.current += 1
+    setIsDeriving(false)
+    setVerifyLoading(false)
+    setDerivedOutput(null)
+    setVerifyResult(null)
+  }, [])
+
+  const updatePassword = useCallback(
+    (value: string) => {
+      const capped = value.length > MAX_PASSWORD_CHARS
+      setIsPasswordCapped(capped)
+      setPassword(capped ? value.slice(0, MAX_PASSWORD_CHARS) : value)
+      clearDerivedOutput()
+    },
+    [clearDerivedOutput]
+  )
+
+  const updateSalt = useCallback(
+    (value: string) => {
+      const capped = value.length > MAX_SALT_CHARS
+      setIsSaltCapped(capped)
+      setSalt(capped ? value.slice(0, MAX_SALT_CHARS) : value)
+      clearDerivedOutput()
+    },
+    [clearDerivedOutput]
+  )
+
   const applySample = (sample: keyof typeof SAMPLES) => {
     const next = SAMPLES[sample]
+    setIsPasswordCapped(false)
+    setIsSaltCapped(false)
     setPassword(next.password)
     setSalt(next.salt)
     setIterations(next.iterations)
     setDerivedLength(next.length)
     setPrf(next.prf)
-    setVerifyResult(null)
+    clearDerivedOutput()
   }
 
   const reset = () => {
+    setIsPasswordCapped(false)
+    setIsSaltCapped(false)
     setPassword('')
     setSalt('')
     setDerivedLength(32)
@@ -212,10 +203,55 @@ const PBKDFClient = () => {
     setOutputFormat('hex')
     setUppercase(false)
     setVerifyDigest('')
-    setVerifyResult(null)
+    clearDerivedOutput()
   }
 
-  const handleVerify = () => {
+  const handleDerive = async () => {
+    if (!password.trim()) {
+      toast.warning(t('rules.msg.required', { msg: t('app.hash.message') }))
+      return
+    }
+
+    if (!salt.trim()) {
+      toast.warning(t('rules.msg.required', { msg: t('app.hash.pbkdf.salt') }))
+      return
+    }
+
+    if (!canDerive) {
+      toast.warning(t('app.hash.pbkdf.warning.cannot_derive'))
+      return
+    }
+
+    setIsDeriving(true)
+    const requestId = deriveRequestRef.current + 1
+    deriveRequestRef.current = requestId
+
+    try {
+      await yieldToMain()
+      const cryptoJS = await loadCryptoJS()
+      if (deriveRequestRef.current !== requestId) return
+
+      const nextOutput = buildPBKDFOutput(
+        cryptoJS,
+        password,
+        salt,
+        derivedLength,
+        clampedIterations,
+        prf
+      )
+      if (deriveRequestRef.current !== requestId) return
+      setDerivedOutput(nextOutput)
+    } catch {
+      if (deriveRequestRef.current === requestId) {
+        setDerivedOutput(null)
+        toast.error(t('public.error'))
+      }
+    } finally {
+      if (deriveRequestRef.current === requestId) setIsDeriving(false)
+    }
+  }
+
+  const handleVerify = async () => {
     const target = verifyDigest.trim().toLowerCase()
 
     if (!salt.trim()) {
@@ -233,25 +269,42 @@ const PBKDFClient = () => {
       return
     }
 
-    const found = commonPasswords.find(passwordCandidate => {
-      const candidate = deriveKey(
-        passwordCandidate,
-        salt,
-        derivedLength,
-        clampedIterations,
-        prf
-      ).toString(CryptoJS.enc.Hex)
-      return candidate.toLowerCase() === target
-    })
+    setVerifyLoading(true)
+    const requestId = verifyRequestRef.current + 1
+    verifyRequestRef.current = requestId
 
-    if (found) {
-      setVerifyResult({ digest: target, plaintext: found, success: true })
-      toast.success(t('app.hash.verify.success'))
-      return
+    try {
+      await yieldToMain()
+      const cryptoJS = await loadCryptoJS()
+      if (verifyRequestRef.current !== requestId) return
+
+      const found = commonPasswords.find(passwordCandidate => {
+        const candidate = derivePBKDFKey(
+          cryptoJS,
+          passwordCandidate,
+          salt,
+          derivedLength,
+          clampedIterations,
+          prf
+        ).toString(cryptoJS.enc.Hex)
+        return candidate.toLowerCase() === target
+      })
+
+      if (verifyRequestRef.current !== requestId) return
+
+      if (found) {
+        setVerifyResult({ digest: target, plaintext: found, success: true })
+        toast.success(t('app.hash.verify.success'))
+        return
+      }
+
+      setVerifyResult({ digest: target, plaintext: t('app.hash.verify.fail'), success: false })
+      toast.warning(t('app.hash.verify.fail'))
+    } catch {
+      if (verifyRequestRef.current === requestId) toast.error(t('public.error'))
+    } finally {
+      if (verifyRequestRef.current === requestId) setVerifyLoading(false)
     }
-
-    setVerifyResult({ digest: target, plaintext: t('app.hash.verify.fail'), success: false })
-    toast.warning(t('app.hash.verify.fail'))
   }
 
   return (
@@ -326,7 +379,7 @@ const PBKDFClient = () => {
                 id="pbkdf-password"
                 rows={6}
                 value={password}
-                onChange={event => setPassword(event.target.value)}
+                onChange={event => updatePassword(event.target.value)}
                 placeholder={t('app.hash.pbkdf.password_placeholder')}
                 className="font-mono"
               />
@@ -338,7 +391,7 @@ const PBKDFClient = () => {
                 <Input
                   id="pbkdf-salt"
                   value={salt}
-                  onChange={event => setSalt(event.target.value)}
+                  onChange={event => updateSalt(event.target.value)}
                   placeholder={t('app.hash.pbkdf.salt_placeholder')}
                   className="font-mono"
                 />
@@ -348,7 +401,10 @@ const PBKDFClient = () => {
                 <Select
                   id="pbkdf-prf"
                   value={prf}
-                  onChange={event => setPrf(event.target.value as PrfAlgorithm)}
+                  onChange={event => {
+                    setPrf(event.target.value as PrfAlgorithm)
+                    clearDerivedOutput()
+                  }}
                 >
                   <option value="SHA1">PBKDF2-HMAC-SHA1</option>
                   <option value="SHA256">PBKDF2-HMAC-SHA256</option>
@@ -363,7 +419,10 @@ const PBKDFClient = () => {
                 <Select
                   id="pbkdf-length"
                   value={String(derivedLength)}
-                  onChange={event => setDerivedLength(Number(event.target.value) as DerivedLength)}
+                  onChange={event => {
+                    setDerivedLength(Number(event.target.value) as DerivedLength)
+                    clearDerivedOutput()
+                  }}
                 >
                   {DERIVED_LENGTHS.map(length => (
                     <option key={length} value={length}>
@@ -384,7 +443,10 @@ const PBKDFClient = () => {
                   min={1}
                   max={MAX_ITERATIONS}
                   value={iterations}
-                  onChange={event => setIterations(Math.max(1, Number(event.target.value) || 1))}
+                  onChange={event => {
+                    setIterations(Math.max(1, Number(event.target.value) || 1))
+                    clearDerivedOutput()
+                  }}
                 />
               </div>
 
@@ -409,7 +471,10 @@ const PBKDFClient = () => {
                   type="button"
                   size="sm"
                   variant={iterations === preset ? 'primary' : 'default'}
-                  onClick={() => setIterations(preset)}
+                  onClick={() => {
+                    setIterations(preset)
+                    clearDerivedOutput()
+                  }}
                 >
                   {numberFormatter.format(preset)}
                 </Button>
@@ -422,6 +487,16 @@ const PBKDFClient = () => {
                   label={t('app.hash.text.uppercase')}
                 />
               </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="primary"
+                icon={<KeyRound className="h-4 w-4" />}
+                onClick={handleDerive}
+                disabled={!canDerive || isDeriving || !password.trim() || !salt.trim()}
+              >
+                {isDeriving ? t('public.loading') : t('public.generate')}
+              </Button>
             </div>
           </CardContent>
         </Card>
@@ -486,15 +561,23 @@ const PBKDFClient = () => {
             <CardContent className="space-y-4">
               <Input
                 value={verifyDigest}
-                onChange={event => setVerifyDigest(event.target.value)}
+                onChange={event => {
+                  verifyRequestRef.current += 1
+                  setVerifyLoading(false)
+                  setVerifyResult(null)
+                  setVerifyDigest(event.target.value.slice(0, MAX_PBKDF_VERIFY_DIGEST_CHARS))
+                }}
                 placeholder={t('app.hash.target')}
+                maxLength={MAX_PBKDF_VERIFY_DIGEST_CHARS}
                 className="font-mono"
               />
               <Button
                 type="button"
                 variant="primary"
                 icon={<Search className="h-4 w-4" />}
+                loading={verifyLoading}
                 onClick={handleVerify}
+                disabled={verifyLoading || !salt.trim() || !verifyDigest.trim() || !canDerive}
               >
                 {t('public.verify')}
               </Button>

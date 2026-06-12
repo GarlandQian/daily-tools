@@ -1,6 +1,5 @@
 'use client'
 
-import CryptoJS from 'crypto-js'
 import {
   AlertTriangle,
   CheckCircle2,
@@ -12,7 +11,7 @@ import {
   Sparkles,
   XCircle
 } from 'lucide-react'
-import { useDeferredValue, useMemo, useState } from 'react'
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
@@ -26,24 +25,21 @@ import { useToast } from '@/components/ui/toast'
 import { commonPasswords } from '@/const/common-passwords'
 import { useCopy } from '@/hooks/useCopy'
 
+import { calculateTextHash, loadCryptoJS, type TextHashAlgorithm } from '../utils/crypto'
 import { type HashLookupAlgorithm, lookupHash } from '../utils/lookup'
 
 type HashFamily = 'md5' | 'sha' | 'ripemd'
 type ExportFormat = 'txt' | 'csv' | 'json'
-type TextHashAlgorithm =
-  | 'MD5'
-  | 'RIPEMD160'
-  | 'SHA1'
-  | 'SHA224'
-  | 'SHA256'
-  | 'SHA3'
-  | 'SHA384'
-  | 'SHA512'
 
 interface TextHashResult {
   algorithm: TextHashAlgorithm
   digest: string
   input: string
+}
+
+interface HashCalculationState {
+  isLoading: boolean
+  results: TextHashResult[]
 }
 
 interface LookupResult {
@@ -57,7 +53,10 @@ interface TextHashClientProps {
 }
 
 const MAX_HASH_INPUT_CHARS = 200000
+const MAX_HASH_LIVE_INPUT_CHARS = 50000
 const MAX_BATCH_LINES = 200
+const VISIBLE_HASH_RESULT_LIMIT = 80
+const MAX_HASH_LOOKUP_DIGEST_CHARS = 512
 const numberFormatter = new Intl.NumberFormat()
 
 const FAMILY_ALGORITHMS: Record<HashFamily, TextHashAlgorithm[]> = {
@@ -102,34 +101,37 @@ const SAMPLES = {
   release: 'daily-tools-v1.8.0\nsha-check\n2026-06-08'
 } as const
 
-const calculateHash = (algorithm: TextHashAlgorithm, message: string) => {
-  switch (algorithm) {
-    case 'MD5':
-      return CryptoJS.MD5(message).toString()
-    case 'RIPEMD160':
-      return CryptoJS.RIPEMD160(message).toString()
-    case 'SHA1':
-      return CryptoJS.SHA1(message).toString()
-    case 'SHA224':
-      return CryptoJS.SHA224(message).toString()
-    case 'SHA256':
-      return CryptoJS.SHA256(message).toString()
-    case 'SHA3':
-      return CryptoJS.SHA3(message).toString()
-    case 'SHA384':
-      return CryptoJS.SHA384(message).toString()
-    case 'SHA512':
-      return CryptoJS.SHA512(message).toString()
-  }
-}
-
 const splitInput = (input: string, lineByLine: boolean) => {
   if (!lineByLine) return input.trim() ? [input] : []
-  return input
-    .split(/\r?\n/)
-    .map(line => line.trim())
-    .filter(Boolean)
-    .slice(0, MAX_BATCH_LINES)
+  const lines: string[] = []
+  let lineStart = 0
+
+  for (let index = 0; index <= input.length && lines.length < MAX_BATCH_LINES; index += 1) {
+    if (index < input.length && input[index] !== '\n') continue
+
+    const lineEnd = input[index - 1] === '\r' ? index - 1 : index
+    const line = input.slice(lineStart, lineEnd).trim()
+    if (line) lines.push(line)
+    lineStart = index + 1
+  }
+
+  return lines
+}
+
+const hasMoreNonEmptyLines = (input: string, limit: number) => {
+  let count = 0
+  let lineStart = 0
+
+  for (let index = 0; index <= input.length; index += 1) {
+    if (index < input.length && input[index] !== '\n') continue
+
+    const lineEnd = input[index - 1] === '\r' ? index - 1 : index
+    if (input.slice(lineStart, lineEnd).trim()) count += 1
+    if (count > limit) return true
+    lineStart = index + 1
+  }
+
+  return false
 }
 
 const csvEscape = (value: string | number) => {
@@ -170,6 +172,7 @@ const TextHashClient = ({ family }: TextHashClientProps) => {
   const meta = FAMILY_META[family]
   const algorithms = FAMILY_ALGORITHMS[family]
   const [input, setInput] = useState('')
+  const [isInputCapped, setIsInputCapped] = useState(false)
   const [enabledAlgorithms, setEnabledAlgorithms] = useState<TextHashAlgorithm[]>(algorithms)
   const [lineByLine, setLineByLine] = useState(false)
   const [uppercase, setUppercase] = useState(false)
@@ -178,15 +181,45 @@ const TextHashClient = ({ family }: TextHashClientProps) => {
   const [lookupAlgorithm, setLookupAlgorithm] = useState<TextHashAlgorithm>(algorithms[0])
   const [lookupResult, setLookupResult] = useState<LookupResult | null>(null)
   const [lookupLoading, setLookupLoading] = useState(false)
+  const [hashState, setHashState] = useState<HashCalculationState>({
+    isLoading: false,
+    results: []
+  })
+  const hashRequestRef = useRef(0)
+  const lookupRequestRef = useRef(0)
   const deferredInput = useDeferredValue(input)
-  const isInputTooLarge = deferredInput.length > MAX_HASH_INPUT_CHARS
-  const values = useMemo(() => splitInput(deferredInput, lineByLine), [deferredInput, lineByLine])
+  const isInputTooLarge = isInputCapped || deferredInput.length > MAX_HASH_INPUT_CHARS
+  const safeInput = useMemo(
+    () => (isInputTooLarge ? deferredInput.slice(0, MAX_HASH_INPUT_CHARS) : deferredInput),
+    [deferredInput, isInputTooLarge]
+  )
+  const values = useMemo(() => splitInput(safeInput, lineByLine), [lineByLine, safeInput])
   const activeAlgorithms = enabledAlgorithms.length ? enabledAlgorithms : algorithms
-  const results = useMemo<TextHashResult[]>(() => {
-    if (isInputTooLarge) return []
+  const results = hashState.results
+  const isHashing = hashState.isLoading
+  const exportMeta = {
+    csv: { filename: `${family}-hashes.csv`, type: 'text/csv;charset=utf-8' },
+    json: { filename: `${family}-hashes.json`, type: 'application/json;charset=utf-8' },
+    txt: { filename: `${family}-hashes.txt`, type: 'text/plain;charset=utf-8' }
+  }[exportFormat]
+  const visibleResults = useMemo(() => results.slice(0, VISIBLE_HASH_RESULT_LIMIT), [results])
+  const isResultPreviewLimited = results.length > visibleResults.length
+  const digestChars = useMemo(
+    () => results.reduce((total, result) => total + result.digest.length, 0),
+    [results]
+  )
+  const inputBytes = useMemo(() => new TextEncoder().encode(safeInput).length, [safeInput])
+  const lineLimitReached =
+    lineByLine && !isInputTooLarge && hasMoreNonEmptyLines(safeInput, MAX_BATCH_LINES)
+  const isLiveHashDeferred =
+    safeInput.length > MAX_HASH_LIVE_INPUT_CHARS && !isInputTooLarge && values.length > 0
+
+  const calculateResults = useCallback(async () => {
+    const cryptoJS = await loadCryptoJS()
+
     return values.flatMap(value =>
       activeAlgorithms.map(algorithm => {
-        const digest = calculateHash(algorithm, value)
+        const digest = calculateTextHash(cryptoJS, algorithm, value)
         return {
           algorithm,
           digest: uppercase ? digest.toUpperCase() : digest,
@@ -194,17 +227,47 @@ const TextHashClient = ({ family }: TextHashClientProps) => {
         }
       })
     )
-  }, [activeAlgorithms, isInputTooLarge, uppercase, values])
-  const exportOutput = useMemo(() => buildExport(results, exportFormat), [exportFormat, results])
-  const exportMeta = {
-    csv: { filename: `${family}-hashes.csv`, type: 'text/csv;charset=utf-8' },
-    json: { filename: `${family}-hashes.json`, type: 'application/json;charset=utf-8' },
-    txt: { filename: `${family}-hashes.txt`, type: 'text/plain;charset=utf-8' }
-  }[exportFormat]
-  const digestChars = results.reduce((total, result) => total + result.digest.length, 0)
-  const inputBytes = useMemo(() => new TextEncoder().encode(deferredInput).length, [deferredInput])
-  const lineLimitReached =
-    lineByLine && deferredInput.split(/\r?\n/).filter(Boolean).length > MAX_BATCH_LINES
+  }, [activeAlgorithms, uppercase, values])
+
+  useEffect(() => {
+    const requestId = hashRequestRef.current + 1
+    hashRequestRef.current = requestId
+
+    if (isInputTooLarge || isLiveHashDeferred || !values.length) {
+      setHashState({ isLoading: false, results: [] })
+      return
+    }
+
+    let isCurrent = true
+    setHashState({ isLoading: true, results: [] })
+
+    void calculateResults()
+      .then(nextResults => {
+        if (!isCurrent || hashRequestRef.current !== requestId) return
+        setHashState({ isLoading: false, results: nextResults })
+      })
+      .catch(() => {
+        if (!isCurrent || hashRequestRef.current !== requestId) return
+        setHashState({ isLoading: false, results: [] })
+        toast.error(t('public.error'))
+      })
+
+    return () => {
+      isCurrent = false
+    }
+  }, [calculateResults, isInputTooLarge, isLiveHashDeferred, t, toast, values.length])
+
+  useEffect(() => {
+    lookupRequestRef.current += 1
+    setLookupLoading(false)
+    setLookupResult(null)
+  }, [lookupAlgorithm, lookupDigest])
+
+  const updateInput = useCallback((value: string) => {
+    const capped = value.length > MAX_HASH_INPUT_CHARS
+    setIsInputCapped(capped)
+    setInput(capped ? value.slice(0, MAX_HASH_INPUT_CHARS) : value)
+  }, [])
 
   const toggleAlgorithm = (algorithm: TextHashAlgorithm, checked: boolean) => {
     setEnabledAlgorithms(prev =>
@@ -224,12 +287,18 @@ const TextHashClient = ({ family }: TextHashClientProps) => {
 
     setLookupLoading(true)
     setLookupResult(null)
+    const requestId = lookupRequestRef.current + 1
+    lookupRequestRef.current = requestId
 
     try {
+      const cryptoJS = await loadCryptoJS()
+      if (lookupRequestRef.current !== requestId) return
+
       const foundLocal = commonPasswords.find(
-        password => calculateHash(lookupAlgorithm, password).toLowerCase() === target
+        password => calculateTextHash(cryptoJS, lookupAlgorithm, password).toLowerCase() === target
       )
       if (foundLocal) {
+        if (lookupRequestRef.current !== requestId) return
         setLookupResult({ digest: target, plaintext: foundLocal, success: true })
         toast.success(t('app.hash.verify.success'))
         return
@@ -237,6 +306,7 @@ const TextHashClient = ({ family }: TextHashClientProps) => {
 
       const lookupName = LOOKUP_ALGORITHMS[lookupAlgorithm]
       const apiResult = lookupName ? await lookupHash(lookupName, target) : null
+      if (lookupRequestRef.current !== requestId) return
       if (apiResult) {
         setLookupResult({ digest: target, plaintext: apiResult, success: true })
         toast.success(t('app.hash.verify.success'))
@@ -245,15 +315,46 @@ const TextHashClient = ({ family }: TextHashClientProps) => {
 
       setLookupResult({ digest: target, plaintext: t('app.hash.verify.fail'), success: false })
       toast.warning(t('app.hash.verify.fail'))
+    } catch {
+      if (lookupRequestRef.current === requestId) toast.error(t('public.error'))
     } finally {
-      setLookupLoading(false)
+      if (lookupRequestRef.current === requestId) setLookupLoading(false)
     }
   }
 
   const applySample = (sample: keyof typeof SAMPLES) => {
+    setIsInputCapped(false)
     setInput(SAMPLES[sample])
     setLineByLine(sample !== 'api')
     setLookupResult(null)
+  }
+
+  const handleCopyResults = () => {
+    if (isHashing || !results.length) return
+    void copy(buildExport(results, exportFormat))
+  }
+
+  const handleDownloadResults = () => {
+    if (isHashing || !results.length) return
+    downloadText(buildExport(results, exportFormat), exportMeta.filename, exportMeta.type)
+  }
+
+  const handleGenerateResults = async () => {
+    if (isInputTooLarge || !values.length) return
+
+    const requestId = hashRequestRef.current + 1
+    hashRequestRef.current = requestId
+    setHashState({ isLoading: true, results: [] })
+
+    try {
+      const nextResults = await calculateResults()
+      if (hashRequestRef.current !== requestId) return
+      setHashState({ isLoading: false, results: nextResults })
+    } catch {
+      if (hashRequestRef.current !== requestId) return
+      setHashState({ isLoading: false, results: [] })
+      toast.error(t('public.error'))
+    }
   }
 
   return (
@@ -291,13 +392,20 @@ const TextHashClient = ({ family }: TextHashClientProps) => {
             <Metric label={t('app.hash.text.metric.digest_chars')} value={digestChars} />
           </div>
 
-          {(isInputTooLarge || lineLimitReached || family === 'md5') && (
+          {(isInputTooLarge || isLiveHashDeferred || lineLimitReached || family === 'md5') && (
             <div className="space-y-2">
               {family === 'md5' && <Warning>{t('app.hash.text.warning.md5_legacy')}</Warning>}
               {isInputTooLarge && (
                 <Warning>
                   {t('app.hash.text.warning.too_large', {
                     limit: numberFormatter.format(MAX_HASH_INPUT_CHARS)
+                  })}
+                </Warning>
+              )}
+              {isLiveHashDeferred && (
+                <Warning>
+                  {t('app.hash.text.warning.live_deferred', {
+                    limit: numberFormatter.format(MAX_HASH_LIVE_INPUT_CHARS)
                   })}
                 </Warning>
               )}
@@ -321,7 +429,7 @@ const TextHashClient = ({ family }: TextHashClientProps) => {
           <CardContent className="space-y-5">
             <Textarea
               value={input}
-              onChange={event => setInput(event.target.value)}
+              onChange={event => updateInput(event.target.value)}
               rows={10}
               placeholder={t('app.hash.text.input_placeholder')}
               className="font-mono"
@@ -376,9 +484,19 @@ const TextHashClient = ({ family }: TextHashClientProps) => {
               <div className="flex flex-wrap gap-2">
                 <Button
                   type="button"
+                  variant="primary"
+                  icon={<Hash className="h-4 w-4" />}
+                  loading={isHashing}
+                  disabled={isInputTooLarge || !values.length}
+                  onClick={handleGenerateResults}
+                >
+                  {t('app.hash.generate')}
+                </Button>
+                <Button
+                  type="button"
                   icon={<Copy className="h-4 w-4" />}
-                  disabled={!results.length}
-                  onClick={() => copy(exportOutput)}
+                  disabled={isHashing || !results.length}
+                  onClick={handleCopyResults}
                 >
                   {t('app.hash.text.copy_results')}
                 </Button>
@@ -386,8 +504,8 @@ const TextHashClient = ({ family }: TextHashClientProps) => {
                   type="button"
                   variant="default"
                   icon={<Download className="h-4 w-4" />}
-                  disabled={!results.length}
-                  onClick={() => downloadText(exportOutput, exportMeta.filename, exportMeta.type)}
+                  disabled={isHashing || !results.length}
+                  onClick={handleDownloadResults}
                 >
                   {t('app.hash.text.download')}
                 </Button>
@@ -407,7 +525,7 @@ const TextHashClient = ({ family }: TextHashClientProps) => {
             <CardContent className="min-h-0 flex-1 overflow-auto">
               {results.length ? (
                 <div className="space-y-3">
-                  {results.map((result, index) => (
+                  {visibleResults.map((result, index) => (
                     <div
                       key={`${result.algorithm}-${index}-${result.digest}`}
                       className="rounded-xl border border-[var(--border-subtle)] bg-[var(--glass-input-bg)] p-3"
@@ -436,6 +554,18 @@ const TextHashClient = ({ family }: TextHashClientProps) => {
                       )}
                     </div>
                   ))}
+                  {isResultPreviewLimited && (
+                    <Warning>
+                      {t('app.hash.text.warning.rows_limited', {
+                        total: numberFormatter.format(results.length),
+                        visible: numberFormatter.format(visibleResults.length)
+                      })}
+                    </Warning>
+                  )}
+                </div>
+              ) : isHashing ? (
+                <div className="flex min-h-48 items-center justify-center text-center text-sm text-[var(--text-secondary)]">
+                  {t('public.loading')}
                 </div>
               ) : (
                 <div className="flex min-h-48 items-center justify-center text-center text-sm text-[var(--text-secondary)]">
@@ -467,8 +597,11 @@ const TextHashClient = ({ family }: TextHashClientProps) => {
                 </Select>
                 <Input
                   value={lookupDigest}
-                  onChange={event => setLookupDigest(event.target.value)}
+                  onChange={event =>
+                    setLookupDigest(event.target.value.slice(0, MAX_HASH_LOOKUP_DIGEST_CHARS))
+                  }
                   placeholder={t('app.hash.target')}
+                  maxLength={MAX_HASH_LOOKUP_DIGEST_CHARS}
                   className="font-mono"
                 />
               </div>

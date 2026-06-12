@@ -25,6 +25,12 @@ import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
+import {
+  createOutputPreview,
+  isOutputPreviewLimited,
+  OUTPUT_PREVIEW_CHARS,
+  OUTPUT_PREVIEW_ROWS
+} from '@/utils/outputPreview'
 
 const METHODS = ['GET', 'HEAD', 'POST'] as const
 const VALIDATOR_STRENGTHS = ['strong', 'weak', 'last_modified', 'missing'] as const
@@ -489,10 +495,10 @@ const parseTextObservations = (input: string): RevalidationObservation[] => {
 }
 
 const parseWorkspace = (input: string): ParsedWorkspace => {
-  const source = input.length > WORKSPACE_LIMIT ? input.slice(0, WORKSPACE_LIMIT) : input
+  const source = input.length >= WORKSPACE_LIMIT ? input.slice(0, WORKSPACE_LIMIT) : input
   const json = parseJsonObservations(source)
   return {
-    errors: [...json.errors, ...(input.length > WORKSPACE_LIMIT ? ['capped_input'] : [])],
+    errors: [...json.errors, ...(input.length >= WORKSPACE_LIMIT ? ['capped_input'] : [])],
     observations: [
       ...parseHeaderObservation(source),
       ...json.observations,
@@ -530,6 +536,7 @@ const draftObservation = (draft: EtagDraft): RevalidationObservation => ({
 const auditObservation = (
   item: RevalidationObservation,
   add: (level: FindingLevel, key: string, subject: string) => void,
+  nowMs: number,
   parsed = false
 ) => {
   const prefix = parsed ? 'parsed_' : ''
@@ -567,11 +574,11 @@ const auditObservation = (
     item.responseStatus === 304
   )
     add('warn', `${prefix}last_modified_newer_than_request`, item.lastModified)
-  if (item.lastModified && Date.parse(item.lastModified) > Date.now() + 60000)
+  if (item.lastModified && Date.parse(item.lastModified) > nowMs + 60000)
     add('warn', `${prefix}future_last_modified`, item.lastModified)
 }
 
-const auditRevalidation = (draft: EtagDraft, parsed: ParsedWorkspace): Finding[] => {
+const auditRevalidation = (draft: EtagDraft, parsed: ParsedWorkspace, nowMs: number): Finding[] => {
   const findings: Finding[] = []
   const add = (level: FindingLevel, key: string, subject: string) =>
     findings.push({ key, level, subject })
@@ -602,9 +609,9 @@ const auditRevalidation = (draft: EtagDraft, parsed: ParsedWorkspace): Finding[]
   )
     add('warn', 'ambiguous_revalidate', draft.cacheControl)
   if (draft.method !== 'GET' && draft.method !== 'HEAD') add('warn', 'unsafe_method', draft.method)
-  auditObservation(manual, add)
+  auditObservation(manual, add, nowMs)
 
-  parsed.observations.forEach(item => auditObservation(item, add, true))
+  parsed.observations.forEach(item => auditObservation(item, add, nowMs, true))
   parsed.errors.forEach(error =>
     add(
       error === 'capped_input' ? 'warn' : 'danger',
@@ -826,19 +833,50 @@ export default function EtagRevalidationClient() {
   const [outputType, setOutputType] = useState<OutputType>('curl')
   const [auditQuery, setAuditQuery] = useState('')
   const [observationQuery, setObservationQuery] = useState('')
+  const [auditNowMs] = useState(() => Date.now())
 
   const deferredWorkspace = useDeferredValue(workspace)
   const deferredAuditQuery = useDeferredValue(auditQuery)
   const deferredObservationQuery = useDeferredValue(observationQuery)
 
   const parsed = useMemo(() => parseWorkspace(deferredWorkspace), [deferredWorkspace])
-  const findings = useMemo(() => auditRevalidation(draft, parsed), [draft, parsed])
+  const findings = useMemo(
+    () => auditRevalidation(draft, parsed, auditNowMs),
+    [auditNowMs, draft, parsed]
+  )
   const score = useMemo(() => getScore(findings), [findings])
-  const output = useMemo(
+  const outputPreviewParsed = useMemo<ParsedWorkspace>(
+    () => ({
+      errors: parsed.errors.slice(0, OUTPUT_PREVIEW_ROWS),
+      observations: parsed.observations.slice(0, OUTPUT_PREVIEW_ROWS)
+    }),
+    [parsed.errors, parsed.observations]
+  )
+  const outputPreviewFindings = useMemo(() => findings.slice(0, OUTPUT_PREVIEW_ROWS), [findings])
+  const outputPreviewSource = useMemo(
+    () => buildOutput(draft, outputPreviewParsed, outputPreviewFindings, outputType),
+    [draft, outputPreviewFindings, outputPreviewParsed, outputType]
+  )
+  const outputPreview = useMemo(
+    () => createOutputPreview(outputPreviewSource),
+    [outputPreviewSource]
+  )
+  const outputPreviewLimited = isOutputPreviewLimited(outputPreviewSource)
+  const outputPreviewUsesParsedRows =
+    outputType === 'markdown' || outputType === 'json' || outputType === 'csv'
+  const outputPreviewUsesFindings = outputType === 'markdown' || outputType === 'json'
+  const outputPreviewVisibleRows =
+    (outputPreviewUsesParsedRows ? outputPreviewParsed.observations.length : 0) +
+    (outputPreviewUsesFindings ? outputPreviewFindings.length : 0)
+  const outputPreviewTotalRows =
+    (outputPreviewUsesParsedRows ? parsed.observations.length : 0) +
+    (outputPreviewUsesFindings ? findings.length : 0)
+  const outputPreviewRowsLimited = outputPreviewTotalRows > outputPreviewVisibleRows
+  const buildCurrentOutput = useCallback(
     () => buildOutput(draft, parsed, findings, outputType),
     [draft, findings, outputType, parsed]
   )
-  const csvOutput = useMemo(() => buildCsv(draft, parsed), [draft, parsed])
+  const buildCurrentCsv = useCallback(() => buildCsv(draft, parsed), [draft, parsed])
   const rows = useMemo(
     () => [draftObservation(draft), ...parsed.observations],
     [draft, parsed.observations]
@@ -1284,7 +1322,7 @@ export default function EtagRevalidationClient() {
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-tertiary)]" />
               <Input
                 value={auditQuery}
-                onChange={event => setAuditQuery(event.target.value)}
+                onChange={event => setAuditQuery(event.target.value.slice(0, 160))}
                 placeholder={t('app.converter.etag_revalidation.audit_search')}
                 className="pl-10"
               />
@@ -1296,12 +1334,12 @@ export default function EtagRevalidationClient() {
                   className={`rounded-xl border px-3 py-2 text-xs ${levelClass(finding.level)}`}
                 >
                   <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
-                    <span className="min-w-0 break-words">
+                    <span className="min-w-0 break-all leading-5">
                       <span className="font-semibold">{finding.subject}</span>
-                      <span className="mx-2">/</span>
+                      <span className="mx-2 inline-block">/</span>
                       {t(`app.converter.etag_revalidation.audit.${finding.key}`)}
                     </span>
-                    <span className="font-medium">
+                    <span className="shrink-0 font-medium">
                       {t(`app.converter.etag_revalidation.level.${finding.level}`)}
                     </span>
                   </div>
@@ -1341,12 +1379,28 @@ export default function EtagRevalidationClient() {
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Textarea readOnly value={output} className="min-h-[380px] font-mono" />
+            <Textarea readOnly value={outputPreview} className="min-h-[380px] font-mono" />
+            {outputPreviewLimited && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('public.output_preview_limited', {
+                  total: outputPreviewSource.length.toLocaleString(),
+                  visible: OUTPUT_PREVIEW_CHARS.toLocaleString()
+                })}
+              </p>
+            )}
+            {outputPreviewRowsLimited && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('public.output_preview_rows_limited', {
+                  total: outputPreviewTotalRows.toLocaleString(),
+                  visible: outputPreviewVisibleRows.toLocaleString()
+                })}
+              </p>
+            )}
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => copy(output)}
+                onClick={() => copy(buildCurrentOutput())}
                 className="w-full sm:w-auto"
               >
                 <Copy className="h-4 w-4" />
@@ -1356,7 +1410,11 @@ export default function EtagRevalidationClient() {
                 type="button"
                 variant="outline"
                 onClick={() =>
-                  downloadText(output, 'etag-revalidation-output.txt', 'text/plain;charset=utf-8')
+                  downloadText(
+                    buildCurrentOutput(),
+                    'etag-revalidation-output.txt',
+                    'text/plain;charset=utf-8'
+                  )
                 }
                 className="w-full sm:w-auto"
               >
@@ -1367,7 +1425,7 @@ export default function EtagRevalidationClient() {
                 type="button"
                 variant="outline"
                 onClick={() =>
-                  downloadText(csvOutput, 'etag-revalidation.csv', 'text/csv;charset=utf-8')
+                  downloadText(buildCurrentCsv(), 'etag-revalidation.csv', 'text/csv;charset=utf-8')
                 }
                 className="w-full sm:w-auto"
               >
@@ -1394,7 +1452,7 @@ export default function EtagRevalidationClient() {
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-tertiary)]" />
               <Input
                 value={observationQuery}
-                onChange={event => setObservationQuery(event.target.value)}
+                onChange={event => setObservationQuery(event.target.value.slice(0, 160))}
                 placeholder={t('app.converter.etag_revalidation.observation_search')}
                 className="pl-10"
               />

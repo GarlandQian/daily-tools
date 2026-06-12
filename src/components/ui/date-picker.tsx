@@ -1,6 +1,5 @@
 'use client'
 
-import dayjs from 'dayjs'
 import { Calendar as CalendarIcon } from 'lucide-react'
 import * as React from 'react'
 import { createPortal } from 'react-dom'
@@ -14,6 +13,9 @@ import { cn } from '@/lib/utils'
 const EN_MONTH_LABELS = Array.from({ length: 12 }, (_, month) =>
   new Intl.DateTimeFormat('en-US', { month: 'short' }).format(new Date(2026, month, 1))
 )
+const padDatePart = (value: number) => String(value).padStart(2, '0')
+const formatDateValue = (date: Date) =>
+  `${date.getFullYear()}-${padDatePart(date.getMonth() + 1)}-${padDatePart(date.getDate())}`
 
 interface DatePickerProps {
   value?: Date
@@ -225,11 +227,7 @@ export function DatePicker({
         disabled={disabled}
       >
         <CalendarIcon className="mr-2 h-4 w-4" />
-        {value ? (
-          dayjs(value).format('YYYY-MM-DD')
-        ) : (
-          <span>{placeholder ?? t('public.pick_date')}</span>
-        )}
+        {value ? formatDateValue(value) : <span>{placeholder ?? t('public.pick_date')}</span>}
       </Button>
       {calendarPopover}
     </div>

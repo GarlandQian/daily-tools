@@ -1,8 +1,7 @@
 'use client'
 
-import { LoremIpsum } from 'lorem-ipsum'
 import { Copy, Download, FileJson, FileText, RotateCcw, Sparkles } from 'lucide-react'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
@@ -13,7 +12,13 @@ import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
+import { useToast } from '@/components/ui/toast'
 import { useCopy } from '@/hooks/useCopy'
+import {
+  createOutputPreview,
+  isOutputPreviewLimited,
+  OUTPUT_PREVIEW_CHARS
+} from '@/utils/outputPreview'
 
 type LoremOutputFormat = 'html' | 'json' | 'list' | 'markdown' | 'plain'
 type LoremUnit = 'paragraphs' | 'sentences' | 'words'
@@ -32,10 +37,24 @@ interface LoremPreset {
   unit: LoremUnit
 }
 
-const lorem = new LoremIpsum({
-  sentencesPerParagraph: { max: 8, min: 4 },
-  wordsPerSentence: { max: 16, min: 4 }
-})
+interface LoremGenerator {
+  generateParagraphs: (count: number) => string
+  generateSentences: (count: number) => string
+  generateWords: (count: number) => string
+}
+
+let loremGeneratorPromise: Promise<LoremGenerator> | null = null
+
+const loadLoremGenerator = () => {
+  loremGeneratorPromise ??= import('lorem-ipsum').then(
+    ({ LoremIpsum }) =>
+      new LoremIpsum({
+        sentencesPerParagraph: { max: 8, min: 4 },
+        wordsPerSentence: { max: 16, min: 4 }
+      })
+  )
+  return loremGeneratorPromise
+}
 
 const DEFAULT_FORM: LoremFormData = {
   count: 3,
@@ -90,7 +109,8 @@ const clampCount = (count: number, unit: LoremUnit) => {
   return Math.min(Math.max(Math.round(count), 1), UNIT_MAX[unit])
 }
 
-const getGeneratedText = (formData: LoremFormData) => {
+const getGeneratedText = async (formData: LoremFormData) => {
+  const lorem = await loadLoremGenerator()
   const count = clampCount(formData.count, formData.unit)
   let text = ''
 
@@ -190,14 +210,22 @@ const getDownloadMeta = (format: LoremOutputFormat) => {
 const LoremClient = () => {
   const { t } = useTranslation()
   const { copy } = useCopy()
+  const toast = useToast()
+  const generateRequestRef = useRef(0)
 
   const [formData, setFormData] = useState<LoremFormData>(DEFAULT_FORM)
+  const [generating, setGenerating] = useState(false)
   const [rawText, setRawText] = useState('')
 
   const formattedOutput = useMemo(
     () => formatOutput(rawText, formData.outputFormat, t('app.generation.lorem.section')),
     [formData.outputFormat, rawText, t]
   )
+  const formattedOutputPreview = useMemo(
+    () => createOutputPreview(formattedOutput),
+    [formattedOutput]
+  )
+  const formattedOutputPreviewLimited = isOutputPreviewLimited(formattedOutput)
 
   const stats = useMemo(() => {
     const words = rawText.match(/[\p{L}\p{N}]+(?:['-][\p{L}\p{N}]+)*/gu) ?? []
@@ -209,9 +237,39 @@ const LoremClient = () => {
     }
   }, [rawText])
 
+  const generateText = useCallback(
+    async (nextForm: LoremFormData) => {
+      const requestId = generateRequestRef.current + 1
+      generateRequestRef.current = requestId
+      setGenerating(true)
+
+      try {
+        const text = await getGeneratedText(nextForm)
+        if (generateRequestRef.current === requestId) {
+          setRawText(text)
+        }
+      } catch {
+        if (generateRequestRef.current === requestId) {
+          toast.error(t('public.generate_failed'))
+        }
+      } finally {
+        if (generateRequestRef.current === requestId) {
+          setGenerating(false)
+        }
+      }
+    },
+    [toast, t]
+  )
+
   const handleGenerate = useCallback(() => {
-    setRawText(getGeneratedText(formData))
-  }, [formData])
+    void generateText(formData)
+  }, [formData, generateText])
+
+  const handleReset = () => {
+    generateRequestRef.current += 1
+    setGenerating(false)
+    setFormData(DEFAULT_FORM)
+  }
 
   const updateUnit = (unit: LoremUnit) => {
     setFormData(prev => ({
@@ -229,7 +287,7 @@ const LoremClient = () => {
       unit: preset.unit
     }
     setFormData(nextForm)
-    setRawText(getGeneratedText(nextForm))
+    void generateText(nextForm)
   }
 
   const handleDownload = () => {
@@ -255,13 +313,14 @@ const LoremClient = () => {
               <Button
                 variant="ghost"
                 icon={<RotateCcw className="h-4 w-4" />}
-                onClick={() => setFormData(DEFAULT_FORM)}
+                onClick={handleReset}
               >
                 {t('public.reset')}
               </Button>
               <Button
                 variant="primary"
                 icon={<Sparkles className="h-4 w-4" />}
+                loading={generating}
                 onClick={handleGenerate}
               >
                 {t('public.generate')}
@@ -403,11 +462,19 @@ const LoremClient = () => {
         </CardHeader>
         <CardContent className="flex min-h-0 flex-1 flex-col">
           <Textarea
-            value={formattedOutput}
+            value={formattedOutputPreview}
             readOnly
             placeholder={t('app.generation.lorem.placeholder')}
             className="min-h-[280px] flex-1 resize-none font-mono text-sm"
           />
+          {formattedOutputPreviewLimited && (
+            <p className="mt-3 text-xs leading-5 text-amber-600 dark:text-amber-300">
+              {t('public.output_preview_limited', {
+                total: formattedOutput.length.toLocaleString(),
+                visible: OUTPUT_PREVIEW_CHARS.toLocaleString()
+              })}
+            </p>
+          )}
         </CardContent>
       </Card>
     </div>

@@ -14,9 +14,8 @@ import {
   Trash2,
   XCircle
 } from 'lucide-react'
-import { useDeferredValue, useMemo, useState } from 'react'
+import { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import xmlFormat from 'xml-formatter'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -41,6 +40,12 @@ interface XmlStats {
   processingInstructions: number
 }
 
+interface XmlFormatResult {
+  error: string
+  isLoading: boolean
+  output: string
+}
+
 const XML_SAMPLE = `<?xml version="1.0" encoding="UTF-8"?>
 <catalog generated="2026-06-08">
   <book id="bk-101" status="available">
@@ -58,14 +63,23 @@ const XML_SAMPLE = `<?xml version="1.0" encoding="UTF-8"?>
 </catalog>`
 
 const MAX_XML_INPUT_CHARS = 200000
+const MAX_XML_LIVE_OUTPUT_INPUT_CHARS = 60000
+const MAX_XML_LIVE_ANALYSIS_CHARS = 50000
+const MAX_XML_ANALYSIS_ELEMENTS = 5000
 const MAX_XML_NODE_ROWS = 90
+const MAX_XML_OUTPUT_PREVIEW_CHARS = 60000
 const xmlNumberFormatter = new Intl.NumberFormat()
 
 const formatXmlNumber = (value: number) => xmlNumberFormatter.format(value)
 const getIndentation = (indentSize: IndentSize) =>
   indentSize === 'tab' ? '\t' : ' '.repeat(Number(indentSize))
+type XmlFormatter = typeof import('xml-formatter').default
+
+const toOutputPreview = (value: string, limit: number) =>
+  value.length > limit ? `${value.slice(0, limit)}\n...` : value
 
 const formatXmlOutput = (
+  xmlFormat: XmlFormatter,
   input: string,
   mode: XmlMode,
   indentSize: IndentSize,
@@ -115,21 +129,24 @@ const getElementPath = (element: Element) => {
 }
 
 const inspectXmlDocument = (document: Document, source: string) => {
-  const elements = Array.from(document.getElementsByTagName('*'))
+  const elements = document.getElementsByTagName('*')
   const stats: XmlStats = {
-    attributes: elements.reduce((total, element) => total + element.attributes.length, 0),
+    attributes: 0,
     cdata: (source.match(/<!\[CDATA\[/g) || []).length,
     characters: source.length,
     comments: (source.match(/<!--[\s\S]*?-->/g) || []).length,
     depth: 0,
-    elements: elements.length,
+    elements: Math.min(elements.length, MAX_XML_ANALYSIS_ELEMENTS),
     lines: source ? source.split(/\r?\n/).length : 0,
     processingInstructions: (source.match(/<\?(?!xml\b)[\s\S]*?\?>/gi) || []).length
   }
   const tagCounts = new Map<string, number>()
   const attributeCounts = new Map<string, number>()
+  const nodes: Array<{ attributes: number; depth: number; name: string; path: string }> = []
 
-  const nodes = elements.slice(0, MAX_XML_NODE_ROWS).map(element => {
+  for (let index = 0; index < elements.length && index < MAX_XML_ANALYSIS_ELEMENTS; index += 1) {
+    const element = elements.item(index)
+    if (!element) continue
     let depth = 0
     let parent = element.parentElement
 
@@ -139,19 +156,22 @@ const inspectXmlDocument = (document: Document, source: string) => {
     }
 
     stats.depth = Math.max(stats.depth, depth + 1)
+    stats.attributes += element.attributes.length
     tagCounts.set(element.tagName, (tagCounts.get(element.tagName) ?? 0) + 1)
 
     for (const attribute of Array.from(element.attributes)) {
       attributeCounts.set(attribute.name, (attributeCounts.get(attribute.name) ?? 0) + 1)
     }
 
-    return {
-      attributes: element.attributes.length,
-      depth: depth + 1,
-      name: element.tagName,
-      path: getElementPath(element)
+    if (nodes.length < MAX_XML_NODE_ROWS) {
+      nodes.push({
+        attributes: element.attributes.length,
+        depth: depth + 1,
+        name: element.tagName,
+        path: getElementPath(element)
+      })
     }
-  })
+  }
 
   return {
     attributes: [...attributeCounts.entries()]
@@ -181,11 +201,18 @@ const XmlClient = () => {
   const { copy } = useCopy()
 
   const [input, setInput] = useState('')
+  const [isInputCapped, setIsInputCapped] = useState(false)
   const [mode, setMode] = useState<XmlMode>('format')
   const [indentSize, setIndentSize] = useState<IndentSize>('2')
   const [collapseContent, setCollapseContent] = useState(true)
+  const [formatted, setFormatted] = useState<XmlFormatResult>({
+    error: '',
+    isLoading: false,
+    output: ''
+  })
+  const [isActionProcessing, setIsActionProcessing] = useState(false)
   const deferredInput = useDeferredValue(input)
-  const isInputTooLarge = deferredInput.length > MAX_XML_INPUT_CHARS
+  const isInputTooLarge = isInputCapped || deferredInput.length > MAX_XML_INPUT_CHARS
   const safeInput = useMemo(
     () =>
       deferredInput.length > MAX_XML_INPUT_CHARS
@@ -194,22 +221,66 @@ const XmlClient = () => {
     [deferredInput]
   )
 
-  const formatted = useMemo(() => {
-    const trimmed = safeInput.trim()
-    if (!trimmed || isInputTooLarge) return { error: '', output: '' }
+  const updateInput = (value: string) => {
+    const capped = value.length > MAX_XML_INPUT_CHARS
+    setIsInputCapped(capped)
+    setInput(capped ? value.slice(0, MAX_XML_INPUT_CHARS) : value)
+  }
 
-    try {
-      return {
-        error: '',
-        output: formatXmlOutput(trimmed, mode, indentSize, collapseContent)
-      }
-    } catch (error) {
-      return { error: error instanceof Error ? error.message : String(error), output: '' }
+  const liveOutputDeferred =
+    safeInput.trim().length > MAX_XML_LIVE_OUTPUT_INPUT_CHARS && !isInputTooLarge
+  const isStructureAnalysisDeferred =
+    safeInput.trim().length > MAX_XML_LIVE_ANALYSIS_CHARS && !isInputTooLarge
+
+  useEffect(() => {
+    const trimmed = safeInput.trim()
+    if (!trimmed || isInputTooLarge || liveOutputDeferred) {
+      setFormatted({ error: '', isLoading: false, output: '' })
+      return
     }
-  }, [collapseContent, indentSize, isInputTooLarge, mode, safeInput])
+
+    let isCurrent = true
+    setFormatted({ error: '', isLoading: true, output: '' })
+
+    void import('xml-formatter')
+      .then(formatterModule => {
+        if (!isCurrent) return
+        try {
+          setFormatted({
+            error: '',
+            isLoading: false,
+            output: formatXmlOutput(
+              formatterModule.default,
+              trimmed,
+              mode,
+              indentSize,
+              collapseContent
+            )
+          })
+        } catch (error) {
+          setFormatted({
+            error: error instanceof Error ? error.message : String(error),
+            isLoading: false,
+            output: ''
+          })
+        }
+      })
+      .catch(error => {
+        if (!isCurrent) return
+        setFormatted({
+          error: error instanceof Error ? error.message : String(error),
+          isLoading: false,
+          output: ''
+        })
+      })
+
+    return () => {
+      isCurrent = false
+    }
+  }, [collapseContent, indentSize, isInputTooLarge, liveOutputDeferred, mode, safeInput])
 
   const parsed = useMemo(() => {
-    if (!safeInput.trim() || isInputTooLarge || formatted.error) {
+    if (!safeInput.trim() || isInputTooLarge || formatted.error || isStructureAnalysisDeferred) {
       return { attributes: [], error: '', nodes: [], stats: null, tags: [] }
     }
 
@@ -219,10 +290,49 @@ const XmlClient = () => {
     }
 
     return { ...inspectXmlDocument(result.document, safeInput), error: '' }
-  }, [formatted.error, isInputTooLarge, safeInput])
+  }, [formatted.error, isInputTooLarge, isStructureAnalysisDeferred, safeInput])
 
   const validationError = formatted.error || parsed.error
   const hasInput = input.trim().length > 0
+  const canBuildOutput =
+    Boolean(safeInput.trim()) &&
+    !validationError &&
+    !isInputTooLarge &&
+    !formatted.isLoading &&
+    !isActionProcessing &&
+    (liveOutputDeferred || Boolean(formatted.output))
+  const buildCurrentOutput = useCallback(async () => {
+    const trimmed = safeInput.trim()
+    if (!trimmed || validationError || isInputTooLarge) return ''
+    if (!liveOutputDeferred && formatted.output) return formatted.output
+
+    setIsActionProcessing(true)
+    try {
+      const formatterModule = await import('xml-formatter')
+      return formatXmlOutput(formatterModule.default, trimmed, mode, indentSize, collapseContent)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error))
+      return ''
+    } finally {
+      setIsActionProcessing(false)
+    }
+  }, [
+    collapseContent,
+    formatted.output,
+    indentSize,
+    isInputTooLarge,
+    liveOutputDeferred,
+    mode,
+    safeInput,
+    toast,
+    validationError
+  ])
+  const outputPreviewSource = liveOutputDeferred ? safeInput.trim() : formatted.output
+  const outputPreview = useMemo(
+    () => toOutputPreview(outputPreviewSource, MAX_XML_OUTPUT_PREVIEW_CHARS),
+    [outputPreviewSource]
+  )
+  const isOutputPreviewLimited = outputPreviewSource.length > MAX_XML_OUTPUT_PREVIEW_CHARS
 
   const handleValidate = () => {
     if (!hasInput) {
@@ -239,26 +349,31 @@ const XmlClient = () => {
       return
     }
 
-    if (validationError) {
-      toast.error(`${t('app.format.xml.invalid')}: ${validationError}`)
+    const currentValidationError = isStructureAnalysisDeferred
+      ? parseXmlDocument(safeInput.trim()).error
+      : validationError
+
+    if (currentValidationError) {
+      toast.error(`${t('app.format.xml.invalid')}: ${currentValidationError}`)
     } else {
       toast.success(t('app.format.xml.valid'))
     }
   }
 
   const handleUseSample = () => {
-    setInput(XML_SAMPLE)
+    updateInput(XML_SAMPLE)
     setMode('format')
     setIndentSize('2')
     setCollapseContent(true)
   }
 
-  const handleUseOutput = () => {
-    if (formatted.output) setInput(formatted.output)
+  const handleUseOutput = async () => {
+    const output = await buildCurrentOutput()
+    if (output) updateInput(output)
   }
 
   const handleClear = () => {
-    setInput('')
+    updateInput('')
     setMode('format')
     setIndentSize('2')
     setCollapseContent(true)
@@ -305,18 +420,22 @@ const XmlClient = () => {
             <Button
               type="button"
               icon={<Copy className="h-4 w-4" />}
-              onClick={() => formatted.output && void copy(formatted.output)}
-              disabled={!formatted.output}
+              onClick={async () => {
+                const output = await buildCurrentOutput()
+                if (output) void copy(output)
+              }}
+              disabled={!canBuildOutput}
             >
-              {t('public.copy')}
+              {isActionProcessing ? t('app.format.xml.processing') : t('public.copy')}
             </Button>
             <Button
               type="button"
               icon={<Download className="h-4 w-4" />}
-              disabled={!formatted.output}
-              onClick={() =>
-                downloadText(formatted.output, 'daily-tools.xml', 'application/xml;charset=utf-8')
-              }
+              disabled={!canBuildOutput}
+              onClick={async () => {
+                const output = await buildCurrentOutput()
+                if (output) downloadText(output, 'daily-tools.xml', 'application/xml;charset=utf-8')
+              }}
             >
               {t('app.format.xml.download')}
             </Button>
@@ -324,7 +443,7 @@ const XmlClient = () => {
               type="button"
               icon={<RotateCcw className="h-4 w-4" />}
               onClick={handleUseOutput}
-              disabled={!formatted.output}
+              disabled={!canBuildOutput}
             >
               {t('app.format.xml.use_output')}
             </Button>
@@ -412,6 +531,15 @@ const XmlClient = () => {
         </p>
       )}
 
+      {isStructureAnalysisDeferred && (
+        <p className="flex items-center gap-2 rounded-lg border border-[var(--warning)] bg-[var(--warning-subtle)] px-3 py-2 text-sm text-[var(--warning)]">
+          <XCircle className="h-4 w-4" />
+          {t('app.format.xml.warning.structure_deferred', {
+            limit: formatXmlNumber(MAX_XML_LIVE_ANALYSIS_CHARS)
+          })}
+        </p>
+      )}
+
       {validationError && (
         <p className="flex items-center gap-2 rounded-lg border border-[var(--error)] bg-[var(--error-subtle)] px-3 py-2 text-sm text-[var(--error)]">
           <XCircle className="h-4 w-4" />
@@ -439,7 +567,7 @@ const XmlClient = () => {
           <CardContent className="flex min-h-0 flex-1 flex-col">
             <Textarea
               value={input}
-              onChange={event => setInput(event.target.value)}
+              onChange={event => updateInput(event.target.value)}
               placeholder={t('app.format.xml.placeholder')}
               className="min-h-[320px] flex-1 resize-none font-mono"
             />
@@ -450,18 +578,36 @@ const XmlClient = () => {
           <CardHeader>
             <CardTitle className="text-base">{t('app.format.xml.output')}</CardTitle>
             <CardDescription>
-              {formatted.output
-                ? t('app.format.xml.output_valid')
-                : t('app.format.xml.output_hint')}
+              {formatted.isLoading
+                ? t('app.format.xml.processing')
+                : canBuildOutput
+                  ? t('app.format.xml.output_valid')
+                  : t('app.format.xml.output_hint')}
             </CardDescription>
           </CardHeader>
           <CardContent className="flex min-h-0 flex-1 flex-col">
             <Textarea
-              value={formatted.output}
+              value={outputPreview}
               readOnly
               placeholder={t('app.format.xml.output_placeholder')}
               className="min-h-[320px] flex-1 resize-none font-mono"
             />
+            {isOutputPreviewLimited && (
+              <p className="mt-3 rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('app.format.xml.warning.output_preview_limited', {
+                  total: formatXmlNumber(outputPreviewSource.length),
+                  visible: formatXmlNumber(MAX_XML_OUTPUT_PREVIEW_CHARS)
+                })}
+              </p>
+            )}
+            {liveOutputDeferred && (
+              <p className="mt-3 rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('app.format.xml.warning.live_output_deferred', {
+                  total: formatXmlNumber(safeInput.trim().length),
+                  visible: formatXmlNumber(MAX_XML_OUTPUT_PREVIEW_CHARS)
+                })}
+              </p>
+            )}
           </CardContent>
         </Card>
       </div>

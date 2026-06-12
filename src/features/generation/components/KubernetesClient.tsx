@@ -14,24 +14,34 @@ import {
   Sparkles,
   Trash2
 } from 'lucide-react'
-import { useCallback, useDeferredValue, useMemo, useState } from 'react'
+import { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import YAML from 'yaml'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
+import { InputCapNotice } from '@/components/ui/input-cap-notice'
 import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
+import {
+  createOutputPreview,
+  isOutputPreviewLimited,
+  OUTPUT_PREVIEW_CHARS
+} from '@/utils/outputPreview'
 
 const WORKLOAD_TYPES = ['deployment', 'statefulset', 'cronjob'] as const
 const SERVICE_TYPES = ['ClusterIP', 'NodePort', 'LoadBalancer'] as const
 const OUTPUT_TYPES = ['manifests', 'kustomization', 'helm', 'kubectl', 'markdown', 'json'] as const
 const WORKSPACE_LIMIT = 90000
+const DRAFT_FIELD_LIMIT = 1200
+const KEY_LIST_INPUT_LIMIT = 4000
+const KEY_LIST_LINE_LIMIT = 80
 const PARSED_RENDER_LIMIT = 100
+const FINDING_RENDER_LIMIT = 80
+type YamlModule = typeof import('yaml')
 
 type WorkloadType = (typeof WORKLOAD_TYPES)[number]
 type ServiceType = (typeof SERVICE_TYPES)[number]
@@ -100,6 +110,13 @@ interface ParsedKubernetes {
   errors: string[]
   kinds: Record<string, number>
   resources: ParsedResource[]
+}
+
+const EMPTY_PARSED_KUBERNETES: ParsedKubernetes = {
+  capped: false,
+  errors: [],
+  kinds: {},
+  resources: []
 }
 
 interface Finding {
@@ -403,11 +420,13 @@ function asRecord(value: unknown): Record<string, unknown> | null {
     : null
 }
 
-function toLines(value: string) {
+function toLines(value: string, limit = KEY_LIST_LINE_LIMIT) {
   return value
+    .slice(0, KEY_LIST_INPUT_LIMIT)
     .split(/\r?\n|,/)
     .map(item => item.trim())
     .filter(Boolean)
+    .slice(0, limit)
 }
 
 function toSlug(value: string, fallback: string) {
@@ -454,11 +473,13 @@ function getString(record: Record<string, unknown>, key: string) {
   return typeof value === 'string' ? value : ''
 }
 
-function stringifyYaml(value: unknown) {
-  return YAML.stringify(value, {
-    indent: 2,
-    lineWidth: 0
-  }).trim()
+function stringifyYaml(yaml: YamlModule, value: unknown) {
+  return yaml
+    .stringify(value, {
+      indent: 2,
+      lineWidth: 0
+    })
+    .trim()
 }
 
 function downloadText(content: string, filename: string, type = 'text/plain;charset=utf-8') {
@@ -769,11 +790,15 @@ function buildManifests(draft: KubernetesDraft) {
   return manifests
 }
 
-function manifestsToYaml(manifests: Record<string, unknown>[]) {
-  return manifests.map(manifest => stringifyYaml(manifest)).join('\n---\n')
+function manifestsToYaml(yaml: YamlModule, manifests: Record<string, unknown>[]) {
+  return manifests.map(manifest => stringifyYaml(yaml, manifest)).join('\n---\n')
 }
 
-function buildKustomization(manifests: Record<string, unknown>[], draft: KubernetesDraft) {
+function buildKustomization(
+  yaml: YamlModule,
+  manifests: Record<string, unknown>[],
+  draft: KubernetesDraft
+) {
   const name = toSlug(draft.appName, 'app')
   const resources = manifests.map(manifest => {
     const record = asRecord(manifest)
@@ -781,7 +806,7 @@ function buildKustomization(manifests: Record<string, unknown>[], draft: Kuberne
     return `${kind}-${name}.yaml`
   })
 
-  return stringifyYaml({
+  return stringifyYaml(yaml, {
     apiVersion: 'kustomize.config.k8s.io/v1beta1',
     kind: 'Kustomization',
     namespace: toSlug(draft.namespace, 'default'),
@@ -795,8 +820,8 @@ function buildKustomization(manifests: Record<string, unknown>[], draft: Kuberne
   })
 }
 
-function buildHelmValues(draft: KubernetesDraft) {
-  return stringifyYaml({
+function buildHelmValues(yaml: YamlModule, draft: KubernetesDraft) {
+  return stringifyYaml(yaml, {
     nameOverride: toSlug(draft.appName, 'app'),
     image: {
       repository: draft.imageName.trim() || 'example/app',
@@ -922,7 +947,7 @@ function parseEnvSecrets(containers: Record<string, unknown>[]) {
   return Array.from(sensitive)
 }
 
-function parseKubernetesWorkspace(input: string): ParsedKubernetes {
+function parseKubernetesWorkspace(yaml: YamlModule, input: string): ParsedKubernetes {
   const source = input.slice(0, WORKSPACE_LIMIT)
   const capped = input.length > WORKSPACE_LIMIT
   const errors: string[] = []
@@ -934,7 +959,7 @@ function parseKubernetesWorkspace(input: string): ParsedKubernetes {
   }
 
   try {
-    const documents = YAML.parseAllDocuments(source)
+    const documents = yaml.parseAllDocuments(source)
 
     for (const document of documents) {
       if (document.errors.length > 0) {
@@ -1131,19 +1156,43 @@ export default function KubernetesClient() {
   const { copy } = useCopy()
   const [draft, setDraft] = useState<KubernetesDraft>(DEFAULT_DRAFT)
   const [workspace, setWorkspace] = useState(PRESETS[0].workspace)
+  const [isWorkspaceCapped, setIsWorkspaceCapped] = useState(false)
   const [auditQuery, setAuditQuery] = useState('')
   const [outputType, setOutputType] = useState<OutputType>('manifests')
+  const [yamlModule, setYamlModule] = useState<YamlModule | null>(null)
   const deferredWorkspace = useDeferredValue(workspace)
 
+  useEffect(() => {
+    let isCurrent = true
+    void import('yaml').then(module => {
+      if (isCurrent) setYamlModule(module)
+    })
+
+    return () => {
+      isCurrent = false
+    }
+  }, [])
+
+  const isYamlReady = Boolean(yamlModule)
   const manifests = useMemo(() => buildManifests(draft), [draft])
-  const manifestYaml = useMemo(() => manifestsToYaml(manifests), [manifests])
-  const parsed = useMemo(() => parseKubernetesWorkspace(deferredWorkspace), [deferredWorkspace])
+  const manifestYaml = useMemo(
+    () => (yamlModule ? manifestsToYaml(yamlModule, manifests) : ''),
+    [manifests, yamlModule]
+  )
+  const parsed = useMemo(() => {
+    const next = yamlModule
+      ? parseKubernetesWorkspace(yamlModule, deferredWorkspace)
+      : EMPTY_PARSED_KUBERNETES
+
+    return isWorkspaceCapped ? { ...next, capped: true } : next
+  }, [deferredWorkspace, isWorkspaceCapped, yamlModule])
   const findings = useMemo(() => auditDraft(draft, parsed), [draft, parsed])
   const csvOutput = useMemo(() => buildCsv(findings), [findings])
-  const outputValue = useMemo(() => {
+  const buildCurrentOutput = useCallback(() => {
+    if (!yamlModule) return ''
     if (outputType === 'manifests') return manifestYaml
-    if (outputType === 'kustomization') return buildKustomization(manifests, draft)
-    if (outputType === 'helm') return buildHelmValues(draft)
+    if (outputType === 'kustomization') return buildKustomization(yamlModule, manifests, draft)
+    if (outputType === 'helm') return buildHelmValues(yamlModule, draft)
     if (outputType === 'kubectl') return buildKubectlCommands(draft)
     if (outputType === 'json') {
       return JSON.stringify(
@@ -1153,7 +1202,22 @@ export default function KubernetesClient() {
       )
     }
     return buildMarkdown(draft, manifests, findings)
-  }, [draft, findings, manifestYaml, manifests, outputType, parsed.kinds, parsed.resources])
+  }, [
+    draft,
+    findings,
+    manifestYaml,
+    manifests,
+    outputType,
+    parsed.kinds,
+    parsed.resources,
+    yamlModule
+  ])
+  const outputPreviewSource = useMemo(() => buildCurrentOutput(), [buildCurrentOutput])
+  const outputPreview = useMemo(
+    () => createOutputPreview(outputPreviewSource),
+    [outputPreviewSource]
+  )
+  const outputPreviewLimited = isOutputPreviewLimited(outputPreviewSource)
 
   const filteredFindings = useMemo(() => {
     const query = auditQuery.trim().toLowerCase()
@@ -1165,6 +1229,11 @@ export default function KubernetesClient() {
         .includes(query)
     )
   }, [auditQuery, findings, t])
+  const visibleFindings = useMemo(
+    () => filteredFindings.slice(0, FINDING_RENDER_LIMIT),
+    [filteredFindings]
+  )
+  const findingsLimited = filteredFindings.length > visibleFindings.length
 
   const metrics = useMemo(() => {
     const danger = findings.filter(item => item.level === 'danger').length
@@ -1190,22 +1259,36 @@ export default function KubernetesClient() {
 
   const updateDraft = useCallback(
     <K extends keyof KubernetesDraft>(key: K, value: KubernetesDraft[K]) => {
-      setDraft(current => ({ ...current, [key]: value }))
+      const stringLimit =
+        key === 'configKeys' || key === 'secretKeys' ? KEY_LIST_INPUT_LIMIT : DRAFT_FIELD_LIMIT
+      const nextValue =
+        typeof value === 'string' ? (value.slice(0, stringLimit) as KubernetesDraft[K]) : value
+      setDraft(current => ({ ...current, [key]: nextValue }))
     },
     []
   )
 
-  const applyPreset = useCallback((preset: Preset) => {
-    setDraft(preset.draft)
-    setWorkspace(preset.workspace)
+  const updateWorkspace = useCallback((value: string) => {
+    const capped = value.length > WORKSPACE_LIMIT
+
+    setIsWorkspaceCapped(capped)
+    setWorkspace(capped ? value.slice(0, WORKSPACE_LIMIT) : value)
   }, [])
+
+  const applyPreset = useCallback(
+    (preset: Preset) => {
+      setDraft(preset.draft)
+      updateWorkspace(preset.workspace)
+    },
+    [updateWorkspace]
+  )
 
   const reset = useCallback(() => {
     setDraft(DEFAULT_DRAFT)
-    setWorkspace(PRESETS[0].workspace)
+    updateWorkspace(PRESETS[0].workspace)
     setAuditQuery('')
     setOutputType('manifests')
-  }, [])
+  }, [updateWorkspace])
 
   const copySummary = useCallback(() => {
     copy(
@@ -1465,8 +1548,14 @@ export default function KubernetesClient() {
                   <Textarea
                     id="kube-config"
                     value={draft.configKeys}
-                    onChange={event => updateDraft('configKeys', event.target.value)}
+                    onChange={event =>
+                      updateDraft('configKeys', event.target.value.slice(0, KEY_LIST_INPUT_LIMIT))
+                    }
                     className="min-h-24 font-mono"
+                  />
+                  <InputCapNotice
+                    visible={draft.configKeys.length >= KEY_LIST_INPUT_LIMIT}
+                    limit={KEY_LIST_INPUT_LIMIT}
                   />
                 </div>
                 <div className="grid gap-2 sm:col-span-2">
@@ -1474,8 +1563,14 @@ export default function KubernetesClient() {
                   <Textarea
                     id="kube-secrets"
                     value={draft.secretKeys}
-                    onChange={event => updateDraft('secretKeys', event.target.value)}
+                    onChange={event =>
+                      updateDraft('secretKeys', event.target.value.slice(0, KEY_LIST_INPUT_LIMIT))
+                    }
                     className="min-h-24 font-mono"
+                  />
+                  <InputCapNotice
+                    visible={draft.secretKeys.length >= KEY_LIST_INPUT_LIMIT}
+                    limit={KEY_LIST_INPUT_LIMIT}
                   />
                 </div>
               </div>
@@ -1579,21 +1674,27 @@ export default function KubernetesClient() {
             <CardContent className="grid gap-3">
               <Textarea
                 value={workspace}
-                onChange={event => setWorkspace(event.target.value.slice(0, WORKSPACE_LIMIT))}
+                onChange={event => updateWorkspace(event.target.value)}
                 placeholder={t('app.generation.kubernetes.workspace_placeholder')}
                 className="min-h-[520px] font-mono"
                 spellCheck={false}
               />
+              <InputCapNotice visible={isWorkspaceCapped} limit={WORKSPACE_LIMIT} />
               <div className="flex flex-wrap gap-2">
                 <Button type="button" variant="outline" onClick={() => copy(workspace)}>
                   <Copy className="mr-2 h-4 w-4" />
                   {t('public.copy')}
                 </Button>
-                <Button type="button" variant="outline" onClick={() => setWorkspace(manifestYaml)}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={!isYamlReady}
+                  onClick={() => updateWorkspace(manifestYaml)}
+                >
                   <Sparkles className="mr-2 h-4 w-4" />
                   {t('app.generation.kubernetes.use_output')}
                 </Button>
-                <Button type="button" variant="outline" onClick={() => setWorkspace('')}>
+                <Button type="button" variant="outline" onClick={() => updateWorkspace('')}>
                   <Trash2 className="mr-2 h-4 w-4" />
                   {t('public.clear')}
                 </Button>
@@ -1613,20 +1714,20 @@ export default function KubernetesClient() {
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-muted)]" />
                 <Input
                   value={auditQuery}
-                  onChange={event => setAuditQuery(event.target.value)}
+                  onChange={event => setAuditQuery(event.target.value.slice(0, 160))}
                   placeholder={t('app.generation.kubernetes.audit_search')}
                   className="pl-10"
                 />
               </div>
               <div className="grid max-h-[520px] gap-2 overflow-auto pr-1">
-                {filteredFindings.map((finding, index) => (
+                {visibleFindings.map((finding, index) => (
                   <div
                     key={`${finding.key}-${finding.subject}-${index}`}
                     className="glass-panel rounded-2xl p-3"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-[var(--text-primary)]">
+                        <p className="break-all font-mono text-sm font-semibold leading-5 text-[var(--text-primary)]">
                           {finding.subject}
                         </p>
                         <p className="mt-1 text-xs leading-5 text-[var(--text-muted)]">
@@ -1640,6 +1741,14 @@ export default function KubernetesClient() {
                   </div>
                 ))}
               </div>
+              {findingsLimited && (
+                <p className="text-xs leading-5 text-amber-600 dark:text-amber-300">
+                  {t('public.rows_render_limited', {
+                    total: filteredFindings.length,
+                    visible: visibleFindings.length
+                  })}
+                </p>
+              )}
             </CardContent>
           </Card>
 
@@ -1650,7 +1759,9 @@ export default function KubernetesClient() {
                   <CardTitle className="text-base">
                     {t('app.generation.kubernetes.output')}
                   </CardTitle>
-                  <CardDescription>{t('app.generation.kubernetes.output_hint')}</CardDescription>
+                  <CardDescription>
+                    {isYamlReady ? t('app.generation.kubernetes.output_hint') : t('public.loading')}
+                  </CardDescription>
                 </div>
                 <ShieldCheck className="h-5 w-5 text-[var(--text-muted)]" />
               </div>
@@ -1671,16 +1782,25 @@ export default function KubernetesClient() {
                 </Select>
               </div>
               <Textarea
-                value={outputValue}
+                value={isYamlReady ? outputPreview : t('public.loading')}
                 readOnly
                 className="min-h-[360px] font-mono"
                 spellCheck={false}
               />
+              {outputPreviewLimited && (
+                <p className="text-xs leading-5 text-amber-600 dark:text-amber-300">
+                  {t('public.output_preview_limited', {
+                    total: outputPreviewSource.length.toLocaleString(),
+                    visible: OUTPUT_PREVIEW_CHARS.toLocaleString()
+                  })}
+                </p>
+              )}
               <div className="flex flex-wrap gap-2">
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => copy(outputValue)}
+                  disabled={!isYamlReady}
+                  onClick={() => copy(buildCurrentOutput())}
                   className="w-full sm:w-auto"
                 >
                   <Copy className="mr-2 h-4 w-4" />
@@ -1689,7 +1809,8 @@ export default function KubernetesClient() {
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => downloadText(outputValue, getOutputFilename(outputType))}
+                  disabled={!isYamlReady}
+                  onClick={() => downloadText(buildCurrentOutput(), getOutputFilename(outputType))}
                   className="w-full sm:w-auto"
                 >
                   <Download className="mr-2 h-4 w-4" />
@@ -1698,6 +1819,7 @@ export default function KubernetesClient() {
                 <Button
                   type="button"
                   variant="outline"
+                  disabled={!isYamlReady}
                   onClick={() =>
                     downloadText(csvOutput, 'kubernetes-audit.csv', 'text/csv;charset=utf-8')
                   }
@@ -1722,10 +1844,10 @@ export default function KubernetesClient() {
                 >
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold">
+                      <p className="break-all font-mono text-sm font-semibold leading-5">
                         {resource.kind}/{resource.name}
                       </p>
-                      <p className="text-xs text-[var(--text-muted)]">
+                      <p className="break-all font-mono text-xs leading-5 text-[var(--text-muted)]">
                         {resource.namespace || 'default'}
                       </p>
                     </div>
@@ -1734,7 +1856,7 @@ export default function KubernetesClient() {
                     </span>
                   </div>
                   <div className="mt-2 grid gap-1 text-xs text-[var(--text-muted)]">
-                    <p>
+                    <p className="break-all font-mono leading-5">
                       {t('app.generation.kubernetes.parsed.images')}:{' '}
                       {resource.images.join(', ') || '-'}
                     </p>
@@ -1746,7 +1868,7 @@ export default function KubernetesClient() {
                       {t('app.generation.kubernetes.parsed.resources')}:{' '}
                       {resource.hasResources ? t('public.yes') : t('public.no')}
                     </p>
-                    <p>
+                    <p className="break-all font-mono leading-5">
                       {t('app.generation.kubernetes.parsed.secrets')}:{' '}
                       {resource.plaintextSensitiveEnv.join(', ') || '-'}
                     </p>

@@ -22,15 +22,23 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
+import { InputCapNotice } from '@/components/ui/input-cap-notice'
 import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
+import {
+  createOutputPreview,
+  isOutputPreviewLimited,
+  OUTPUT_PREVIEW_CHARS
+} from '@/utils/outputPreview'
 
 const OUTPUT_TYPES = ['config', 'docker', 'commands', 'headers', 'markdown', 'json'] as const
 const APP_TYPES = ['reverse_proxy', 'static', 'spa', 'api'] as const
 const WORKSPACE_LIMIT = 80000
 const SERVER_RENDER_LIMIT = 80
+const FINDING_RENDER_LIMIT = 80
+const DRAFT_FIELD_LIMIT = 1200
 const UNSAFE_DIRECTIVE_PATTERN = /[\r\n;{}]/u
 
 type AppType = (typeof APP_TYPES)[number]
@@ -93,6 +101,7 @@ interface ParsedServer {
 
 interface ParsedNginx {
   capped: boolean
+  omittedServerBlocks: number
   serverBlocks: ParsedServer[]
   syntaxHints: string[]
 }
@@ -620,15 +629,43 @@ function getOutputFilename(outputType: OutputType) {
 
 function extractDirectives(block: string, name: string) {
   const pattern = new RegExp(`${name}\\s+([^;]+);`, 'giu')
-  return Array.from(block.matchAll(pattern), match => match[1]?.trim() || '').filter(Boolean)
+  const directives: string[] = []
+
+  let match: RegExpExecArray | null
+  while ((match = pattern.exec(block)) && directives.length < SERVER_RENDER_LIMIT) {
+    const value = match[1]?.trim() || ''
+    if (value) directives.push(value)
+    if (match[0] === '') pattern.lastIndex += 1
+  }
+
+  return directives
+}
+
+function countPattern(input: string, pattern: RegExp, limit = SERVER_RENDER_LIMIT) {
+  let count = 0
+  pattern.lastIndex = 0
+
+  let match: RegExpExecArray | null
+  while ((match = pattern.exec(input)) && count < limit) {
+    count += 1
+    if (match[0] === '') pattern.lastIndex += 1
+  }
+
+  return count
 }
 
 function parseServerBlocks(input: string) {
   const blocks: string[] = []
   const pattern = /server\s*\{/giu
+  let omitted = 0
   let match: RegExpExecArray | null
 
-  while ((match = pattern.exec(input)) && blocks.length < SERVER_RENDER_LIMIT) {
+  while ((match = pattern.exec(input))) {
+    if (blocks.length >= SERVER_RENDER_LIMIT) {
+      omitted += 1
+      continue
+    }
+
     let depth = 0
     let end = match.index
     let opened = false
@@ -649,7 +686,7 @@ function parseServerBlocks(input: string) {
     blocks.push(input.slice(match.index, end))
   }
 
-  return blocks
+  return { blocks, omitted }
 }
 
 function parseNginxWorkspace(input: string): ParsedNginx {
@@ -660,13 +697,14 @@ function parseNginxWorkspace(input: string): ParsedNginx {
   const closeBraces = (source.match(/\}/gu) || []).length
   if (openBraces !== closeBraces) syntaxHints.push('brace_mismatch')
 
-  const serverBlocks = parseServerBlocks(source).map(block => {
+  const parsedBlocks = parseServerBlocks(source)
+  const serverBlocks = parsedBlocks.blocks.map(block => {
     const listen = extractDirectives(block, 'listen')
     const proxyPasses = extractDirectives(block, 'proxy_pass')
     const addHeaders = extractDirectives(block, 'add_header')
     const serverNames = extractDirectives(block, 'server_name')
     const roots = extractDirectives(block, 'root')
-    const locations = block.match(/location\s+/giu)?.length || 0
+    const locations = countPattern(block, /location\s+/giu)
     const lower = block.toLowerCase()
 
     return {
@@ -694,7 +732,7 @@ function parseNginxWorkspace(input: string): ParsedNginx {
     }
   })
 
-  return { capped, serverBlocks, syntaxHints }
+  return { capped, omittedServerBlocks: parsedBlocks.omitted, serverBlocks, syntaxHints }
 }
 
 function auditDraft(draft: NginxDraft, parsed: ParsedNginx): Finding[] {
@@ -760,6 +798,12 @@ function auditDraft(draft: NginxDraft, parsed: ParsedNginx): Finding[] {
     findings.push({ key: 'brace_mismatch', level: 'danger', subject: 'workspace' })
   if (parsed.serverBlocks.length === 0)
     findings.push({ key: 'parser_empty', level: 'warn', subject: 'workspace' })
+  if (parsed.omittedServerBlocks > 0)
+    findings.push({
+      key: 'server_blocks_limited',
+      level: 'warn',
+      subject: String(parsed.omittedServerBlocks)
+    })
 
   for (const server of parsed.serverBlocks) {
     const subject = server.serverName || server.listen.join(', ') || 'server'
@@ -831,15 +875,20 @@ export default function NginxClient() {
   const { copy } = useCopy()
   const [draft, setDraft] = useState<NginxDraft>(DEFAULT_DRAFT)
   const [workspace, setWorkspace] = useState(PRESETS[0].workspace)
+  const [isWorkspaceCapped, setIsWorkspaceCapped] = useState(false)
   const [auditQuery, setAuditQuery] = useState('')
   const [outputType, setOutputType] = useState<OutputType>('config')
   const deferredWorkspace = useDeferredValue(workspace)
 
   const configOutput = useMemo(() => buildNginxConfig(draft), [draft])
-  const parsed = useMemo(() => parseNginxWorkspace(deferredWorkspace), [deferredWorkspace])
+  const parsed = useMemo(() => {
+    const next = parseNginxWorkspace(deferredWorkspace)
+
+    return isWorkspaceCapped ? { ...next, capped: true } : next
+  }, [deferredWorkspace, isWorkspaceCapped])
   const findings = useMemo(() => auditDraft(draft, parsed), [draft, parsed])
   const csvOutput = useMemo(() => buildCsv(findings), [findings])
-  const outputValue = useMemo(() => {
+  const buildCurrentOutput = useCallback(() => {
     if (outputType === 'config') return configOutput
     if (outputType === 'docker') return buildDockerOutput(draft)
     if (outputType === 'commands') return buildCommands(draft)
@@ -847,6 +896,12 @@ export default function NginxClient() {
     if (outputType === 'json') return JSON.stringify({ draft, findings, parsed }, null, 2)
     return buildMarkdown(draft, findings, parsed)
   }, [configOutput, draft, findings, outputType, parsed])
+  const outputPreviewSource = useMemo(() => buildCurrentOutput(), [buildCurrentOutput])
+  const outputPreview = useMemo(
+    () => createOutputPreview(outputPreviewSource),
+    [outputPreviewSource]
+  )
+  const outputPreviewLimited = isOutputPreviewLimited(outputPreviewSource)
 
   const filteredFindings = useMemo(() => {
     const query = auditQuery.trim().toLowerCase()
@@ -858,6 +913,11 @@ export default function NginxClient() {
         .includes(query)
     )
   }, [auditQuery, findings, t])
+  const visibleFindings = useMemo(
+    () => filteredFindings.slice(0, FINDING_RENDER_LIMIT),
+    [filteredFindings]
+  )
+  const findingsLimited = filteredFindings.length > visibleFindings.length
 
   const metrics = useMemo(() => {
     const danger = findings.filter(item => item.level === 'danger').length
@@ -878,20 +938,32 @@ export default function NginxClient() {
   }, [findings, parsed.serverBlocks, t])
 
   const updateDraft = useCallback(<K extends keyof NginxDraft>(key: K, value: NginxDraft[K]) => {
-    setDraft(current => ({ ...current, [key]: value }))
+    const nextValue =
+      typeof value === 'string' ? (value.slice(0, DRAFT_FIELD_LIMIT) as NginxDraft[K]) : value
+    setDraft(current => ({ ...current, [key]: nextValue }))
   }, [])
 
-  const applyPreset = useCallback((preset: Preset) => {
-    setDraft(preset.draft)
-    setWorkspace(preset.workspace)
+  const updateWorkspace = useCallback((value: string) => {
+    const capped = value.length > WORKSPACE_LIMIT
+
+    setIsWorkspaceCapped(capped)
+    setWorkspace(capped ? value.slice(0, WORKSPACE_LIMIT) : value)
   }, [])
+
+  const applyPreset = useCallback(
+    (preset: Preset) => {
+      setDraft(preset.draft)
+      updateWorkspace(preset.workspace)
+    },
+    [updateWorkspace]
+  )
 
   const reset = useCallback(() => {
     setDraft(DEFAULT_DRAFT)
-    setWorkspace(PRESETS[0].workspace)
+    updateWorkspace(PRESETS[0].workspace)
     setAuditQuery('')
     setOutputType('config')
-  }, [])
+  }, [updateWorkspace])
 
   const copySummary = useCallback(() => {
     copy(
@@ -1201,21 +1273,26 @@ export default function NginxClient() {
             <CardContent className="grid gap-3">
               <Textarea
                 value={workspace}
-                onChange={event => setWorkspace(event.target.value.slice(0, WORKSPACE_LIMIT))}
+                onChange={event => updateWorkspace(event.target.value)}
                 placeholder={t('app.generation.nginx.workspace_placeholder')}
                 className="min-h-[520px] font-mono"
                 spellCheck={false}
               />
+              <InputCapNotice visible={isWorkspaceCapped} limit={WORKSPACE_LIMIT} />
               <div className="flex flex-wrap gap-2">
                 <Button type="button" variant="outline" onClick={() => copy(workspace)}>
                   <Copy className="mr-2 h-4 w-4" />
                   {t('public.copy')}
                 </Button>
-                <Button type="button" variant="outline" onClick={() => setWorkspace(configOutput)}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => updateWorkspace(configOutput)}
+                >
                   <Sparkles className="mr-2 h-4 w-4" />
                   {t('app.generation.nginx.use_output')}
                 </Button>
-                <Button type="button" variant="outline" onClick={() => setWorkspace('')}>
+                <Button type="button" variant="outline" onClick={() => updateWorkspace('')}>
                   <Trash2 className="mr-2 h-4 w-4" />
                   {t('public.clear')}
                 </Button>
@@ -1235,20 +1312,20 @@ export default function NginxClient() {
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-muted)]" />
                 <Input
                   value={auditQuery}
-                  onChange={event => setAuditQuery(event.target.value)}
+                  onChange={event => setAuditQuery(event.target.value.slice(0, 160))}
                   placeholder={t('app.generation.nginx.audit_search')}
                   className="pl-10"
                 />
               </div>
               <div className="grid max-h-[520px] gap-2 overflow-auto pr-1">
-                {filteredFindings.map((finding, index) => (
+                {visibleFindings.map((finding, index) => (
                   <div
                     key={`${finding.key}-${finding.subject}-${index}`}
                     className="glass-panel rounded-2xl p-3"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-[var(--text-primary)]">
+                        <p className="break-all font-mono text-sm font-semibold leading-5 text-[var(--text-primary)]">
                           {finding.subject}
                         </p>
                         <p className="mt-1 text-xs leading-5 text-[var(--text-muted)]">
@@ -1262,6 +1339,14 @@ export default function NginxClient() {
                   </div>
                 ))}
               </div>
+              {findingsLimited && (
+                <p className="text-xs leading-5 text-amber-600 dark:text-amber-300">
+                  {t('public.rows_render_limited', {
+                    total: filteredFindings.length,
+                    visible: visibleFindings.length
+                  })}
+                </p>
+              )}
             </CardContent>
           </Card>
 
@@ -1291,16 +1376,24 @@ export default function NginxClient() {
                 </Select>
               </div>
               <Textarea
-                value={outputValue}
+                value={outputPreview}
                 readOnly
                 className="min-h-[360px] font-mono"
                 spellCheck={false}
               />
+              {outputPreviewLimited && (
+                <p className="text-xs leading-5 text-amber-600 dark:text-amber-300">
+                  {t('public.output_preview_limited', {
+                    total: outputPreviewSource.length.toLocaleString(),
+                    visible: OUTPUT_PREVIEW_CHARS.toLocaleString()
+                  })}
+                </p>
+              )}
               <div className="flex flex-wrap gap-2">
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => copy(outputValue)}
+                  onClick={() => copy(buildCurrentOutput())}
                   className="w-full sm:w-auto"
                 >
                   <Copy className="mr-2 h-4 w-4" />
@@ -1309,7 +1402,7 @@ export default function NginxClient() {
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => downloadText(outputValue, getOutputFilename(outputType))}
+                  onClick={() => downloadText(buildCurrentOutput(), getOutputFilename(outputType))}
                   className="w-full sm:w-auto"
                 >
                   <Download className="mr-2 h-4 w-4" />
@@ -1339,10 +1432,10 @@ export default function NginxClient() {
                 <div key={`${server.serverName}-${index}`} className="glass-panel rounded-2xl p-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold">
+                      <p className="break-all font-mono text-sm font-semibold leading-5">
                         {server.serverName || t('app.generation.nginx.parsed.unnamed')}
                       </p>
-                      <p className="text-xs text-[var(--text-muted)]">
+                      <p className="break-all font-mono text-xs leading-5 text-[var(--text-muted)]">
                         {server.listen.join(', ') || '-'}
                       </p>
                     </div>
@@ -1351,7 +1444,7 @@ export default function NginxClient() {
                     </span>
                   </div>
                   <div className="mt-2 grid gap-1 text-xs text-[var(--text-muted)]">
-                    <p>
+                    <p className="break-all font-mono leading-5">
                       {t('app.generation.nginx.parsed.proxy')}:{' '}
                       {server.proxyPasses.join(', ') || '-'}
                     </p>

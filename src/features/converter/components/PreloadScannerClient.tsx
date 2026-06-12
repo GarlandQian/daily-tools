@@ -26,6 +26,12 @@ import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
+import {
+  createOutputPreview,
+  isOutputPreviewLimited,
+  OUTPUT_PREVIEW_CHARS,
+  OUTPUT_PREVIEW_ROWS
+} from '@/utils/outputPreview'
 
 const OUTPUT_TYPES = ['html', 'headers', 'next', 'nginx', 'markdown', 'json', 'csv'] as const
 const RESOURCE_RELS = [
@@ -547,16 +553,23 @@ const parseTextResources = (input: string): ParsedResource[] => {
 }
 
 const parseWorkspace = (input: string): ParsedWorkspace => {
-  const source = input.length > WORKSPACE_LIMIT ? input.slice(0, WORKSPACE_LIMIT) : input
+  const source = input.length >= WORKSPACE_LIMIT ? input.slice(0, WORKSPACE_LIMIT) : input
   const json = parseJsonResources(source)
+  const resources = [
+    ...parseHtmlResources(source),
+    ...parseHeaderResources(source),
+    ...json.resources,
+    ...parseTextResources(source)
+  ]
+    .slice(0, RESOURCE_LIMIT)
+    .map((resource, index) => ({
+      ...resource,
+      id: `${resource.source}-${index}-${resource.rel}-${resource.url || resource.raw.slice(0, 18)}`
+    }))
+
   return {
-    errors: [...json.errors, ...(input.length > WORKSPACE_LIMIT ? ['capped_input'] : [])],
-    resources: [
-      ...parseHtmlResources(source),
-      ...parseHeaderResources(source),
-      ...json.resources,
-      ...parseTextResources(source)
-    ].slice(0, RESOURCE_LIMIT)
+    errors: [...json.errors, ...(input.length >= WORKSPACE_LIMIT ? ['capped_input'] : [])],
+    resources
   }
 }
 
@@ -871,11 +884,38 @@ export default function PreloadScannerClient() {
   const parsed = useMemo(() => parseWorkspace(deferredWorkspace), [deferredWorkspace])
   const findings = useMemo(() => auditScanner(draft, parsed), [draft, parsed])
   const score = useMemo(() => getScore(findings), [findings])
-  const output = useMemo(
+  const outputPreviewParsed = useMemo<ParsedWorkspace>(
+    () => ({
+      errors: parsed.errors.slice(0, OUTPUT_PREVIEW_ROWS),
+      resources: parsed.resources.slice(0, OUTPUT_PREVIEW_ROWS)
+    }),
+    [parsed.errors, parsed.resources]
+  )
+  const outputPreviewFindings = useMemo(() => findings.slice(0, OUTPUT_PREVIEW_ROWS), [findings])
+  const outputPreviewSource = useMemo(
+    () => buildOutput(draft, outputPreviewParsed, outputPreviewFindings, outputType),
+    [draft, outputPreviewFindings, outputPreviewParsed, outputType]
+  )
+  const outputPreview = useMemo(
+    () => createOutputPreview(outputPreviewSource),
+    [outputPreviewSource]
+  )
+  const outputPreviewLimited = isOutputPreviewLimited(outputPreviewSource)
+  const outputPreviewUsesParsedRows =
+    outputType === 'markdown' || outputType === 'json' || outputType === 'csv'
+  const outputPreviewUsesFindings = outputType === 'markdown' || outputType === 'json'
+  const outputPreviewVisibleRows =
+    (outputPreviewUsesParsedRows ? outputPreviewParsed.resources.length : 0) +
+    (outputPreviewUsesFindings ? outputPreviewFindings.length : 0)
+  const outputPreviewTotalRows =
+    (outputPreviewUsesParsedRows ? parsed.resources.length : 0) +
+    (outputPreviewUsesFindings ? findings.length : 0)
+  const outputPreviewRowsLimited = outputPreviewTotalRows > outputPreviewVisibleRows
+  const buildCurrentOutput = useCallback(
     () => buildOutput(draft, parsed, findings, outputType),
     [draft, findings, outputType, parsed]
   )
-  const csvOutput = useMemo(() => buildCsv(parsed), [parsed])
+  const buildCurrentCsv = useCallback(() => buildCsv(parsed), [parsed])
   const filteredFindings = useMemo(() => {
     const query = deferredAuditQuery.trim().toLowerCase()
     if (!query) return findings
@@ -1249,7 +1289,7 @@ export default function PreloadScannerClient() {
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-tertiary)]" />
               <Input
                 value={auditQuery}
-                onChange={event => setAuditQuery(event.target.value)}
+                onChange={event => setAuditQuery(event.target.value.slice(0, 160))}
                 placeholder={t('app.converter.preload_scanner.audit_search')}
                 className="pl-10"
               />
@@ -1261,12 +1301,12 @@ export default function PreloadScannerClient() {
                   className={`rounded-xl border px-3 py-2 text-xs ${levelClass(finding.level)}`}
                 >
                   <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
-                    <span className="min-w-0 break-words">
+                    <span className="min-w-0 break-all leading-5">
                       <span className="font-semibold">{finding.subject}</span>
-                      <span className="mx-2">/</span>
+                      <span className="mx-2 inline-block">/</span>
                       {t(`app.converter.preload_scanner.audit.${finding.key}`)}
                     </span>
-                    <span className="font-medium">
+                    <span className="shrink-0 font-medium">
                       {t(`app.converter.preload_scanner.level.${finding.level}`)}
                     </span>
                   </div>
@@ -1304,12 +1344,28 @@ export default function PreloadScannerClient() {
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Textarea readOnly value={output} className="min-h-[360px] font-mono" />
+            <Textarea readOnly value={outputPreview} className="min-h-[360px] font-mono" />
+            {outputPreviewLimited && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('public.output_preview_limited', {
+                  total: outputPreviewSource.length.toLocaleString(),
+                  visible: OUTPUT_PREVIEW_CHARS.toLocaleString()
+                })}
+              </p>
+            )}
+            {outputPreviewRowsLimited && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('public.output_preview_rows_limited', {
+                  total: outputPreviewTotalRows.toLocaleString(),
+                  visible: outputPreviewVisibleRows.toLocaleString()
+                })}
+              </p>
+            )}
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => copy(output)}
+                onClick={() => copy(buildCurrentOutput())}
                 className="w-full sm:w-auto"
               >
                 <Copy className="h-4 w-4" />
@@ -1319,7 +1375,11 @@ export default function PreloadScannerClient() {
                 type="button"
                 variant="outline"
                 onClick={() =>
-                  downloadText(output, 'preload-scanner-output.txt', 'text/plain;charset=utf-8')
+                  downloadText(
+                    buildCurrentOutput(),
+                    'preload-scanner-output.txt',
+                    'text/plain;charset=utf-8'
+                  )
                 }
                 className="w-full sm:w-auto"
               >
@@ -1330,7 +1390,7 @@ export default function PreloadScannerClient() {
                 type="button"
                 variant="outline"
                 onClick={() =>
-                  downloadText(csvOutput, 'preload-scanner.csv', 'text/csv;charset=utf-8')
+                  downloadText(buildCurrentCsv(), 'preload-scanner.csv', 'text/csv;charset=utf-8')
                 }
                 className="w-full sm:w-auto"
               >
@@ -1357,7 +1417,7 @@ export default function PreloadScannerClient() {
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-tertiary)]" />
               <Input
                 value={resourceQuery}
-                onChange={event => setResourceQuery(event.target.value)}
+                onChange={event => setResourceQuery(event.target.value.slice(0, 160))}
                 placeholder={t('app.converter.preload_scanner.parsed_search')}
                 className="pl-10"
               />

@@ -64,7 +64,16 @@ const makeId = () => globalThis.crypto?.randomUUID?.() ?? Math.random().toString
 const DEFAULT_DISALLOW = ['/api/', '/admin/', '/private/']
 const COMMON_DISALLOW = ['/api/', '/admin/', '/private/', '/account/', '/dashboard/', '/tmp/']
 const ROBOTS_WORKSPACE_LIMIT = 40000
+const ROBOTS_SITE_URL_LIMIT = 2048
 const ROBOTS_LINE_LIMIT = 400
+const SITEMAP_ENTRY_LIMIT = 300
+const VISIBLE_SITEMAP_ENTRY_LIMIT = 80
+const SITEMAP_OUTPUT_PREVIEW_LIMIT = 80
+const BULK_PATH_INPUT_LIMIT = 100000
+const BULK_PATH_IMPORT_LIMIT = 300
+const VISIBLE_ROBOTS_FINDINGS_LIMIT = 80
+const DISALLOW_PATH_LIMIT = 80
+const VISIBLE_DISALLOW_PATH_LIMIT = 40
 const DEFAULT_ROBOTS_WORKSPACE = `User-agent: *
 Disallow: /api/
 Disallow: /admin/
@@ -207,19 +216,50 @@ const isValidDate = (value: string) => {
 
 const buildEntry = (entry: Omit<SitemapEntry, 'id'>): SitemapEntry => ({ ...entry, id: makeId() })
 
-const parsePathList = (value: string) =>
-  value
-    .split(/[\n,]+/)
-    .map(item => item.trim())
-    .filter(Boolean)
-    .map(item => {
-      try {
-        const url = new URL(item)
-        return `${url.pathname}${url.search}`
-      } catch {
-        return item.startsWith('/') ? item : `/${item}`
-      }
-    })
+const normalizePathItem = (value: string) => {
+  try {
+    const url = new URL(value)
+    return `${url.pathname}${url.search}`
+  } catch {
+    return value.startsWith('/') ? value : `/${value}`
+  }
+}
+
+const parsePathList = (value: string) => {
+  const isInputTruncated = value.length > BULK_PATH_INPUT_LIMIT
+  const source = isInputTruncated ? value.slice(0, BULK_PATH_INPUT_LIMIT) : value
+  const paths: string[] = []
+  let current = ''
+  let hitPathLimit = false
+
+  const pushCurrent = () => {
+    const item = current.trim()
+    current = ''
+    if (!item) return false
+    if (paths.length >= BULK_PATH_IMPORT_LIMIT) {
+      hitPathLimit = true
+      return true
+    }
+    paths.push(normalizePathItem(item))
+    return false
+  }
+
+  for (const char of source) {
+    if (char === ',' || char === '\n' || char === '\r') {
+      if (pushCurrent()) break
+    } else {
+      current += char
+    }
+  }
+
+  if (!hitPathLimit) pushCurrent()
+
+  return {
+    hitPathLimit,
+    isInputTruncated,
+    paths
+  }
+}
 
 const parseRobotsWorkspace = (input: string): ParsedRobots => {
   const capped = input.length > ROBOTS_WORKSPACE_LIMIT
@@ -456,11 +496,23 @@ const RobotsClient = () => {
   const [disallowPaths, setDisallowPaths] = useState(DEFAULT_DISALLOW)
   const [entries, setEntries] = useState(DEFAULT_SITEMAP)
   const [bulkPaths, setBulkPaths] = useState('')
+  const [isBulkPathsCapped, setIsBulkPathsCapped] = useState(false)
   const [workspace, setWorkspace] = useState(DEFAULT_ROBOTS_WORKSPACE)
+  const [isWorkspaceCapped, setIsWorkspaceCapped] = useState(false)
+  const deferredBulkPaths = useDeferredValue(bulkPaths)
   const deferredWorkspace = useDeferredValue(workspace)
 
   const normalizedSite = useMemo(() => normalizeSiteUrl(siteUrl), [siteUrl])
-  const parsedRobots = useMemo(() => parseRobotsWorkspace(deferredWorkspace), [deferredWorkspace])
+  const parsedRobots = useMemo(() => {
+    const next = parseRobotsWorkspace(deferredWorkspace)
+
+    return isWorkspaceCapped ? { ...next, capped: true } : next
+  }, [deferredWorkspace, isWorkspaceCapped])
+  const bulkPathParse = useMemo(() => {
+    const next = parsePathList(deferredBulkPaths)
+
+    return isBulkPathsCapped ? { ...next, isInputTruncated: true } : next
+  }, [deferredBulkPaths, isBulkPathsCapped])
   const sitemapUrl = normalizedSite ? `${normalizedSite}/sitemap.xml` : ''
   const robots = useMemo(
     () =>
@@ -474,7 +526,43 @@ const RobotsClient = () => {
       }),
     [allowAll, disallowPaths, includeHost, includeSitemap, normalizedSite, sitemapUrl]
   )
-  const sitemap = useMemo(() => buildSitemap(siteUrl, entries), [entries, siteUrl])
+
+  const updateWorkspace = (value: string) => {
+    const capped = value.length > ROBOTS_WORKSPACE_LIMIT
+
+    setIsWorkspaceCapped(capped)
+    setWorkspace(capped ? value.slice(0, ROBOTS_WORKSPACE_LIMIT) : value)
+  }
+
+  const updateSiteUrl = (value: string) => {
+    setSiteUrl(value.slice(0, ROBOTS_SITE_URL_LIMIT))
+  }
+
+  const updateBulkPaths = (value: string) => {
+    const capped = value.length > BULK_PATH_INPUT_LIMIT
+
+    setIsBulkPathsCapped(capped)
+    setBulkPaths(capped ? value.slice(0, BULK_PATH_INPUT_LIMIT) : value)
+  }
+  const visibleEntries = useMemo(() => entries.slice(0, VISIBLE_SITEMAP_ENTRY_LIMIT), [entries])
+  const sitemapPreviewEntries = useMemo(
+    () => entries.slice(0, SITEMAP_OUTPUT_PREVIEW_LIMIT),
+    [entries]
+  )
+  const sitemapPreview = useMemo(
+    () => buildSitemap(siteUrl, sitemapPreviewEntries),
+    [sitemapPreviewEntries, siteUrl]
+  )
+  const isEntryCapReached = entries.length >= SITEMAP_ENTRY_LIMIT
+  const isEntryListLimited = entries.length > visibleEntries.length
+  const isSitemapOutputLimited = entries.length > sitemapPreviewEntries.length
+  const visibleDisallowPaths = useMemo(
+    () =>
+      disallowPaths.map((path, index) => ({ index, path })).slice(0, VISIBLE_DISALLOW_PATH_LIMIT),
+    [disallowPaths]
+  )
+  const isDisallowCapReached = disallowPaths.length >= DISALLOW_PATH_LIMIT
+  const isDisallowListLimited = disallowPaths.length > visibleDisallowPaths.length
   const validation = useMemo(() => {
     const warnings: string[] = []
     const seenPaths = new Set<string>()
@@ -509,7 +597,11 @@ const RobotsClient = () => {
     () => buildRobotsFindings(validation, parsedRobots, workspace),
     [parsedRobots, validation, workspace]
   )
-  const findingsCsv = useMemo(() => buildFindingsCsv(findings), [findings])
+  const visibleFindings = useMemo(
+    () => findings.slice(0, VISIBLE_ROBOTS_FINDINGS_LIMIT),
+    [findings]
+  )
+  const isFindingsListLimited = findings.length > visibleFindings.length
   const stats = useMemo(
     () => [
       {
@@ -545,34 +637,39 @@ const RobotsClient = () => {
     const preset = ROBOTS_PRESETS[presetId]
     setAllowAll(preset.allowAll)
     setIncludeSitemap(preset.entries.length > 0)
-    setDisallowPaths(preset.disallowPaths)
-    setEntries(preset.entries.map(buildEntry))
+    setDisallowPaths(preset.disallowPaths.slice(0, DISALLOW_PATH_LIMIT))
+    setEntries(preset.entries.slice(0, SITEMAP_ENTRY_LIMIT).map(buildEntry))
   }
 
   const addCommonDisallow = (path: string) => {
     setAllowAll(false)
     setDisallowPaths(prev => {
       if (prev.includes(path)) return prev
+      if (prev.length >= DISALLOW_PATH_LIMIT) return prev
       return [...prev, path]
     })
   }
 
   const importBulkPaths = () => {
-    const paths = parsePathList(bulkPaths)
+    const paths = bulkPathParse.paths
     if (paths.length === 0) return
 
-    setEntries(prev => [
-      ...prev,
-      ...paths.map(path =>
-        buildEntry({
-          path,
-          priority: path === '/' ? '1.0' : '0.6',
-          changefreq: 'weekly',
-          lastmod: ''
-        })
-      )
-    ])
-    setBulkPaths('')
+    setEntries(prev => {
+      const availableSlots = Math.max(0, SITEMAP_ENTRY_LIMIT - prev.length)
+      if (availableSlots === 0) return prev
+      return [
+        ...prev,
+        ...paths.slice(0, availableSlots).map(path =>
+          buildEntry({
+            path,
+            priority: path === '/' ? '1.0' : '0.6',
+            changefreq: 'weekly',
+            lastmod: ''
+          })
+        )
+      ]
+    })
+    updateBulkPaths('')
   }
 
   const stampToday = () => {
@@ -581,14 +678,14 @@ const RobotsClient = () => {
   }
 
   const reset = () => {
-    setSiteUrl('https://daily-tools.vercel.app')
+    updateSiteUrl('https://daily-tools.vercel.app')
     setAllowAll(false)
     setIncludeSitemap(true)
     setIncludeHost(false)
     setDisallowPaths(DEFAULT_DISALLOW)
     setEntries(DEFAULT_SITEMAP.map(entry => ({ ...entry, id: makeId() })))
-    setBulkPaths('')
-    setWorkspace(DEFAULT_ROBOTS_WORKSPACE)
+    updateBulkPaths('')
+    updateWorkspace(DEFAULT_ROBOTS_WORKSPACE)
   }
 
   const applyParsedRobots = () => {
@@ -596,8 +693,8 @@ const RobotsClient = () => {
     if (!primary) return
 
     const nextSite = parsedRobots.sitemaps.map(getSitemapOrigin).find(Boolean)
-    if (nextSite) setSiteUrl(nextSite)
-    if (!nextSite && parsedRobots.hosts[0]) setSiteUrl(normalizeSiteUrl(parsedRobots.hosts[0]))
+    if (nextSite) updateSiteUrl(nextSite)
+    if (!nextSite && parsedRobots.hosts[0]) updateSiteUrl(normalizeSiteUrl(parsedRobots.hosts[0]))
     setIncludeSitemap(parsedRobots.sitemaps.length > 0)
     setIncludeHost(parsedRobots.hosts.length > 0)
     setAllowAll(primary.disallows.length === 0 && primary.allows.includes('/'))
@@ -660,8 +757,9 @@ const RobotsClient = () => {
               <Input
                 id="robots-site"
                 value={siteUrl}
-                onChange={event => setSiteUrl(event.target.value)}
+                onChange={event => updateSiteUrl(event.target.value)}
                 placeholder="https://example.com"
+                maxLength={ROBOTS_SITE_URL_LIMIT}
                 className="font-mono"
               />
             </div>
@@ -710,7 +808,12 @@ const RobotsClient = () => {
                   <Button
                     size="sm"
                     icon={<Plus className="h-4 w-4" />}
-                    onClick={() => setDisallowPaths(prev => [...prev, '/'])}
+                    disabled={isDisallowCapReached}
+                    onClick={() =>
+                      setDisallowPaths(prev =>
+                        prev.length >= DISALLOW_PATH_LIMIT ? prev : [...prev, '/']
+                      )
+                    }
                   >
                     {t('public.add')}
                   </Button>
@@ -730,7 +833,7 @@ const RobotsClient = () => {
                     </Button>
                   ))}
                 </div>
-                {disallowPaths.map((path, index) => (
+                {visibleDisallowPaths.map(({ index, path }) => (
                   <div key={`${path}-${index}`} className="flex gap-2">
                     <Input
                       value={path}
@@ -748,6 +851,21 @@ const RobotsClient = () => {
                     </Button>
                   </div>
                 ))}
+                {isDisallowListLimited && (
+                  <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                    {t('app.generation.robots.warning.disallow_limited', {
+                      total: disallowPaths.length.toLocaleString(),
+                      visible: visibleDisallowPaths.length.toLocaleString()
+                    })}
+                  </p>
+                )}
+                {isDisallowCapReached && (
+                  <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                    {t('app.generation.robots.warning.disallow_cap', {
+                      limit: DISALLOW_PATH_LIMIT.toLocaleString()
+                    })}
+                  </p>
+                )}
               </CardContent>
             </Card>
 
@@ -770,17 +888,20 @@ const RobotsClient = () => {
                       size="sm"
                       icon={<Plus className="h-4 w-4" />}
                       onClick={() =>
-                        setEntries(prev => [
-                          ...prev,
-                          {
-                            id: makeId(),
-                            path: '/',
-                            priority: '0.5',
-                            changefreq: 'monthly',
-                            lastmod: ''
-                          }
-                        ])
+                        setEntries(prev =>
+                          [
+                            ...prev,
+                            {
+                              id: makeId(),
+                              path: '/',
+                              priority: '0.5',
+                              changefreq: 'monthly' as const,
+                              lastmod: ''
+                            }
+                          ].slice(0, SITEMAP_ENTRY_LIMIT)
+                        )
                       }
+                      disabled={isEntryCapReached}
                     >
                       {t('public.add')}
                     </Button>
@@ -791,15 +912,46 @@ const RobotsClient = () => {
                 <div className="grid grid-cols-1 gap-3 rounded-xl border border-[var(--border-base)] p-3 lg:grid-cols-[minmax(0,1fr)_auto]">
                   <Textarea
                     value={bulkPaths}
-                    onChange={event => setBulkPaths(event.target.value)}
+                    onChange={event => updateBulkPaths(event.target.value)}
                     rows={3}
                     placeholder={t('app.generation.robots.bulk_placeholder')}
                     className="resize-none font-mono"
                   />
-                  <Button className="self-start" onClick={importBulkPaths}>
+                  <Button
+                    className="self-start"
+                    onClick={importBulkPaths}
+                    disabled={!bulkPathParse.paths.length || isEntryCapReached}
+                  >
                     {t('app.generation.robots.import_paths')}
                   </Button>
                 </div>
+                {(bulkPathParse.isInputTruncated ||
+                  bulkPathParse.hitPathLimit ||
+                  isEntryCapReached) && (
+                  <div className="space-y-2">
+                    {bulkPathParse.isInputTruncated && (
+                      <p className="rounded-lg border border-[var(--warning)] bg-[var(--warning-subtle)] px-3 py-2 text-sm text-[var(--warning)]">
+                        {t('app.generation.robots.warning.bulk_input_truncated', {
+                          limit: BULK_PATH_INPUT_LIMIT.toLocaleString()
+                        })}
+                      </p>
+                    )}
+                    {bulkPathParse.hitPathLimit && (
+                      <p className="rounded-lg border border-[var(--warning)] bg-[var(--warning-subtle)] px-3 py-2 text-sm text-[var(--warning)]">
+                        {t('app.generation.robots.warning.bulk_paths_limited', {
+                          limit: BULK_PATH_IMPORT_LIMIT.toLocaleString()
+                        })}
+                      </p>
+                    )}
+                    {isEntryCapReached && (
+                      <p className="rounded-lg border border-[var(--warning)] bg-[var(--warning-subtle)] px-3 py-2 text-sm text-[var(--warning)]">
+                        {t('app.generation.robots.warning.entry_cap', {
+                          limit: SITEMAP_ENTRY_LIMIT.toLocaleString()
+                        })}
+                      </p>
+                    )}
+                  </div>
+                )}
                 <div className="hidden grid-cols-[minmax(0,1fr)_120px_150px_120px_44px] gap-3 px-3 text-xs font-medium text-[var(--text-secondary)] md:grid">
                   <span>{t('app.generation.robots.path')}</span>
                   <span>{t('app.generation.robots.priority')}</span>
@@ -807,7 +959,7 @@ const RobotsClient = () => {
                   <span>{t('app.generation.robots.lastmod')}</span>
                   <span />
                 </div>
-                {entries.map(entry => (
+                {visibleEntries.map(entry => (
                   <div
                     key={entry.id}
                     className="grid grid-cols-1 gap-3 rounded-xl border border-[var(--border-base)] p-3 md:grid-cols-[minmax(0,1fr)_120px_150px_120px_44px]"
@@ -860,6 +1012,14 @@ const RobotsClient = () => {
                     </Button>
                   </div>
                 ))}
+                {isEntryListLimited && (
+                  <p className="rounded-lg border border-[var(--warning)] bg-[var(--warning-subtle)] px-3 py-2 text-sm text-[var(--warning)]">
+                    {t('app.generation.robots.warning.entries_limited', {
+                      total: entries.length.toLocaleString(),
+                      visible: visibleEntries.length.toLocaleString()
+                    })}
+                  </p>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -878,7 +1038,7 @@ const RobotsClient = () => {
           <CardContent className="space-y-4">
             <Textarea
               value={workspace}
-              onChange={event => setWorkspace(event.target.value)}
+              onChange={event => updateWorkspace(event.target.value)}
               placeholder={t('app.generation.robots.workspace_placeholder')}
               className="min-h-[240px] font-mono text-xs"
               spellCheck={false}
@@ -910,7 +1070,7 @@ const RobotsClient = () => {
                 type="button"
                 variant="outline"
                 icon={<FileSearch className="h-4 w-4" />}
-                onClick={() => setWorkspace(robots)}
+                onClick={() => updateWorkspace(robots)}
               >
                 {t('app.generation.robots.use_generated')}
               </Button>
@@ -918,7 +1078,7 @@ const RobotsClient = () => {
                 type="button"
                 variant="ghost"
                 icon={<Trash2 className="h-4 w-4" />}
-                onClick={() => setWorkspace('')}
+                onClick={() => updateWorkspace('')}
               >
                 {t('public.clear')}
               </Button>
@@ -936,7 +1096,12 @@ const RobotsClient = () => {
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="flex flex-wrap gap-2">
-              <Button type="button" size="sm" variant="outline" onClick={() => copy(findingsCsv)}>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => copy(buildFindingsCsv(findings))}
+              >
                 {t('app.generation.robots.copy_audit_csv')}
               </Button>
               <Button
@@ -945,14 +1110,18 @@ const RobotsClient = () => {
                 variant="outline"
                 icon={<Download className="h-4 w-4" />}
                 onClick={() =>
-                  downloadText(findingsCsv, 'robots-audit.csv', 'text/csv;charset=utf-8')
+                  downloadText(
+                    buildFindingsCsv(findings),
+                    'robots-audit.csv',
+                    'text/csv;charset=utf-8'
+                  )
                 }
               >
                 {t('app.generation.robots.download_audit_csv')}
               </Button>
             </div>
             <div className="space-y-2">
-              {findings.map(finding => (
+              {visibleFindings.map(finding => (
                 <RobotsFindingRow
                   key={`${finding.key}-${finding.subject}`}
                   finding={finding}
@@ -960,6 +1129,14 @@ const RobotsClient = () => {
                   levelLabel={t(`app.generation.robots.level.${finding.level}`)}
                 />
               ))}
+              {isFindingsListLimited && (
+                <p className="rounded-lg border border-[var(--warning)] bg-[var(--warning-subtle)] px-3 py-2 text-sm text-[var(--warning)]">
+                  {t('app.generation.robots.warning.findings_limited', {
+                    total: findings.length.toLocaleString(),
+                    visible: visibleFindings.length.toLocaleString()
+                  })}
+                </p>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -976,11 +1153,25 @@ const RobotsClient = () => {
         />
         <RobotsOutput
           title="sitemap.xml"
-          value={sitemap}
+          value={sitemapPreview}
+          hint={
+            isSitemapOutputLimited
+              ? t('app.generation.robots.warning.sitemap_preview_limited', {
+                  total: entries.length.toLocaleString(),
+                  visible: sitemapPreviewEntries.length.toLocaleString()
+                })
+              : undefined
+          }
           copyLabel={t('public.copy')}
-          onCopy={() => copy(sitemap)}
+          onCopy={() => copy(buildSitemap(siteUrl, entries))}
           downloadLabel={t('app.generation.robots.download')}
-          onDownload={() => downloadText(sitemap, 'sitemap.xml', 'application/xml;charset=utf-8')}
+          onDownload={() =>
+            downloadText(
+              buildSitemap(siteUrl, entries),
+              'sitemap.xml',
+              'application/xml;charset=utf-8'
+            )
+          }
         />
       </div>
     </div>
@@ -991,12 +1182,14 @@ const RobotsOutput = ({
   onCopy,
   copyLabel,
   downloadLabel,
+  hint,
   onDownload,
   title,
   value
 }: {
   copyLabel: string
   downloadLabel: string
+  hint?: string
   onCopy: () => void
   onDownload: () => void
   title: string
@@ -1028,6 +1221,11 @@ const RobotsOutput = ({
         rows={16}
         className="min-h-[300px] flex-1 resize-none font-mono"
       />
+      {hint && (
+        <p className="mt-3 rounded-lg border border-[var(--warning)] bg-[var(--warning-subtle)] px-3 py-2 text-sm text-[var(--warning)]">
+          {hint}
+        </p>
+      )}
     </CardContent>
   </Card>
 )

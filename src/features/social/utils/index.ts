@@ -1,6 +1,12 @@
-import dayjs from 'dayjs'
-
-const RETIREMENT_POLICY_START = dayjs('2025-01-01')
+const RETIREMENT_POLICY_START = new Date(2025, 0, 1)
+const MONTHS_PER_YEAR = 12
+const MS_PER_DAY = 24 * 60 * 60 * 1000
+const padDatePart = (value: number) => String(value).padStart(2, '0')
+const englishLongDateFormatter = new Intl.DateTimeFormat('en-US', {
+  day: 'numeric',
+  month: 'long',
+  year: 'numeric'
+})
 
 const retirementProfiles = {
   male: {
@@ -167,15 +173,67 @@ const getRetirementProfile = (
   throw new Error('Invalid gender or occupation')
 }
 
+const toLocalDateOnly = (date: Date) =>
+  new Date(date.getFullYear(), date.getMonth(), date.getDate())
+
+const compareLocalDates = (left: Date, right: Date) => {
+  const leftTime = toLocalDateOnly(left).getTime()
+  const rightTime = toLocalDateOnly(right).getTime()
+  if (leftTime < rightTime) return -1
+  if (leftTime > rightTime) return 1
+  return 0
+}
+
+const getDaysInMonth = (year: number, monthIndex: number) =>
+  new Date(year, monthIndex + 1, 0).getDate()
+
+const addMonthsClamped = (date: Date, months: number) => {
+  const source = toLocalDateOnly(date)
+  const sourceMonth = source.getFullYear() * MONTHS_PER_YEAR + source.getMonth()
+  const targetMonth = sourceMonth + months
+  const year = Math.floor(targetMonth / MONTHS_PER_YEAR)
+  const month = targetMonth - year * MONTHS_PER_YEAR
+  const day = Math.min(source.getDate(), getDaysInMonth(year, month))
+
+  return new Date(year, month, day)
+}
+
+const diffFullMonths = (start: Date, end: Date) => {
+  const startDate = toLocalDateOnly(start)
+  const endDate = toLocalDateOnly(end)
+  let months =
+    (endDate.getFullYear() - startDate.getFullYear()) * MONTHS_PER_YEAR +
+    (endDate.getMonth() - startDate.getMonth())
+
+  if (compareLocalDates(addMonthsClamped(startDate, months), endDate) > 0) {
+    months -= 1
+  }
+
+  return months
+}
+
+export const formatLocalDate = (date: Date) =>
+  `${date.getFullYear()}-${padDatePart(date.getMonth() + 1)}-${padDatePart(date.getDate())}`
+
+export const formatChineseLocalDate = (date: Date) =>
+  `${date.getFullYear()}年${padDatePart(date.getMonth() + 1)}月${padDatePart(date.getDate())}日`
+
+export const formatEnglishLongDate = (date: Date) => englishLongDateFormatter.format(date)
+
+export const diffLocalDays = (start: Date, end: Date) =>
+  Math.floor((end.getTime() - start.getTime()) / MS_PER_DAY)
+
+export const diffLocalMonths = (start: Date, end: Date) => diffFullMonths(start, end)
+
 const getDelayMonths = (
-  standardRetirementDate: dayjs.Dayjs,
+  standardRetirementDate: Date,
   profile: (typeof retirementProfiles)[keyof typeof retirementProfiles]
 ) => {
-  if (standardRetirementDate.isBefore(RETIREMENT_POLICY_START, 'day')) return 0
+  if (compareLocalDates(standardRetirementDate, RETIREMENT_POLICY_START) < 0) return 0
 
   const monthsAfterStart = Math.max(
     0,
-    standardRetirementDate.diff(RETIREMENT_POLICY_START, 'month')
+    diffFullMonths(RETIREMENT_POLICY_START, standardRetirementDate)
   )
   const delayMonths = Math.floor(monthsAfterStart / profile.delayStepMonths) + 1
 
@@ -247,20 +305,20 @@ export const calcRetires = ({
   gender,
   occupation
 }: calcRetiresParams): calcRetiresReturnType => {
-  const birthDay = dayjs(birth)
+  const birthDay = toLocalDateOnly(birth)
   const profile = getRetirementProfile(gender, occupation)
-  const standardRetirementDate = birthDay.add(profile.baseAge * 12, 'month')
+  const standardRetirementDate = addMonthsClamped(birthDay, profile.baseAge * MONTHS_PER_YEAR)
   const delayMonths = getDelayMonths(standardRetirementDate, profile)
-  const retirementAgeInMonths = profile.baseAge * 12 + delayMonths
-  const retireDate = birthDay.add(retirementAgeInMonths, 'M')
+  const retirementAgeInMonths = profile.baseAge * MONTHS_PER_YEAR + delayMonths
+  const retireDate = addMonthsClamped(birthDay, retirementAgeInMonths)
 
-  const finalAge = Math.floor(retirementAgeInMonths / 12)
-  const finalMonths = retirementAgeInMonths % 12
+  const finalAge = Math.floor(retirementAgeInMonths / MONTHS_PER_YEAR)
+  const finalMonths = retirementAgeInMonths % MONTHS_PER_YEAR
 
   return {
     newRetirementPolicy: delayMonths > 0,
-    retirementDate: retireDate.toDate(),
-    standardRetirementDate: standardRetirementDate.toDate(),
+    retirementDate: retireDate,
+    standardRetirementDate,
     delayMonths,
     baseRetirementAge: finalAge,
     baseRetirementMonth: finalMonths,

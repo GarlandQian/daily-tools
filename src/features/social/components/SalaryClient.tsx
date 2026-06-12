@@ -28,6 +28,8 @@ const defaultRates: Record<keyof SalaryContributionRates, string> = {
   housingFundEmployee: '12',
   housingFundEmployer: '12'
 }
+const TEXT_FIELD_LIMIT = 80
+const NUMBER_FIELD_LIMIT = 24
 
 const parseAmount = (value: string) => {
   const parsed = Number(value)
@@ -123,7 +125,7 @@ const SalaryClient = () => {
   )
 
   const updateRate = (key: keyof SalaryContributionRates, value: string) => {
-    setRates(current => ({ ...current, [key]: value }))
+    setRates(current => ({ ...current, [key]: value.slice(0, NUMBER_FIELD_LIMIT) }))
   }
 
   const reset = () => {
@@ -207,8 +209,9 @@ const SalaryClient = () => {
                   <Input
                     id="salary-custom-city"
                     value={customCity}
-                    onChange={event => setCustomCity(event.target.value)}
+                    onChange={event => setCustomCity(event.target.value.slice(0, TEXT_FIELD_LIMIT))}
                     placeholder={t('app.social.region.city_placeholder')}
+                    maxLength={TEXT_FIELD_LIMIT}
                   />
                 </Field>
               )}
@@ -223,7 +226,7 @@ const SalaryClient = () => {
                 min="0"
                 type="number"
                 value={grossSalary}
-                onChange={event => setGrossSalary(event.target.value)}
+                onChange={event => setGrossSalary(event.target.value.slice(0, NUMBER_FIELD_LIMIT))}
               />
             </Field>
             <Field id="salary-special" label={t('app.social.salary.special_deductions')}>
@@ -233,7 +236,9 @@ const SalaryClient = () => {
                 min="0"
                 type="number"
                 value={specialDeductions}
-                onChange={event => setSpecialDeductions(event.target.value)}
+                onChange={event =>
+                  setSpecialDeductions(event.target.value.slice(0, NUMBER_FIELD_LIMIT))
+                }
               />
             </Field>
           </div>
@@ -260,7 +265,7 @@ const SalaryClient = () => {
                   min="0"
                   type="number"
                   value={socialBase}
-                  onChange={event => setSocialBase(event.target.value)}
+                  onChange={event => setSocialBase(event.target.value.slice(0, NUMBER_FIELD_LIMIT))}
                 />
               </Field>
               <Field id="salary-housing-base" label={t('app.social.salary.housing_base')}>
@@ -270,7 +275,9 @@ const SalaryClient = () => {
                   min="0"
                   type="number"
                   value={housingFundBase}
-                  onChange={event => setHousingFundBase(event.target.value)}
+                  onChange={event =>
+                    setHousingFundBase(event.target.value.slice(0, NUMBER_FIELD_LIMIT))
+                  }
                 />
               </Field>
             </div>

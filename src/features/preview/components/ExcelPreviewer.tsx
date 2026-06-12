@@ -1,6 +1,6 @@
 'use client'
 import type { JsExcelPreview } from '@js-preview/excel'
-import { FileSpreadsheet, Trash2, Upload } from 'lucide-react'
+import { Download, FileSpreadsheet, Trash2, Upload } from 'lucide-react'
 import { type ChangeEvent, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -125,6 +125,14 @@ const ExcelPreviewer = () => {
     setPreviewUrl(null)
   }
 
+  const handleDownload = () => {
+    if (!previewUrl || !fileInfo) return
+    const anchor = document.createElement('a')
+    anchor.href = previewUrl
+    anchor.download = fileInfo.name
+    anchor.click()
+  }
+
   return (
     <div className="flex flex-col gap-4 h-full overflow-hidden">
       {!hasFile ? (
@@ -172,6 +180,15 @@ const ExcelPreviewer = () => {
               </Button>
               <Button
                 type="button"
+                variant="outline"
+                icon={<Download className="h-4 w-4" />}
+                disabled={!previewUrl}
+                onClick={handleDownload}
+              >
+                {t('app.preview.file.download')}
+              </Button>
+              <Button
+                type="button"
                 variant="ghost"
                 icon={<Trash2 className="h-4 w-4" />}
                 onClick={handleClear}
@@ -182,7 +199,7 @@ const ExcelPreviewer = () => {
             <input
               ref={fileInputRef}
               type="file"
-              accept=".xlsx"
+              accept=".xlsx,.xls"
               className="hidden"
               onChange={handleReupload}
             />
@@ -192,7 +209,7 @@ const ExcelPreviewer = () => {
               {error}
             </p>
           )}
-          <div className="flex-1 overflow-auto relative glass-panel rounded-lg">
+          <div className="glass-panel glass-clip relative flex-1 overflow-auto rounded-lg">
             {loading && (
               <div className="absolute top-5 left-1/2 -translate-x-1/2 z-10">
                 <div className="animate-spin h-6 w-6 border-2 border-[var(--primary)] border-t-transparent rounded-full" />

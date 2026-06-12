@@ -1,6 +1,5 @@
 'use client'
 
-import CryptoJS from 'crypto-js'
 import {
   CheckCircle2,
   Copy,
@@ -13,7 +12,7 @@ import {
   Trash2,
   Upload
 } from 'lucide-react'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useDeferredValue, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
@@ -25,6 +24,8 @@ import { Select } from '@/components/ui/select'
 import { useToast } from '@/components/ui/toast'
 import { useCopy } from '@/hooks/useCopy'
 import { yieldToMain } from '@/utils/scheduler'
+
+import { arrayBufferToWordArray, hashWordArray, loadCryptoJS } from '../utils/crypto'
 
 interface FileHashResult {
   id: string
@@ -41,6 +42,7 @@ type HashAlgorithm = 'md5' | 'sha1' | 'sha256' | 'sha512'
 type ExportFormat = 'txt' | 'csv' | 'json'
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024
+const MAX_VISIBLE_HASH_RESULTS = 40
 const HASH_ALGORITHMS: HashAlgorithm[] = ['md5', 'sha1', 'sha256', 'sha512']
 const HEX_TABLE = Array.from({ length: 256 }, (_, value) => value.toString(16).padStart(2, '0'))
 
@@ -48,17 +50,6 @@ const formatSize = (bytes: number) => {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
-}
-
-const arrayBufferToWordArray = (buffer: ArrayBuffer) => {
-  const bytes = new Uint8Array(buffer)
-  const words: number[] = []
-
-  for (let index = 0; index < bytes.length; index += 1) {
-    words[index >>> 2] |= bytes[index] << (24 - (index % 4) * 8)
-  }
-
-  return CryptoJS.lib.WordArray.create(words, bytes.length)
 }
 
 const arrayBufferToHex = (buffer: ArrayBuffer) => {
@@ -92,17 +83,20 @@ const hashFile = async (file: File): Promise<FileHashResult> => {
 
   await yieldToMain()
 
-  const wordArray = arrayBufferToWordArray(buffer)
+  const cryptoJS = await loadCryptoJS()
+  const wordArray = arrayBufferToWordArray(cryptoJS, buffer)
+  const hashes = hashWordArray(cryptoJS, wordArray, {
+    sha1: sha1Digest ?? undefined,
+    sha256: sha256Digest ?? undefined,
+    sha512: sha512Digest ?? undefined
+  })
 
   return {
     id: `${file.name}-${file.size}-${file.lastModified}`,
     name: file.name,
     size: file.size,
     type: file.type || 'application/octet-stream',
-    md5: CryptoJS.MD5(wordArray).toString(CryptoJS.enc.Hex),
-    sha1: sha1Digest ?? CryptoJS.SHA1(wordArray).toString(CryptoJS.enc.Hex),
-    sha256: sha256Digest ?? CryptoJS.SHA256(wordArray).toString(CryptoJS.enc.Hex),
-    sha512: sha512Digest ?? CryptoJS.SHA512(wordArray).toString(CryptoJS.enc.Hex)
+    ...hashes
   }
 }
 
@@ -168,10 +162,12 @@ const FileHashClient = () => {
   const [query, setQuery] = useState('')
   const [exportFormat, setExportFormat] = useState<ExportFormat>('txt')
   const [enabledAlgorithms, setEnabledAlgorithms] = useState<HashAlgorithm[]>(HASH_ALGORITHMS)
+  const fileBatchRequestRef = useRef(0)
+  const deferredQuery = useDeferredValue(query)
 
   const totalBytes = useMemo(() => results.reduce((total, item) => total + item.size, 0), [results])
   const filteredResults = useMemo(() => {
-    const normalized = query.trim().toLowerCase()
+    const normalized = deferredQuery.trim().toLowerCase()
     if (!normalized) return results
     return results.filter(
       item =>
@@ -179,17 +175,22 @@ const FileHashClient = () => {
         item.type.toLowerCase().includes(normalized) ||
         HASH_ALGORITHMS.some(algorithm => item[algorithm].includes(normalized))
     )
-  }, [query, results])
+  }, [deferredQuery, results])
   const selectedAlgorithms = enabledAlgorithms.length ? enabledAlgorithms : HASH_ALGORITHMS
-  const exportOutput = useMemo(
-    () => buildExport(filteredResults, selectedAlgorithms, exportFormat),
-    [exportFormat, filteredResults, selectedAlgorithms]
+  const visibleResults = useMemo(
+    () => filteredResults.slice(0, MAX_VISIBLE_HASH_RESULTS),
+    [filteredResults]
   )
+  const hiddenResultCount = Math.max(0, filteredResults.length - visibleResults.length)
   const exportMeta = {
     csv: { filename: 'file-hashes.csv', type: 'text/csv;charset=utf-8' },
     json: { filename: 'file-hashes.json', type: 'application/json;charset=utf-8' },
     txt: { filename: 'file-hashes.txt', type: 'text/plain;charset=utf-8' }
   }[exportFormat]
+  const buildCurrentExport = useCallback(
+    () => buildExport(filteredResults, selectedAlgorithms, exportFormat),
+    [exportFormat, filteredResults, selectedAlgorithms]
+  )
 
   const handleFiles = useCallback(
     async (files: File[]) => {
@@ -203,13 +204,18 @@ const FileHashClient = () => {
       if (!validFiles.length) return
 
       setProcessing(true)
+      const requestId = fileBatchRequestRef.current + 1
+      fileBatchRequestRef.current = requestId
 
       try {
         const nextResults: FileHashResult[] = []
         for (const file of validFiles) {
           await yieldToMain()
+          if (fileBatchRequestRef.current !== requestId) return
           nextResults.push(await hashFile(file))
+          if (fileBatchRequestRef.current !== requestId) return
         }
+        if (fileBatchRequestRef.current !== requestId) return
         setResults(prev => {
           const existingIds = new Set(prev.map(item => item.id))
           const uniqueResults = nextResults.filter(item => !existingIds.has(item.id))
@@ -220,15 +226,15 @@ const FileHashClient = () => {
         })
         toast.success(t('public.success'))
       } catch {
-        toast.error(t('public.error'))
+        if (fileBatchRequestRef.current === requestId) toast.error(t('public.error'))
       } finally {
-        setProcessing(false)
+        if (fileBatchRequestRef.current === requestId) setProcessing(false)
       }
     },
     [toast, t]
   )
 
-  const copyAll = () => copy(exportOutput)
+  const copyAll = () => copy(buildCurrentExport())
 
   const toggleAlgorithm = (algorithm: HashAlgorithm, checked: boolean) => {
     setEnabledAlgorithms(prev =>
@@ -258,7 +264,9 @@ const FileHashClient = () => {
               </Button>
               <Button
                 icon={<Download className="h-4 w-4" />}
-                onClick={() => downloadText(exportOutput, exportMeta.filename, exportMeta.type)}
+                onClick={() =>
+                  downloadText(buildCurrentExport(), exportMeta.filename, exportMeta.type)
+                }
                 disabled={!filteredResults.length}
               >
                 {t('app.hash.file.download')}
@@ -305,7 +313,7 @@ const FileHashClient = () => {
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-tertiary)]" />
                 <Input
                   value={query}
-                  onChange={event => setQuery(event.target.value)}
+                  onChange={event => setQuery(event.target.value.slice(0, 160))}
                   placeholder={t('app.hash.file.search')}
                   className="pl-9"
                 />
@@ -352,7 +360,15 @@ const FileHashClient = () => {
         <CardContent className="flex-1 overflow-auto">
           {filteredResults.length ? (
             <div className="flex flex-col gap-4">
-              {filteredResults.map(item => (
+              {hiddenResultCount > 0 && (
+                <p className="rounded-xl border border-[var(--warning)] bg-[var(--warning-subtle)] px-3 py-2 text-xs text-[var(--warning)]">
+                  {t('app.hash.file.render_limited', {
+                    count: filteredResults.length,
+                    visible: visibleResults.length
+                  })}
+                </p>
+              )}
+              {visibleResults.map(item => (
                 <div
                   key={item.id}
                   className="glass-panel glass-clip rounded-2xl border border-[var(--glass-border)] p-4"

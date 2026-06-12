@@ -14,8 +14,8 @@ import {
   Sparkles,
   Trash2
 } from 'lucide-react'
+import dynamic from 'next/dynamic'
 import Image from 'next/image'
-import { QRCodeCanvas, QRCodeSVG } from 'qrcode.react'
 import { useCallback, useDeferredValue, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -29,6 +29,8 @@ import { Select } from '@/components/ui/select'
 import { Slider } from '@/components/ui/slider'
 import { Textarea } from '@/components/ui/textarea'
 import { useToast } from '@/components/ui/toast'
+
+import type { QrcodeRendererProps } from './QrcodeRenderer'
 
 type ErrorCorrectionLevel = 'L' | 'M' | 'Q' | 'H'
 type FindingLevel = 'danger' | 'good' | 'warn'
@@ -115,8 +117,24 @@ const QR_PRESETS = [
   }
 ] as const
 
+const DynamicQrcodeRenderer = dynamic<QrcodeRendererProps>(
+  () => import('./QrcodeRenderer').then(module => module.QrcodeRenderer),
+  {
+    loading: () => (
+      <div
+        aria-hidden="true"
+        className="flex size-64 items-center justify-center rounded-[1.35rem] border border-[var(--glass-border)] bg-[var(--glass-input-bg)]"
+      >
+        <QrCode className="h-10 w-10 animate-pulse text-[var(--text-tertiary)]" />
+      </div>
+    ),
+    ssr: false
+  }
+)
+
 const QR_LEVELS = ['L', 'M', 'Q', 'H'] as const
 const MAX_LOGO_SIZE = 1024 * 1024
+const MAX_QR_CONTENT_CHARS = 12000
 const QR_LEVEL_BYTE_LIMITS: Record<ErrorCorrectionLevel, number> = {
   L: 2953,
   M: 2331,
@@ -125,6 +143,7 @@ const QR_LEVEL_BYTE_LIMITS: Record<ErrorCorrectionLevel, number> = {
 }
 const LARGE_PAYLOAD_WARNING_BYTES = 900
 const MIN_CONTRAST_RATIO = 4.5
+const qrNumberFormatter = new Intl.NumberFormat()
 
 const checkerboardStyle = {
   backgroundColor: 'rgba(255,255,255,0.18)',
@@ -363,6 +382,8 @@ const QrcodeClient = () => {
   const qrRef = useRef<HTMLDivElement>(null)
   const svgRef = useRef<SVGSVGElement>(null)
   const [formData, setFormData] = useState<QrcodeFormData>(DEFAULT_FORM_DATA)
+  const [isContentTruncated, setIsContentTruncated] = useState(false)
+  const [isQrRendererReady, setIsQrRendererReady] = useState(false)
   const [logo, setLogo] = useState<LogoState | null>(null)
   const deferredFormData = useDeferredValue(formData)
 
@@ -488,12 +509,27 @@ const QrcodeClient = () => {
     ]
   )
 
+  const handleQrRendererReady = useCallback(() => {
+    setIsQrRendererReady(true)
+  }, [])
+
+  const setContentValue = useCallback((value: string) => {
+    const isTruncated = value.length > MAX_QR_CONTENT_CHARS
+    setIsContentTruncated(isTruncated)
+    setFormData(prev => ({
+      ...prev,
+      content: isTruncated ? value.slice(0, MAX_QR_CONTENT_CHARS) : value
+    }))
+  }, [])
+
   const handleApplyPreset = useCallback((value: string) => {
+    setIsContentTruncated(false)
     setFormData(prev => ({ ...prev, content: value }))
   }, [])
 
   const handleReset = useCallback(() => {
     setFormData(DEFAULT_FORM_DATA)
+    setIsContentTruncated(false)
     setLogo(null)
   }, [])
 
@@ -734,9 +770,16 @@ const QrcodeClient = () => {
                   id="content"
                   rows={6}
                   value={formData.content}
-                  onChange={e => setFormData(prev => ({ ...prev, content: e.target.value }))}
+                  onChange={e => setContentValue(e.target.value)}
                   placeholder={t('app.generation.qrcode.content_placeholder')}
                 />
+                {isContentTruncated && (
+                  <p className="rounded-lg border border-[var(--warning)] bg-[var(--warning-subtle)] px-3 py-2 text-sm text-[var(--warning)]">
+                    {t('app.generation.qrcode.warning.content_truncated', {
+                      limit: qrNumberFormatter.format(MAX_QR_CONTENT_CHARS)
+                    })}
+                  </p>
+                )}
               </div>
 
               <div className="flex flex-wrap gap-2">
@@ -899,7 +942,7 @@ const QrcodeClient = () => {
                   type="button"
                   variant="primary"
                   icon={<FileImage className="h-4 w-4" />}
-                  disabled={!canExportQr}
+                  disabled={!canExportQr || !isQrRendererReady}
                   onClick={handleDownload}
                 >
                   {t('app.generation.qrcode.download_png')}
@@ -908,7 +951,7 @@ const QrcodeClient = () => {
                   type="button"
                   variant="default"
                   icon={<FileCode2 className="h-4 w-4" />}
-                  disabled={!canExportQr}
+                  disabled={!canExportQr || !isQrRendererReady}
                   onClick={handleDownloadSvg}
                 >
                   {t('app.generation.qrcode.download_svg')}
@@ -917,7 +960,7 @@ const QrcodeClient = () => {
                   type="button"
                   variant="default"
                   icon={<Copy className="h-4 w-4" />}
-                  disabled={!canExportQr}
+                  disabled={!canExportQr || !isQrRendererReady}
                   onClick={handleCopyPngDataUrl}
                 >
                   {t('app.generation.qrcode.copy_data_url')}
@@ -926,7 +969,7 @@ const QrcodeClient = () => {
                   type="button"
                   variant="default"
                   icon={<Copy className="h-4 w-4" />}
-                  disabled={!canExportQr}
+                  disabled={!canExportQr || !isQrRendererReady}
                   onClick={handleCopySvg}
                 >
                   {t('app.generation.qrcode.copy_svg')}
@@ -984,9 +1027,12 @@ const QrcodeClient = () => {
                           : { backgroundColor: bgColor }
                       }
                     >
-                      <QRCodeCanvas {...qrProps} />
+                      <DynamicQrcodeRenderer
+                        {...qrProps}
+                        svgRef={svgRef}
+                        onReady={handleQrRendererReady}
+                      />
                     </div>
-                    <QRCodeSVG ref={svgRef} {...qrProps} className="hidden" />
                   </div>
                 </div>
               ) : previewHasContent ? (

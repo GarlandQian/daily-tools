@@ -27,6 +27,11 @@ import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
+import {
+  createOutputPreview,
+  isOutputPreviewLimited,
+  OUTPUT_PREVIEW_CHARS
+} from '@/utils/outputPreview'
 
 const REL_TYPES = [
   'preload',
@@ -50,6 +55,10 @@ const METHODS = ['GET', 'HEAD', 'POST', 'PUT'] as const
 const OUTPUT_TYPES = ['http', 'headers', 'node', 'json', 'csv'] as const
 const WORKSPACE_LIMIT = 50000
 const HINT_LIMIT = 160
+const HINT_MEDIA_FIELD_LIMIT = 320
+const OUTPUT_PREVIEW_HINT_LIMIT = 80
+const VISIBLE_FINDING_LIMIT = 24
+const VISIBLE_HINT_LIMIT = 42
 
 type RelType = (typeof REL_TYPES)[number]
 type AsType = (typeof AS_TYPES)[number]
@@ -438,7 +447,7 @@ const parseWorkspace = (input: string): ParsedWorkspace => {
     hints,
     sawEarlyStatus,
     sawFinalStatus,
-    truncated: input.length > WORKSPACE_LIMIT
+    truncated: input.length >= WORKSPACE_LIMIT
   }
 }
 
@@ -707,6 +716,10 @@ export default function EarlyHintsClient() {
     () => createHint(draft.hint, formatLink(draft.hint), 'manual', 0),
     [draft.hint]
   )
+  const manualFinalHint = useMemo(
+    () => createHint(draft.hint, formatLink(draft.hint), 'final', -1),
+    [draft.hint]
+  )
   const parsed = useMemo(() => parseWorkspace(deferredWorkspace), [deferredWorkspace])
   const parsedEarlyHints = useMemo(
     () => parsed.hints.filter(hint => hint.source === 'early' || hint.source === 'plain'),
@@ -722,8 +735,11 @@ export default function EarlyHintsClient() {
   )
   const finalHints = useMemo(
     () =>
-      [...(draft.includeFinalLink ? [manualHint] : []), ...parsedFinalHints].slice(0, HINT_LIMIT),
-    [draft.includeFinalLink, manualHint, parsedFinalHints]
+      [...(draft.includeFinalLink ? [manualFinalHint] : []), ...parsedFinalHints].slice(
+        0,
+        HINT_LIMIT
+      ),
+    [draft.includeFinalLink, manualFinalHint, parsedFinalHints]
   )
   const allHints = useMemo(() => [...earlyHints, ...finalHints], [earlyHints, finalHints])
   const findings = useMemo(
@@ -731,11 +747,30 @@ export default function EarlyHintsClient() {
     [deferredWorkspace, draft, earlyHints, finalHints, parsed]
   )
   const score = useMemo(() => getScore(findings), [findings])
-  const output = useMemo(
+  const outputPreviewEarlyHints = useMemo(
+    () => earlyHints.slice(0, OUTPUT_PREVIEW_HINT_LIMIT),
+    [earlyHints]
+  )
+  const outputPreviewFinalHints = useMemo(
+    () => finalHints.slice(0, OUTPUT_PREVIEW_HINT_LIMIT),
+    [finalHints]
+  )
+  const outputPreviewSource = useMemo(
+    () => buildOutput(outputPreviewEarlyHints, outputPreviewFinalHints, draft, outputType),
+    [draft, outputPreviewEarlyHints, outputPreviewFinalHints, outputType]
+  )
+  const outputPreview = useMemo(
+    () => createOutputPreview(outputPreviewSource),
+    [outputPreviewSource]
+  )
+  const outputPreviewLimited = isOutputPreviewLimited(outputPreviewSource)
+  const outputPreviewRowsLimited =
+    earlyHints.length > outputPreviewEarlyHints.length ||
+    finalHints.length > outputPreviewFinalHints.length
+  const buildCurrentOutput = useCallback(
     () => buildOutput(earlyHints, finalHints, draft, outputType),
     [draft, earlyHints, finalHints, outputType]
   )
-  const csvOutput = useMemo(() => buildCsv(allHints), [allHints])
   const filteredFindings = useMemo(() => {
     const query = deferredAuditQuery.trim().toLowerCase()
     if (!query) return findings
@@ -745,6 +780,11 @@ export default function EarlyHintsClient() {
       return text.includes(query)
     })
   }, [deferredAuditQuery, findings, t])
+  const visibleFindings = useMemo(
+    () => filteredFindings.slice(0, VISIBLE_FINDING_LIMIT),
+    [filteredFindings]
+  )
+  const findingsLimited = filteredFindings.length > visibleFindings.length
   const filteredHints = useMemo(() => {
     const query = deferredParsedQuery.trim().toLowerCase()
     if (!query) return allHints
@@ -752,6 +792,8 @@ export default function EarlyHintsClient() {
       `${hint.source} ${hint.rel} ${hint.href} ${hint.asType}`.toLowerCase().includes(query)
     )
   }, [allHints, deferredParsedQuery])
+  const visibleHints = useMemo(() => filteredHints.slice(0, VISIBLE_HINT_LIMIT), [filteredHints])
+  const hintsLimited = filteredHints.length > visibleHints.length
   const metrics = useMemo(
     () => ({
       critical: findings.filter(item => item.level === 'danger').length,
@@ -992,7 +1034,10 @@ export default function EarlyHintsClient() {
                 <Input
                   id="early-media"
                   value={draft.hint.media}
-                  onChange={event => updateHint('media', event.target.value.slice(0, 160))}
+                  onChange={event =>
+                    updateHint('media', event.target.value.slice(0, HINT_MEDIA_FIELD_LIMIT))
+                  }
+                  maxLength={HINT_MEDIA_FIELD_LIMIT}
                   placeholder="(min-width: 768px)"
                   className="font-mono"
                   spellCheck={false}
@@ -1109,30 +1154,38 @@ export default function EarlyHintsClient() {
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-tertiary)]" />
               <Input
                 value={auditQuery}
-                onChange={event => setAuditQuery(event.target.value)}
+                onChange={event => setAuditQuery(event.target.value.slice(0, 160))}
                 placeholder={t('app.converter.early_hints.audit_search')}
                 className="pl-10"
               />
             </div>
             <div className="space-y-2">
-              {filteredFindings.slice(0, 24).map((finding, index) => (
+              {visibleFindings.map((finding, index) => (
                 <div
                   key={`${finding.key}:${finding.subject}:${index}`}
                   className={`rounded-xl border px-3 py-2 text-xs ${levelClass(finding.level)}`}
                 >
                   <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
-                    <span className="min-w-0 break-words">
+                    <span className="min-w-0 break-all leading-5">
                       <span className="font-semibold">{finding.subject}</span>
-                      <span className="mx-2">/</span>
+                      <span className="mx-2 inline-block">/</span>
                       {t(`app.converter.early_hints.audit.${finding.key}`)}
                     </span>
-                    <span className="font-medium">
+                    <span className="shrink-0 font-medium">
                       {t(`app.converter.early_hints.level.${finding.level}`)}
                     </span>
                   </div>
                 </div>
               ))}
             </div>
+            {findingsLimited && (
+              <p className="text-xs leading-5 text-amber-600 dark:text-amber-300">
+                {t('public.rows_render_limited', {
+                  total: filteredFindings.length,
+                  visible: visibleFindings.length
+                })}
+              </p>
+            )}
           </CardContent>
         </Card>
 
@@ -1162,12 +1215,30 @@ export default function EarlyHintsClient() {
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Textarea readOnly value={output} className="min-h-[320px] font-mono" />
+            <Textarea readOnly value={outputPreview} className="min-h-[320px] font-mono" />
+            {outputPreviewLimited && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('public.output_preview_limited', {
+                  total: outputPreviewSource.length.toLocaleString(),
+                  visible: OUTPUT_PREVIEW_CHARS.toLocaleString()
+                })}
+              </p>
+            )}
+            {outputPreviewRowsLimited && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('public.output_preview_rows_limited', {
+                  total: (earlyHints.length + finalHints.length).toLocaleString(),
+                  visible: (
+                    outputPreviewEarlyHints.length + outputPreviewFinalHints.length
+                  ).toLocaleString()
+                })}
+              </p>
+            )}
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => copy(output)}
+                onClick={() => copy(buildCurrentOutput())}
                 className="w-full sm:w-auto"
               >
                 <Copy className="h-4 w-4" />
@@ -1176,7 +1247,9 @@ export default function EarlyHintsClient() {
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => downloadText(output, 'early-hints.txt', 'text/plain;charset=utf-8')}
+                onClick={() =>
+                  downloadText(buildCurrentOutput(), 'early-hints.txt', 'text/plain;charset=utf-8')
+                }
                 className="w-full sm:w-auto"
               >
                 <Download className="h-4 w-4" />
@@ -1185,7 +1258,9 @@ export default function EarlyHintsClient() {
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => downloadText(csvOutput, 'early-hints.csv', 'text/csv;charset=utf-8')}
+                onClick={() =>
+                  downloadText(buildCsv(allHints), 'early-hints.csv', 'text/csv;charset=utf-8')
+                }
                 className="w-full sm:w-auto"
               >
                 <Download className="h-4 w-4" />
@@ -1209,35 +1284,45 @@ export default function EarlyHintsClient() {
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-tertiary)]" />
               <Input
                 value={parsedQuery}
-                onChange={event => setParsedQuery(event.target.value)}
+                onChange={event => setParsedQuery(event.target.value.slice(0, 160))}
                 placeholder={t('app.converter.early_hints.parsed_search')}
                 className="pl-10"
               />
             </div>
             {filteredHints.length ? (
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {filteredHints.slice(0, 42).map(hint => (
-                  <div key={hint.id} className="glass-input min-w-0 rounded-xl p-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <p className="break-all font-mono text-sm font-semibold text-[var(--text-primary)]">
-                        {hint.rel}
+              <>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                  {visibleHints.map((hint, index) => (
+                    <div key={`${hint.id}:${index}`} className="glass-input min-w-0 rounded-xl p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <p className="break-all font-mono text-sm font-semibold text-[var(--text-primary)]">
+                          {hint.rel}
+                        </p>
+                        <span className="shrink-0 rounded-full bg-[var(--primary)]/10 px-2 py-1 text-xs font-medium text-[var(--primary)]">
+                          {t(`app.converter.early_hints.source.${hint.source}`)}
+                        </span>
+                      </div>
+                      <p className="mt-2 line-clamp-3 break-all font-mono text-xs leading-5 text-[var(--text-secondary)]">
+                        {hint.href}
                       </p>
-                      <span className="shrink-0 rounded-full bg-[var(--primary)]/10 px-2 py-1 text-xs font-medium text-[var(--primary)]">
-                        {t(`app.converter.early_hints.source.${hint.source}`)}
-                      </span>
+                      <p className="mt-2 text-xs text-[var(--text-tertiary)]">
+                        {hint.asType} /{' '}
+                        {hint.valid
+                          ? t('app.converter.early_hints.valid')
+                          : t('app.converter.early_hints.invalid')}
+                      </p>
                     </div>
-                    <p className="mt-2 line-clamp-3 break-all font-mono text-xs leading-5 text-[var(--text-secondary)]">
-                      {hint.href}
-                    </p>
-                    <p className="mt-2 text-xs text-[var(--text-tertiary)]">
-                      {hint.asType} /{' '}
-                      {hint.valid
-                        ? t('app.converter.early_hints.valid')
-                        : t('app.converter.early_hints.invalid')}
-                    </p>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+                {hintsLimited && (
+                  <p className="text-xs leading-5 text-amber-600 dark:text-amber-300">
+                    {t('public.rows_render_limited', {
+                      total: filteredHints.length,
+                      visible: visibleHints.length
+                    })}
+                  </p>
+                )}
+              </>
             ) : (
               <div className="glass-input rounded-xl p-6 text-center text-sm text-[var(--text-secondary)]">
                 {t('app.converter.early_hints.empty')}

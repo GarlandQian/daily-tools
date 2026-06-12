@@ -4,6 +4,7 @@ import {
   Copy,
   Eye,
   EyeOff,
+  FileDown,
   FileJson,
   KeyRound,
   RotateCcw,
@@ -148,6 +149,8 @@ const PASSPHRASE_WORDS = [
   'zenith'
 ]
 const UINT32_RANGE = 0x100000000
+const MAX_PASSWORD_VISIBLE_ROWS = 40
+const MAX_PASSWORD_EXPORT_PREVIEW_ROWS = 40
 
 const clampNumber = (value: number, min: number, max: number) => {
   if (!Number.isFinite(value)) return min
@@ -260,6 +263,16 @@ const formatPasswordOutput = (
   return passwords.join('\n')
 }
 
+const downloadText = (content: string, filename: string, type: string) => {
+  const blob = new Blob([content], { type })
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  anchor.click()
+  URL.revokeObjectURL(url)
+}
+
 const PasswordClient = () => {
   const { t } = useTranslation()
   const toast = useToast()
@@ -282,10 +295,19 @@ const PasswordClient = () => {
     return Math.floor(normalizedLength * Math.log2(charset.length))
   }, [charset.length, formData.mode, normalizedLength, normalizedPassphraseWords])
   const strengthLevel = getStrengthLevel(entropyBits)
-  const formattedOutput = useMemo(
-    () => formatPasswordOutput(passwords, outputType, entropyBits, strengthLevel),
-    [entropyBits, outputType, passwords, strengthLevel]
+  const visiblePasswords = useMemo(() => passwords.slice(0, MAX_PASSWORD_VISIBLE_ROWS), [passwords])
+  const exportPreviewPasswords = useMemo(() => {
+    const previewPasswords = passwords.slice(0, MAX_PASSWORD_EXPORT_PREVIEW_ROWS)
+
+    if (showSecrets) return previewPasswords
+    return previewPasswords.map(password => '*'.repeat(Math.min(password.length, 32)))
+  }, [passwords, showSecrets])
+  const exportPreview = useMemo(
+    () => formatPasswordOutput(exportPreviewPasswords, outputType, entropyBits, strengthLevel),
+    [entropyBits, exportPreviewPasswords, outputType, strengthLevel]
   )
+  const isRowPreviewLimited = passwords.length > visiblePasswords.length
+  const isExportPreviewLimited = passwords.length > exportPreviewPasswords.length
   const policyHints = useMemo(() => {
     const hints: string[] = []
 
@@ -351,8 +373,25 @@ const PasswordClient = () => {
 
   const handleCopyAll = useCallback(() => {
     if (!passwords.length) return
-    void copy(formattedOutput)
-  }, [copy, formattedOutput, passwords.length])
+    void copy(formatPasswordOutput(passwords, outputType, entropyBits, strengthLevel))
+  }, [copy, entropyBits, outputType, passwords, strengthLevel])
+
+  const handleDownload = useCallback(() => {
+    if (!passwords.length) return
+    const extension = outputType === 'json' ? 'json' : outputType === 'csv' ? 'csv' : 'txt'
+    const mime =
+      outputType === 'json'
+        ? 'application/json;charset=utf-8'
+        : outputType === 'csv'
+          ? 'text/csv;charset=utf-8'
+          : 'text/plain;charset=utf-8'
+
+    downloadText(
+      formatPasswordOutput(passwords, outputType, entropyBits, strengthLevel),
+      `daily-tools-passwords.${extension}`,
+      mime
+    )
+  }, [entropyBits, outputType, passwords, strengthLevel])
 
   return (
     <div className="flex size-full flex-col gap-5">
@@ -549,6 +588,15 @@ const PasswordClient = () => {
             </Button>
             <Button
               type="button"
+              variant="default"
+              icon={<FileDown className="h-4 w-4" />}
+              onClick={handleDownload}
+              disabled={!passwords.length}
+            >
+              {t('app.generation.password.download')}
+            </Button>
+            <Button
+              type="button"
               variant="ghost"
               icon={showSecrets ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               onClick={() => setShowSecrets(prev => !prev)}
@@ -598,7 +646,7 @@ const PasswordClient = () => {
 
           {passwords.length ? (
             <div className="flex flex-col gap-3">
-              {passwords.map((password, index) => (
+              {visiblePasswords.map((password, index) => (
                 <div
                   key={`${password}-${index}`}
                   className="flex items-center gap-3 rounded-2xl border border-[var(--glass-border)] bg-[var(--glass-input-bg)] px-4 py-3"
@@ -617,14 +665,31 @@ const PasswordClient = () => {
                 </div>
               ))}
 
+              {isRowPreviewLimited && (
+                <div className="rounded-2xl border border-[var(--glass-border)] bg-[var(--glass-input-bg)] px-4 py-3 text-sm text-[var(--text-secondary)]">
+                  {t('app.generation.password.rows_limited', {
+                    total: passwords.length,
+                    visible: visiblePasswords.length
+                  })}
+                </div>
+              )}
+
               <div className="glass-input rounded-2xl p-4">
                 <div className="mb-2 flex items-center gap-2 text-xs font-medium text-[var(--text-tertiary)]">
                   <FileJson className="h-4 w-4" />
                   {t('app.generation.password.export_preview')}
                 </div>
                 <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-all font-mono text-xs text-[var(--text-primary)]">
-                  {formattedOutput}
+                  {exportPreview}
                 </pre>
+                {isExportPreviewLimited && (
+                  <p className="mt-3 text-xs leading-5 text-[var(--text-secondary)]">
+                    {t('app.generation.password.preview_limited', {
+                      total: passwords.length,
+                      visible: exportPreviewPasswords.length
+                    })}
+                  </p>
+                )}
               </div>
             </div>
           ) : (

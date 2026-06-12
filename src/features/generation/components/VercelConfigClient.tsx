@@ -21,15 +21,23 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
+import { InputCapNotice } from '@/components/ui/input-cap-notice'
 import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
+import {
+  createOutputPreview,
+  isOutputPreviewLimited,
+  OUTPUT_PREVIEW_CHARS
+} from '@/utils/outputPreview'
 
 const FRAMEWORKS = ['nextjs', 'vite', 'astro', 'sveltekit', 'other'] as const
 const OUTPUT_TYPES = ['vercel', 'package', 'env', 'markdown', 'json', 'csv'] as const
 const WORKSPACE_LIMIT = 80000
 const RENDER_LIMIT = 80
+const FINDING_RENDER_LIMIT = 80
+const DRAFT_FIELD_LIMIT = 1200
 const UNSAFE_FIELD_PATTERN = /[\r\n]/u
 const SENSITIVE_PATTERN = /(?:SECRET|TOKEN|PASSWORD|PRIVATE|CREDENTIAL|DATABASE_URL|API_KEY)/iu
 
@@ -86,9 +94,11 @@ interface Preset {
 
 interface ParsedConfig {
   capped: boolean
+  cronCount: number
   crons: Array<{ path: string; schedule: string }>
   error: string
   framework: string
+  functionCount: number
   functions: Array<{ memory: string; maxDuration: string; pattern: string }>
   hasBuilds: boolean
   hasFluid: boolean
@@ -609,9 +619,11 @@ function parseVercelConfig(input: string): ParsedConfig {
   const capped = input.length > WORKSPACE_LIMIT
   const empty: ParsedConfig = {
     capped,
+    cronCount: 0,
     crons: [],
     error: '',
     framework: '',
+    functionCount: 0,
     functions: [],
     hasBuilds: false,
     hasFluid: false,
@@ -645,14 +657,19 @@ function parseVercelConfig(input: string): ParsedConfig {
     return { ...empty, error: 'not_object' }
 
   const config = parsed as Record<string, unknown>
-  const headers = Array.isArray(config.headers) ? config.headers.slice(0, RENDER_LIMIT) : []
-  const rewrites = Array.isArray(config.rewrites) ? config.rewrites.slice(0, RENDER_LIMIT) : []
-  const redirects = Array.isArray(config.redirects) ? config.redirects.slice(0, RENDER_LIMIT) : []
-  const crons = Array.isArray(config.crons) ? config.crons.slice(0, RENDER_LIMIT) : []
-  const functions =
+  const headerItems = Array.isArray(config.headers) ? config.headers : []
+  const rewriteItems = Array.isArray(config.rewrites) ? config.rewrites : []
+  const redirectItems = Array.isArray(config.redirects) ? config.redirects : []
+  const cronItems = Array.isArray(config.crons) ? config.crons : []
+  const functionEntries =
     config.functions && typeof config.functions === 'object' && !Array.isArray(config.functions)
-      ? Object.entries(config.functions as Record<string, unknown>).slice(0, RENDER_LIMIT)
+      ? Object.entries(config.functions as Record<string, unknown>)
       : []
+  const headers = headerItems.slice(0, RENDER_LIMIT)
+  const rewrites = rewriteItems.slice(0, RENDER_LIMIT)
+  const redirects = redirectItems.slice(0, RENDER_LIMIT)
+  const crons = cronItems.slice(0, RENDER_LIMIT)
+  const functions = functionEntries.slice(0, RENDER_LIMIT)
   const imageConfig =
     config.images && typeof config.images === 'object' && !Array.isArray(config.images)
       ? (config.images as Record<string, unknown>)
@@ -667,6 +684,7 @@ function parseVercelConfig(input: string): ParsedConfig {
 
   return {
     capped,
+    cronCount: cronItems.length,
     crons: crons.map(item => {
       const record = item && typeof item === 'object' ? (item as Record<string, unknown>) : {}
       return { path: parseString(record.path), schedule: parseString(record.schedule) }
@@ -678,6 +696,7 @@ function parseVercelConfig(input: string): ParsedConfig {
         : config.framework === null
           ? 'other'
           : '',
+    functionCount: functionEntries.length,
     functions: functions.map(([pattern, value]) => {
       const record =
         value && typeof value === 'object' && !Array.isArray(value)
@@ -705,7 +724,7 @@ function parseVercelConfig(input: string): ParsedConfig {
         /x-vercel-enable-rewrite-caching|Vercel-Cache-Tag|CDN-Cache-Control/iu
       )
     ),
-    headerCount: headers.length,
+    headerCount: headerItems.length,
     headers: headers.map(item => {
       const record = item && typeof item === 'object' ? (item as Record<string, unknown>) : {}
       const nested = Array.isArray(record.headers) ? record.headers : []
@@ -713,7 +732,7 @@ function parseVercelConfig(input: string): ParsedConfig {
     }),
     imageDangerousSvg: parseBoolean(imageConfig.dangerouslyAllowSVG),
     keys: Object.keys(config).slice(0, RENDER_LIMIT),
-    redirectCount: Array.isArray(config.redirects) ? config.redirects.length : 0,
+    redirectCount: redirectItems.length,
     redirects: redirects.map(item => {
       const record = item && typeof item === 'object' ? (item as Record<string, unknown>) : {}
       return {
@@ -725,7 +744,7 @@ function parseVercelConfig(input: string): ParsedConfig {
         source: parseString(record.source)
       }
     }),
-    rewriteCount: Array.isArray(config.rewrites) ? config.rewrites.length : 0,
+    rewriteCount: rewriteItems.length,
     rewrites: rewrites.map(item => {
       const record = item && typeof item === 'object' ? (item as Record<string, unknown>) : {}
       return { destination: parseString(record.destination), source: parseString(record.source) }
@@ -915,15 +934,20 @@ export default function VercelConfigClient() {
   const { copy } = useCopy()
   const [draft, setDraft] = useState<VercelDraft>(DEFAULT_DRAFT)
   const [workspace, setWorkspace] = useState(PRESETS[0].workspace)
+  const [isWorkspaceCapped, setIsWorkspaceCapped] = useState(false)
   const [auditQuery, setAuditQuery] = useState('')
   const [outputType, setOutputType] = useState<OutputType>('vercel')
   const deferredWorkspace = useDeferredValue(workspace)
 
   const vercelOutput = useMemo(() => buildVercelConfig(draft), [draft])
-  const parsed = useMemo(() => parseVercelConfig(deferredWorkspace), [deferredWorkspace])
+  const parsed = useMemo(() => {
+    const next = parseVercelConfig(deferredWorkspace)
+
+    return isWorkspaceCapped ? { ...next, capped: true } : next
+  }, [deferredWorkspace, isWorkspaceCapped])
   const findings = useMemo(() => auditDraft(draft, parsed), [draft, parsed])
   const csvOutput = useMemo(() => buildCsv(findings), [findings])
-  const outputValue = useMemo(() => {
+  const buildCurrentOutput = useCallback(() => {
     if (outputType === 'vercel') return vercelOutput
     if (outputType === 'package') return buildPackageSnippet(draft)
     if (outputType === 'env') return buildEnvChecklist(draft)
@@ -932,6 +956,12 @@ export default function VercelConfigClient() {
 
     return buildMarkdown(draft, findings, parsed)
   }, [csvOutput, draft, findings, outputType, parsed, vercelOutput])
+  const outputPreviewSource = useMemo(() => buildCurrentOutput(), [buildCurrentOutput])
+  const outputPreview = useMemo(
+    () => createOutputPreview(outputPreviewSource),
+    [outputPreviewSource]
+  )
+  const outputPreviewLimited = isOutputPreviewLimited(outputPreviewSource)
 
   const filteredFindings = useMemo(() => {
     const query = auditQuery.trim().toLowerCase()
@@ -943,6 +973,40 @@ export default function VercelConfigClient() {
         .includes(query)
     )
   }, [auditQuery, findings, t])
+  const visibleFindings = useMemo(
+    () => filteredFindings.slice(0, FINDING_RENDER_LIMIT),
+    [filteredFindings]
+  )
+  const findingsLimited = filteredFindings.length > visibleFindings.length
+  const parsedRows = useMemo(
+    () => [
+      ...parsed.functions.map(item => ({
+        detail: `${item.maxDuration || '-'}s / ${item.memory || '-'}`,
+        label: item.pattern,
+        type: t('app.generation.vercel.parsed.function')
+      })),
+      ...parsed.rewrites.map(item => ({
+        detail: item.destination,
+        label: item.source,
+        type: t('app.generation.vercel.parsed.rewrite')
+      })),
+      ...parsed.redirects.map(item => ({
+        detail: item.destination,
+        label: item.source,
+        type: t('app.generation.vercel.parsed.redirect')
+      })),
+      ...parsed.crons.map(item => ({
+        detail: item.schedule,
+        label: item.path,
+        type: t('app.generation.vercel.parsed.cron')
+      }))
+    ],
+    [parsed.crons, parsed.functions, parsed.redirects, parsed.rewrites, t]
+  )
+  const visibleParsedRows = useMemo(() => parsedRows.slice(0, RENDER_LIMIT), [parsedRows])
+  const parsedRowTotal =
+    parsed.functionCount + parsed.rewriteCount + parsed.redirectCount + parsed.cronCount
+  const parsedRowsLimited = parsedRowTotal > visibleParsedRows.length
 
   const metrics = useMemo(() => {
     const critical = findings.filter(item => item.level === 'danger').length
@@ -964,20 +1028,32 @@ export default function VercelConfigClient() {
   }, [findings, parsed.functions.length, parsed.redirectCount, parsed.rewriteCount, t])
 
   const updateDraft = useCallback(<K extends keyof VercelDraft>(key: K, value: VercelDraft[K]) => {
-    setDraft(current => ({ ...current, [key]: value }))
+    const nextValue =
+      typeof value === 'string' ? (value.slice(0, DRAFT_FIELD_LIMIT) as VercelDraft[K]) : value
+    setDraft(current => ({ ...current, [key]: nextValue }))
   }, [])
 
-  const applyPreset = useCallback((preset: Preset) => {
-    setDraft(preset.draft)
-    setWorkspace(preset.workspace)
+  const updateWorkspace = useCallback((value: string) => {
+    const capped = value.length > WORKSPACE_LIMIT
+
+    setIsWorkspaceCapped(capped)
+    setWorkspace(capped ? value.slice(0, WORKSPACE_LIMIT) : value)
   }, [])
+
+  const applyPreset = useCallback(
+    (preset: Preset) => {
+      setDraft(preset.draft)
+      updateWorkspace(preset.workspace)
+    },
+    [updateWorkspace]
+  )
 
   const reset = useCallback(() => {
     setDraft(DEFAULT_DRAFT)
-    setWorkspace(PRESETS[0].workspace)
+    updateWorkspace(PRESETS[0].workspace)
     setAuditQuery('')
     setOutputType('vercel')
-  }, [])
+  }, [updateWorkspace])
 
   const copySummary = useCallback(() => {
     copy(
@@ -1386,12 +1462,12 @@ export default function VercelConfigClient() {
                 <Input
                   className="pl-9"
                   value={auditQuery}
-                  onChange={event => setAuditQuery(event.target.value)}
+                  onChange={event => setAuditQuery(event.target.value.slice(0, 160))}
                   placeholder={t('app.generation.vercel.audit_search')}
                 />
               </div>
               <div className="grid max-h-[420px] gap-2 overflow-auto pr-1">
-                {filteredFindings.map((finding, index) => (
+                {visibleFindings.map((finding, index) => (
                   <div
                     key={`${finding.key}-${finding.subject}-${index}`}
                     className="glass-panel flex min-w-0 items-start gap-3 rounded-2xl p-3"
@@ -1407,13 +1483,21 @@ export default function VercelConfigClient() {
                       <p className="text-sm font-semibold text-[var(--text-primary)]">
                         {t(`app.generation.vercel.audit.${finding.key}`)}
                       </p>
-                      <p className="mt-1 truncate text-xs text-[var(--text-muted)]">
+                      <p className="mt-1 break-all font-mono text-xs leading-5 text-[var(--text-muted)]">
                         {finding.subject}
                       </p>
                     </div>
                   </div>
                 ))}
               </div>
+              {findingsLimited && (
+                <p className="text-xs leading-5 text-amber-600 dark:text-amber-300">
+                  {t('public.rows_render_limited', {
+                    total: filteredFindings.length,
+                    visible: visibleFindings.length
+                  })}
+                </p>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -1427,17 +1511,22 @@ export default function VercelConfigClient() {
             <CardContent className="grid gap-3">
               <Textarea
                 value={workspace}
-                onChange={event => setWorkspace(event.target.value)}
+                onChange={event => updateWorkspace(event.target.value)}
                 placeholder={t('app.generation.vercel.workspace_placeholder')}
                 className="min-h-[260px] font-mono text-sm"
                 spellCheck={false}
               />
+              <InputCapNotice visible={isWorkspaceCapped} limit={WORKSPACE_LIMIT} />
               <div className="flex flex-wrap gap-2">
-                <Button type="button" variant="outline" onClick={() => setWorkspace(vercelOutput)}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => updateWorkspace(vercelOutput)}
+                >
                   <Sparkles className="mr-2 h-4 w-4" />
                   {t('app.generation.vercel.use_output')}
                 </Button>
-                <Button type="button" variant="outline" onClick={() => setWorkspace('')}>
+                <Button type="button" variant="outline" onClick={() => updateWorkspace('')}>
                   <Trash2 className="mr-2 h-4 w-4" />
                   {t('public.clear')}
                 </Button>
@@ -1466,15 +1555,23 @@ export default function VercelConfigClient() {
                 </Select>
               </div>
               <Textarea
-                value={outputValue}
+                value={outputPreview}
                 readOnly
                 className="min-h-[300px] font-mono text-sm"
                 spellCheck={false}
               />
+              {outputPreviewLimited && (
+                <p className="text-xs leading-5 text-amber-600 dark:text-amber-300">
+                  {t('public.output_preview_limited', {
+                    total: outputPreviewSource.length.toLocaleString(),
+                    visible: OUTPUT_PREVIEW_CHARS.toLocaleString()
+                  })}
+                </p>
+              )}
               <div className="flex flex-wrap gap-2">
                 <Button
                   type="button"
-                  onClick={() => copy(outputValue)}
+                  onClick={() => copy(buildCurrentOutput())}
                   className="w-full sm:w-auto"
                 >
                   <Copy className="mr-2 h-4 w-4" />
@@ -1485,7 +1582,7 @@ export default function VercelConfigClient() {
                   variant="outline"
                   onClick={() =>
                     downloadText(
-                      outputValue,
+                      buildCurrentOutput(),
                       getOutputFilename(outputType),
                       outputType === 'json' || outputType === 'vercel' || outputType === 'package'
                         ? 'application/json;charset=utf-8'
@@ -1544,47 +1641,32 @@ export default function VercelConfigClient() {
                     </span>
                   </div>
                 </div>
-                {[
-                  ...parsed.functions.map(item => ({
-                    detail: `${item.maxDuration || '-'}s / ${item.memory || '-'}`,
-                    label: item.pattern,
-                    type: t('app.generation.vercel.parsed.function')
-                  })),
-                  ...parsed.rewrites.map(item => ({
-                    detail: item.destination,
-                    label: item.source,
-                    type: t('app.generation.vercel.parsed.rewrite')
-                  })),
-                  ...parsed.redirects.map(item => ({
-                    detail: item.destination,
-                    label: item.source,
-                    type: t('app.generation.vercel.parsed.redirect')
-                  })),
-                  ...parsed.crons.map(item => ({
-                    detail: item.schedule,
-                    label: item.path,
-                    type: t('app.generation.vercel.parsed.cron')
-                  }))
-                ]
-                  .slice(0, RENDER_LIMIT)
-                  .map((item, index) => (
-                    <div
-                      key={`${item.type}-${item.label}-${index}`}
-                      className="glass-panel min-w-0 rounded-2xl p-4"
-                    >
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <p className="min-w-0 truncate text-sm font-semibold text-[var(--text-primary)]">
-                          {item.label || '-'}
-                        </p>
-                        <span className="rounded-full border border-[var(--border-subtle)] px-2 py-1 text-xs text-[var(--text-muted)]">
-                          {item.type}
-                        </span>
-                      </div>
-                      <p className="mt-2 truncate text-xs text-[var(--text-muted)]">
-                        {item.detail || '-'}
+                {visibleParsedRows.map((item, index) => (
+                  <div
+                    key={`${item.type}-${item.label}-${index}`}
+                    className="glass-panel min-w-0 rounded-2xl p-4"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="min-w-0 break-all font-mono text-sm font-semibold leading-5 text-[var(--text-primary)]">
+                        {item.label || '-'}
                       </p>
+                      <span className="rounded-full border border-[var(--border-subtle)] px-2 py-1 text-xs text-[var(--text-muted)]">
+                        {item.type}
+                      </span>
                     </div>
-                  ))}
+                    <p className="mt-2 break-all font-mono text-xs leading-5 text-[var(--text-muted)]">
+                      {item.detail || '-'}
+                    </p>
+                  </div>
+                ))}
+                {parsedRowsLimited && (
+                  <p className="text-xs leading-5 text-amber-600 dark:text-amber-300">
+                    {t('public.rows_render_limited', {
+                      total: parsedRowTotal,
+                      visible: visibleParsedRows.length
+                    })}
+                  </p>
+                )}
               </>
             )}
           </CardContent>

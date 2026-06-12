@@ -16,17 +16,23 @@ import {
   Tags,
   Trash2
 } from 'lucide-react'
-import { useDeferredValue, useMemo, useState } from 'react'
+import { useCallback, useDeferredValue, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
+import { InputCapNotice } from '@/components/ui/input-cap-notice'
 import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
+import {
+  createOutputPreview,
+  isOutputPreviewLimited,
+  OUTPUT_PREVIEW_CHARS
+} from '@/utils/outputPreview'
 
 const QUERY_POLICIES = ['preserve', 'strip_tracking', 'strip_all', 'allowlist'] as const
 const SLASH_POLICIES = ['ignore', 'remove', 'add'] as const
@@ -34,6 +40,12 @@ const OUTPUT_TYPES = ['html', 'headers', 'next', 'sitemap', 'json', 'csv'] as co
 const WORKSPACE_LIMIT = 80000
 const ALTERNATE_INPUT_LIMIT = 24000
 const ALTERNATE_LIMIT = 120
+const CANONICAL_LINK_LIMIT = 120
+const OUTPUT_PREVIEW_ALTERNATE_LIMIT = 60
+const OUTPUT_PREVIEW_FINDING_LIMIT = 40
+const OUTPUT_PREVIEW_CANONICAL_LIMIT = 8
+const VISIBLE_FINDING_LIMIT = 22
+const VISIBLE_ALTERNATE_LIMIT = 16
 const TRACKING_PARAMS = new Set([
   'fbclid',
   'gclid',
@@ -393,7 +405,9 @@ const parseWorkspace = (input: string): ParsedWorkspace => {
     const raw = match[0]
     const rel = getAttr(raw, 'rel').toLowerCase()
     const href = getAttr(raw, 'href')
-    if (rel.includes('canonical')) canonicalLinks.push({ href, raw, source: 'html' })
+    if (rel.includes('canonical') && canonicalLinks.length < CANONICAL_LINK_LIMIT) {
+      canonicalLinks.push({ href, raw, source: 'html' })
+    }
     if (rel.includes('alternate')) {
       const code = getAttr(raw, 'hreflang')
       if (code && href) {
@@ -424,7 +438,9 @@ const parseWorkspace = (input: string): ParsedWorkspace => {
     const rel = (match[2] ?? '').trim().toLowerCase()
     const tail = match[3] ?? ''
     const raw = match[0]
-    if (rel === 'canonical') canonicalLinks.push({ href, raw, source: 'http' })
+    if (rel === 'canonical' && canonicalLinks.length < CANONICAL_LINK_LIMIT) {
+      canonicalLinks.push({ href, raw, source: 'http' })
+    }
     if (rel === 'alternate') {
       const hreflang = tail.match(/hreflang="?([^";,\s]+)"?/iu)?.[1] ?? ''
       if (hreflang) {
@@ -805,11 +821,58 @@ export default function CanonicalUrlClient() {
     [activeAlternates, canonicalUrl, draft, parsedWorkspace]
   )
   const score = useMemo(() => getScore(findings), [findings])
-  const output = useMemo(
+  const outputPreviewAlternates = useMemo(
+    () => activeAlternates.slice(0, OUTPUT_PREVIEW_ALTERNATE_LIMIT),
+    [activeAlternates]
+  )
+  const outputPreviewFindings = useMemo(
+    () => findings.slice(0, OUTPUT_PREVIEW_FINDING_LIMIT),
+    [findings]
+  )
+  const outputPreviewParsedWorkspace = useMemo<ParsedWorkspace>(
+    () => ({
+      alternates: parsedWorkspace.alternates.slice(0, OUTPUT_PREVIEW_ALTERNATE_LIMIT),
+      canonicalLinks: parsedWorkspace.canonicalLinks.slice(0, OUTPUT_PREVIEW_CANONICAL_LIMIT),
+      ogUrl: parsedWorkspace.ogUrl,
+      robotsNoindex: parsedWorkspace.robotsNoindex,
+      sitemapUrls: parsedWorkspace.sitemapUrls.slice(0, OUTPUT_PREVIEW_ALTERNATE_LIMIT)
+    }),
+    [parsedWorkspace]
+  )
+  const outputPreviewSource = useMemo(
+    () =>
+      buildOutput(
+        draft,
+        canonicalUrl,
+        outputPreviewAlternates,
+        outputPreviewFindings,
+        outputPreviewParsedWorkspace,
+        outputType
+      ),
+    [
+      canonicalUrl,
+      draft,
+      outputPreviewAlternates,
+      outputPreviewFindings,
+      outputPreviewParsedWorkspace,
+      outputType
+    ]
+  )
+  const outputPreview = useMemo(
+    () => createOutputPreview(outputPreviewSource),
+    [outputPreviewSource]
+  )
+  const outputPreviewLimited = isOutputPreviewLimited(outputPreviewSource)
+  const outputPreviewRowsLimited =
+    activeAlternates.length > outputPreviewAlternates.length ||
+    findings.length > outputPreviewFindings.length ||
+    parsedWorkspace.alternates.length > outputPreviewParsedWorkspace.alternates.length ||
+    parsedWorkspace.canonicalLinks.length > outputPreviewParsedWorkspace.canonicalLinks.length ||
+    parsedWorkspace.sitemapUrls.length > outputPreviewParsedWorkspace.sitemapUrls.length
+  const buildCurrentOutput = useCallback(
     () => buildOutput(draft, canonicalUrl, activeAlternates, findings, parsedWorkspace, outputType),
     [activeAlternates, canonicalUrl, draft, findings, outputType, parsedWorkspace]
   )
-  const csvOutput = useMemo(() => buildCsv(activeAlternates), [activeAlternates])
   const filteredFindings = useMemo(() => {
     const query = deferredAuditQuery.trim().toLowerCase()
     if (!query) return findings
@@ -819,6 +882,16 @@ export default function CanonicalUrlClient() {
       return text.includes(query)
     })
   }, [deferredAuditQuery, findings, t])
+  const visibleFindings = useMemo(
+    () => filteredFindings.slice(0, VISIBLE_FINDING_LIMIT),
+    [filteredFindings]
+  )
+  const findingsLimited = filteredFindings.length > visibleFindings.length
+  const visibleAlternates = useMemo(
+    () => activeAlternates.slice(0, VISIBLE_ALTERNATE_LIMIT),
+    [activeAlternates]
+  )
+  const alternatesLimited = activeAlternates.length > visibleAlternates.length
   const metrics = useMemo(
     () => ({
       alternates: String(activeAlternates.length),
@@ -1186,6 +1259,7 @@ export default function CanonicalUrlClient() {
               placeholder={t('app.converter.canonical_url.workspace_placeholder')}
               className="min-h-[320px] font-mono"
             />
+            <InputCapNotice visible={workspace.length >= WORKSPACE_LIMIT} limit={WORKSPACE_LIMIT} />
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
@@ -1221,30 +1295,38 @@ export default function CanonicalUrlClient() {
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-tertiary)]" />
               <Input
                 value={auditQuery}
-                onChange={event => setAuditQuery(event.target.value)}
+                onChange={event => setAuditQuery(event.target.value.slice(0, 160))}
                 placeholder={t('app.converter.canonical_url.audit_search')}
                 className="pl-10"
               />
             </div>
             <div className="space-y-2">
-              {filteredFindings.slice(0, 22).map((finding, index) => (
+              {visibleFindings.map((finding, index) => (
                 <div
                   key={`${finding.key}:${finding.subject}:${index}`}
                   className={`rounded-xl border px-3 py-2 text-xs ${levelClass(finding.level)}`}
                 >
                   <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
-                    <span className="min-w-0 break-words">
+                    <span className="min-w-0 break-all leading-5">
                       <span className="font-semibold">{finding.subject}</span>
-                      <span className="mx-2">/</span>
+                      <span className="mx-2 inline-block">/</span>
                       {t(`app.converter.canonical_url.audit.${finding.key}`)}
                     </span>
-                    <span className="font-medium">
+                    <span className="shrink-0 font-medium">
                       {t(`app.converter.canonical_url.level.${finding.level}`)}
                     </span>
                   </div>
                 </div>
               ))}
             </div>
+            {findingsLimited && (
+              <p className="text-xs leading-5 text-amber-600 dark:text-amber-300">
+                {t('public.rows_render_limited', {
+                  total: filteredFindings.length,
+                  visible: visibleFindings.length
+                })}
+              </p>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -1278,12 +1360,38 @@ export default function CanonicalUrlClient() {
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Textarea readOnly value={output} className="min-h-[320px] font-mono" />
+            <Textarea readOnly value={outputPreview} className="min-h-[320px] font-mono" />
+            {outputPreviewLimited && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('public.output_preview_limited', {
+                  total: outputPreviewSource.length.toLocaleString(),
+                  visible: OUTPUT_PREVIEW_CHARS.toLocaleString()
+                })}
+              </p>
+            )}
+            {outputPreviewRowsLimited && (
+              <p className="rounded-lg border border-[var(--border-base)] bg-[var(--glass-input-bg)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                {t('public.output_preview_rows_limited', {
+                  total: (
+                    activeAlternates.length +
+                    findings.length +
+                    parsedWorkspace.canonicalLinks.length +
+                    parsedWorkspace.sitemapUrls.length
+                  ).toLocaleString(),
+                  visible: (
+                    outputPreviewAlternates.length +
+                    outputPreviewFindings.length +
+                    outputPreviewParsedWorkspace.canonicalLinks.length +
+                    outputPreviewParsedWorkspace.sitemapUrls.length
+                  ).toLocaleString()
+                })}
+              </p>
+            )}
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => copy(output)}
+                onClick={() => copy(buildCurrentOutput())}
                 className="w-full sm:w-auto"
               >
                 <Copy className="h-4 w-4" />
@@ -1293,7 +1401,11 @@ export default function CanonicalUrlClient() {
                 type="button"
                 variant="outline"
                 onClick={() =>
-                  downloadText(output, 'canonical-url.txt', 'text/plain;charset=utf-8')
+                  downloadText(
+                    buildCurrentOutput(),
+                    'canonical-url.txt',
+                    'text/plain;charset=utf-8'
+                  )
                 }
                 className="w-full sm:w-auto"
               >
@@ -1304,7 +1416,11 @@ export default function CanonicalUrlClient() {
                 type="button"
                 variant="outline"
                 onClick={() =>
-                  downloadText(csvOutput, 'hreflang-cluster.csv', 'text/csv;charset=utf-8')
+                  downloadText(
+                    buildCsv(activeAlternates),
+                    'hreflang-cluster.csv',
+                    'text/csv;charset=utf-8'
+                  )
                 }
                 className="w-full sm:w-auto"
               >
@@ -1341,7 +1457,7 @@ export default function CanonicalUrlClient() {
               ) : null}
             </div>
             <div className="space-y-2">
-              {activeAlternates.slice(0, 16).map((row, index) => (
+              {visibleAlternates.map((row, index) => (
                 <div
                   key={`${row.code}:${row.url}:${index}`}
                   className="glass-input min-w-0 rounded-xl p-3"
@@ -1359,6 +1475,14 @@ export default function CanonicalUrlClient() {
                   </p>
                 </div>
               ))}
+              {alternatesLimited && (
+                <p className="text-xs leading-5 text-amber-600 dark:text-amber-300">
+                  {t('public.rows_render_limited', {
+                    total: activeAlternates.length,
+                    visible: visibleAlternates.length
+                  })}
+                </p>
+              )}
             </div>
           </CardContent>
         </Card>

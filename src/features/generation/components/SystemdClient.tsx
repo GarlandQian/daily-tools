@@ -21,10 +21,16 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
+import { InputCapNotice } from '@/components/ui/input-cap-notice'
 import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
+import {
+  createOutputPreview,
+  isOutputPreviewLimited,
+  OUTPUT_PREVIEW_CHARS
+} from '@/utils/outputPreview'
 
 const OUTPUT_TYPES = [
   'service',
@@ -40,7 +46,10 @@ const OUTPUT_TYPES = [
 const RESTART_POLICIES = ['always', 'on-failure', 'on-abnormal', 'no'] as const
 const UNIT_MODES = ['service', 'timer'] as const
 const WORKSPACE_LIMIT = 80000
+const DRAFT_FIELD_LIMIT = 1200
+const DRAFT_TEXTAREA_LIMIT = 4000
 const UNIT_RENDER_LIMIT = 80
+const FINDING_RENDER_LIMIT = 80
 const UNSAFE_FIELD_PATTERN = /[\r\n]/u
 const SENSITIVE_ENV_PATTERN =
   /(?:SECRET|TOKEN|PASSWORD|PRIVATE|CREDENTIAL|DATABASE_URL|API_KEY|KEY)/iu
@@ -162,6 +171,8 @@ interface ParsedUnit {
 interface ParsedSystemd {
   capped: boolean
   syntaxHints: string[]
+  totalUnits: number
+  unitLimited: boolean
   units: ParsedUnit[]
 }
 
@@ -869,11 +880,11 @@ function parseSystemdWorkspace(input: string): ParsedSystemd {
 
   if (!source.includes('[Unit]') && source.trim()) syntaxHints.push('missing_unit_section')
   if (hasUnterminatedContinuation(source)) syntaxHints.push('unterminated_continuation')
-  const chunks = source
+  const unitChunks = source
     .split(/(?=^\[Unit\])/gmu)
     .map(chunk => chunk.trim())
     .filter(Boolean)
-    .slice(0, UNIT_RENDER_LIMIT)
+  const chunks = unitChunks.slice(0, UNIT_RENDER_LIMIT)
   const units = chunks.map(chunk => {
     const sections = parseSections(chunk)
     const environment = getDirectives(sections, 'Service', 'Environment')
@@ -929,7 +940,13 @@ function parseSystemdWorkspace(input: string): ParsedSystemd {
     }
   })
 
-  return { capped, syntaxHints, units }
+  return {
+    capped,
+    syntaxHints,
+    totalUnits: unitChunks.length,
+    unitLimited: unitChunks.length > chunks.length,
+    units
+  }
 }
 
 function isValidTimerExpression(value: string) {
@@ -1189,16 +1206,21 @@ export default function SystemdClient() {
   const { copy } = useCopy()
   const [draft, setDraft] = useState<SystemdDraft>(DEFAULT_DRAFT)
   const [workspace, setWorkspace] = useState(PRESETS[0].workspace)
+  const [isWorkspaceCapped, setIsWorkspaceCapped] = useState(false)
   const [auditQuery, setAuditQuery] = useState('')
   const [outputType, setOutputType] = useState<OutputType>('service')
   const deferredWorkspace = useDeferredValue(workspace)
 
   const serviceOutput = useMemo(() => buildServiceUnit(draft), [draft])
   const timerOutput = useMemo(() => buildTimerUnit(draft), [draft])
-  const parsed = useMemo(() => parseSystemdWorkspace(deferredWorkspace), [deferredWorkspace])
+  const parsed = useMemo(() => {
+    const next = parseSystemdWorkspace(deferredWorkspace)
+
+    return isWorkspaceCapped ? { ...next, capped: true } : next
+  }, [deferredWorkspace, isWorkspaceCapped])
   const findings = useMemo(() => auditDraft(draft, parsed), [draft, parsed])
   const csvOutput = useMemo(() => buildCsv(findings), [findings])
-  const outputValue = useMemo(() => {
+  const buildCurrentOutput = useCallback(() => {
     if (outputType === 'service') return serviceOutput
     if (outputType === 'timer') return timerOutput
     if (outputType === 'env') return buildEnvFile(draft)
@@ -1210,6 +1232,12 @@ export default function SystemdClient() {
 
     return buildMarkdown(draft, findings, parsed)
   }, [csvOutput, draft, findings, outputType, parsed, serviceOutput, timerOutput])
+  const outputPreviewSource = useMemo(() => buildCurrentOutput(), [buildCurrentOutput])
+  const outputPreview = useMemo(
+    () => createOutputPreview(outputPreviewSource),
+    [outputPreviewSource]
+  )
+  const outputPreviewLimited = isOutputPreviewLimited(outputPreviewSource)
 
   const filteredFindings = useMemo(() => {
     const query = auditQuery.trim().toLowerCase()
@@ -1221,6 +1249,11 @@ export default function SystemdClient() {
         .includes(query)
     )
   }, [auditQuery, findings, t])
+  const visibleFindings = useMemo(
+    () => filteredFindings.slice(0, FINDING_RENDER_LIMIT),
+    [filteredFindings]
+  )
+  const findingsLimited = filteredFindings.length > visibleFindings.length
 
   const metrics = useMemo(() => {
     const critical = findings.filter(item => item.level === 'danger').length
@@ -1247,23 +1280,39 @@ export default function SystemdClient() {
 
   const updateDraft = useCallback(
     <K extends keyof SystemdDraft>(key: K, value: SystemdDraft[K]) => {
-      setDraft(current => ({ ...current, [key]: value }))
+      const stringLimit =
+        key === 'environmentLines' || key === 'secretKeys' || key === 'readWritePaths'
+          ? DRAFT_TEXTAREA_LIMIT
+          : DRAFT_FIELD_LIMIT
+      const nextValue =
+        typeof value === 'string' ? (value.slice(0, stringLimit) as SystemdDraft[K]) : value
+      setDraft(current => ({ ...current, [key]: nextValue }))
     },
     []
   )
 
-  const applyPreset = useCallback((preset: Preset) => {
-    setDraft(preset.draft)
-    setWorkspace(preset.workspace)
-    setOutputType(preset.draft.unitMode === 'timer' ? 'timer' : 'service')
+  const updateWorkspace = useCallback((value: string) => {
+    const capped = value.length > WORKSPACE_LIMIT
+
+    setIsWorkspaceCapped(capped)
+    setWorkspace(capped ? value.slice(0, WORKSPACE_LIMIT) : value)
   }, [])
+
+  const applyPreset = useCallback(
+    (preset: Preset) => {
+      setDraft(preset.draft)
+      updateWorkspace(preset.workspace)
+      setOutputType(preset.draft.unitMode === 'timer' ? 'timer' : 'service')
+    },
+    [updateWorkspace]
+  )
 
   const reset = useCallback(() => {
     setDraft(DEFAULT_DRAFT)
-    setWorkspace(PRESETS[0].workspace)
+    updateWorkspace(PRESETS[0].workspace)
     setAuditQuery('')
     setOutputType('service')
-  }, [])
+  }, [updateWorkspace])
 
   const copySummary = useCallback(() => {
     copy(
@@ -1421,8 +1470,17 @@ export default function SystemdClient() {
                   <Textarea
                     id="systemd-env"
                     value={draft.environmentLines}
-                    onChange={event => updateDraft('environmentLines', event.target.value)}
+                    onChange={event =>
+                      updateDraft(
+                        'environmentLines',
+                        event.target.value.slice(0, DRAFT_TEXTAREA_LIMIT)
+                      )
+                    }
                     className="min-h-[110px] font-mono text-sm"
+                  />
+                  <InputCapNotice
+                    visible={draft.environmentLines.length >= DRAFT_TEXTAREA_LIMIT}
+                    limit={DRAFT_TEXTAREA_LIMIT}
                   />
                 </div>
                 <div className="grid gap-2">
@@ -1430,8 +1488,14 @@ export default function SystemdClient() {
                   <Textarea
                     id="systemd-secret"
                     value={draft.secretKeys}
-                    onChange={event => updateDraft('secretKeys', event.target.value)}
+                    onChange={event =>
+                      updateDraft('secretKeys', event.target.value.slice(0, DRAFT_TEXTAREA_LIMIT))
+                    }
                     className="min-h-[110px] font-mono text-sm"
+                  />
+                  <InputCapNotice
+                    visible={draft.secretKeys.length >= DRAFT_TEXTAREA_LIMIT}
+                    limit={DRAFT_TEXTAREA_LIMIT}
                   />
                 </div>
                 <div className="grid gap-2">
@@ -1531,8 +1595,17 @@ export default function SystemdClient() {
                   <Textarea
                     id="systemd-readwrite"
                     value={draft.readWritePaths}
-                    onChange={event => updateDraft('readWritePaths', event.target.value)}
+                    onChange={event =>
+                      updateDraft(
+                        'readWritePaths',
+                        event.target.value.slice(0, DRAFT_TEXTAREA_LIMIT)
+                      )
+                    }
                     className="min-h-[92px] font-mono text-sm"
+                  />
+                  <InputCapNotice
+                    visible={draft.readWritePaths.length >= DRAFT_TEXTAREA_LIMIT}
+                    limit={DRAFT_TEXTAREA_LIMIT}
                   />
                 </div>
                 <div className="grid gap-2">
@@ -1633,12 +1706,12 @@ export default function SystemdClient() {
                 <Input
                   className="pl-9"
                   value={auditQuery}
-                  onChange={event => setAuditQuery(event.target.value)}
+                  onChange={event => setAuditQuery(event.target.value.slice(0, 160))}
                   placeholder={t('app.generation.systemd.audit_search')}
                 />
               </div>
               <div className="grid max-h-[420px] gap-2 overflow-auto pr-1">
-                {filteredFindings.map((finding, index) => (
+                {visibleFindings.map((finding, index) => (
                   <div
                     key={`${finding.key}-${finding.subject}-${index}`}
                     className="glass-panel flex min-w-0 items-start gap-3 rounded-2xl p-3"
@@ -1654,13 +1727,21 @@ export default function SystemdClient() {
                       <p className="text-sm font-semibold text-[var(--text-primary)]">
                         {t(`app.generation.systemd.audit.${finding.key}`)}
                       </p>
-                      <p className="mt-1 truncate text-xs text-[var(--text-muted)]">
+                      <p className="mt-1 break-all font-mono text-xs leading-5 text-[var(--text-muted)]">
                         {finding.subject}
                       </p>
                     </div>
                   </div>
                 ))}
               </div>
+              {findingsLimited && (
+                <p className="text-xs leading-5 text-amber-600 dark:text-amber-300">
+                  {t('public.rows_render_limited', {
+                    total: filteredFindings.length,
+                    visible: visibleFindings.length
+                  })}
+                </p>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -1674,17 +1755,18 @@ export default function SystemdClient() {
             <CardContent className="grid gap-3">
               <Textarea
                 value={workspace}
-                onChange={event => setWorkspace(event.target.value)}
+                onChange={event => updateWorkspace(event.target.value)}
                 placeholder={t('app.generation.systemd.workspace_placeholder')}
                 className="min-h-[260px] font-mono text-sm"
                 spellCheck={false}
               />
+              <InputCapNotice visible={isWorkspaceCapped} limit={WORKSPACE_LIMIT} />
               <div className="flex flex-wrap gap-2">
                 <Button
                   type="button"
                   variant="outline"
                   onClick={() =>
-                    setWorkspace(
+                    updateWorkspace(
                       draft.unitMode === 'timer'
                         ? `${serviceOutput}\n\n${timerOutput}`
                         : serviceOutput
@@ -1694,7 +1776,7 @@ export default function SystemdClient() {
                   <Sparkles className="mr-2 h-4 w-4" />
                   {t('app.generation.systemd.use_output')}
                 </Button>
-                <Button type="button" variant="outline" onClick={() => setWorkspace('')}>
+                <Button type="button" variant="outline" onClick={() => updateWorkspace('')}>
                   <Trash2 className="mr-2 h-4 w-4" />
                   {t('public.clear')}
                 </Button>
@@ -1725,15 +1807,23 @@ export default function SystemdClient() {
                 </Select>
               </div>
               <Textarea
-                value={outputValue}
+                value={outputPreview}
                 readOnly
                 className="min-h-[300px] font-mono text-sm"
                 spellCheck={false}
               />
+              {outputPreviewLimited && (
+                <p className="text-xs leading-5 text-amber-600 dark:text-amber-300">
+                  {t('public.output_preview_limited', {
+                    total: outputPreviewSource.length.toLocaleString(),
+                    visible: OUTPUT_PREVIEW_CHARS.toLocaleString()
+                  })}
+                </p>
+              )}
               <div className="flex flex-wrap gap-2">
                 <Button
                   type="button"
-                  onClick={() => copy(outputValue)}
+                  onClick={() => copy(buildCurrentOutput())}
                   className="w-full sm:w-auto"
                 >
                   <Copy className="mr-2 h-4 w-4" />
@@ -1744,7 +1834,7 @@ export default function SystemdClient() {
                   variant="outline"
                   onClick={() =>
                     downloadText(
-                      outputValue,
+                      buildCurrentOutput(),
                       getOutputFilename(outputType, draft.serviceName),
                       outputType === 'json'
                         ? 'application/json;charset=utf-8'
@@ -1790,38 +1880,48 @@ export default function SystemdClient() {
                 {t('app.generation.systemd.empty')}
               </div>
             ) : (
-              parsed.units.map((unit, index) => (
-                <div
-                  key={`${unit.description}-${index}`}
-                  className="glass-panel min-w-0 rounded-2xl p-4"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="min-w-0 truncate text-sm font-semibold text-[var(--text-primary)]">
-                      {unit.description || unit.unitType}
-                    </p>
-                    <span className="rounded-full border border-[var(--border-subtle)] px-2 py-1 text-xs text-[var(--text-muted)]">
-                      {t(`app.generation.systemd.parsed.${unit.unitType}`)}
-                    </span>
+              <>
+                {parsed.units.map((unit, index) => (
+                  <div
+                    key={`${unit.description}-${index}`}
+                    className="glass-panel min-w-0 rounded-2xl p-4"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="min-w-0 break-all font-mono text-sm font-semibold leading-5 text-[var(--text-primary)]">
+                        {unit.description || unit.unitType}
+                      </p>
+                      <span className="rounded-full border border-[var(--border-subtle)] px-2 py-1 text-xs text-[var(--text-muted)]">
+                        {t(`app.generation.systemd.parsed.${unit.unitType}`)}
+                      </span>
+                    </div>
+                    <div className="mt-3 grid gap-2 text-xs text-[var(--text-muted)] sm:grid-cols-2">
+                      <span>
+                        {t('app.generation.systemd.parsed.user')}: {unit.user || '-'}
+                      </span>
+                      <span>
+                        {t('app.generation.systemd.parsed.restart')}: {unit.restart || '-'}
+                      </span>
+                      <span>
+                        {t('app.generation.systemd.parsed.workdir')}: {unit.workingDirectory || '-'}
+                      </span>
+                      <span>
+                        {t('app.generation.systemd.parsed.hardening')}:{' '}
+                        {unit.hasHardening
+                          ? t('app.generation.systemd.level.good')
+                          : t('app.generation.systemd.level.warn')}
+                      </span>
+                    </div>
                   </div>
-                  <div className="mt-3 grid gap-2 text-xs text-[var(--text-muted)] sm:grid-cols-2">
-                    <span>
-                      {t('app.generation.systemd.parsed.user')}: {unit.user || '-'}
-                    </span>
-                    <span>
-                      {t('app.generation.systemd.parsed.restart')}: {unit.restart || '-'}
-                    </span>
-                    <span>
-                      {t('app.generation.systemd.parsed.workdir')}: {unit.workingDirectory || '-'}
-                    </span>
-                    <span>
-                      {t('app.generation.systemd.parsed.hardening')}:{' '}
-                      {unit.hasHardening
-                        ? t('app.generation.systemd.level.good')
-                        : t('app.generation.systemd.level.warn')}
-                    </span>
-                  </div>
-                </div>
-              ))
+                ))}
+                {parsed.unitLimited && (
+                  <p className="text-xs leading-5 text-amber-600 dark:text-amber-300">
+                    {t('public.rows_render_limited', {
+                      total: parsed.totalUnits,
+                      visible: parsed.units.length
+                    })}
+                  </p>
+                )}
+              </>
             )}
           </CardContent>
         </Card>

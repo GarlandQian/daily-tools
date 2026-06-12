@@ -1,6 +1,6 @@
 'use client'
 
-import { Copy, FileJson, KeyRound, RotateCcw, ShieldCheck, Sparkles } from 'lucide-react'
+import { Copy, FileDown, FileJson, KeyRound, RotateCcw, ShieldCheck, Sparkles } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
+import { InputCapNotice } from '@/components/ui/input-cap-notice'
 import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Slider } from '@/components/ui/slider'
@@ -94,6 +95,9 @@ const CHARSETS = {
   alphanumeric: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789',
   numeric: '0123456789'
 }
+const MAX_TOKEN_VISIBLE_ROWS = 40
+const MAX_TOKEN_EXPORT_PREVIEW_ROWS = 40
+const MAX_TOKEN_PREFIX_CHARS = 80
 
 const clampNumber = (value: number, min: number, max: number) => {
   if (!Number.isFinite(value)) return min
@@ -196,6 +200,16 @@ const formatTokenOutput = (
   return tokens.join('\n')
 }
 
+const downloadText = (content: string, filename: string, type: string) => {
+  const blob = new Blob([content], { type })
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  anchor.click()
+  URL.revokeObjectURL(url)
+}
+
 const TokenClient = () => {
   const { t } = useTranslation()
   const toast = useToast()
@@ -207,29 +221,37 @@ const TokenClient = () => {
   const normalizedLength = clampNumber(formData.length, 6, 256)
   const normalizedCount = clampNumber(formData.count, 1, 100)
   const normalizedExpiresDays = clampNumber(formData.expiresDays, 1, 3650)
+  const normalizedPrefix = formData.prefix.slice(0, MAX_TOKEN_PREFIX_CHARS)
   const entropyBits = useMemo(
     () => Math.floor(getEntropyBits(formData.format, normalizedLength)),
     [formData.format, normalizedLength]
   )
-  const outputLength = formData.prefix.length + normalizedLength
+  const outputLength = normalizedPrefix.length + normalizedLength
   const expiresAt = useMemo(() => {
     const date = new Date()
     date.setDate(date.getDate() + normalizedExpiresDays)
     return date.toISOString()
   }, [normalizedExpiresDays])
-  const formattedOutput = useMemo(
-    () => formatTokenOutput(tokens, outputType, expiresAt, formData.includeBearer),
-    [expiresAt, formData.includeBearer, outputType, tokens]
+  const visibleTokens = useMemo(() => tokens.slice(0, MAX_TOKEN_VISIBLE_ROWS), [tokens])
+  const exportPreviewTokens = useMemo(
+    () => tokens.slice(0, MAX_TOKEN_EXPORT_PREVIEW_ROWS),
+    [tokens]
   )
+  const exportPreview = useMemo(
+    () => formatTokenOutput(exportPreviewTokens, outputType, expiresAt, formData.includeBearer),
+    [expiresAt, exportPreviewTokens, formData.includeBearer, outputType]
+  )
+  const isRowPreviewLimited = tokens.length > visibleTokens.length
+  const isExportPreviewLimited = outputType !== 'curl' && tokens.length > exportPreviewTokens.length
 
   const handleGenerate = useCallback(() => {
     const nextTokens = Array.from({ length: normalizedCount }, () => {
-      return `${formData.prefix}${generateTokenValue(formData.format, normalizedLength)}`
+      return `${normalizedPrefix}${generateTokenValue(formData.format, normalizedLength)}`
     })
 
     setTokens(nextTokens)
     toast.success(t('public.success'))
-  }, [formData.format, formData.prefix, normalizedCount, normalizedLength, toast, t])
+  }, [formData.format, normalizedCount, normalizedLength, normalizedPrefix, toast, t])
 
   const handleApplyPreset = useCallback((preset: TokenPreset) => {
     setFormData(preset.value)
@@ -243,8 +265,25 @@ const TokenClient = () => {
 
   const handleCopyAll = useCallback(() => {
     if (!tokens.length) return
-    void copy(formattedOutput)
-  }, [copy, formattedOutput, tokens.length])
+    void copy(formatTokenOutput(tokens, outputType, expiresAt, formData.includeBearer))
+  }, [copy, expiresAt, formData.includeBearer, outputType, tokens])
+
+  const handleDownload = useCallback(() => {
+    if (!tokens.length) return
+    const extension = outputType === 'json' ? 'json' : outputType === 'env' ? 'env' : 'txt'
+    const mime =
+      outputType === 'json'
+        ? 'application/json;charset=utf-8'
+        : outputType === 'env'
+          ? 'text/plain;charset=utf-8'
+          : 'text/plain;charset=utf-8'
+
+    downloadText(
+      formatTokenOutput(tokens, outputType, expiresAt, formData.includeBearer),
+      `daily-tools-tokens.${extension}`,
+      mime
+    )
+  }, [expiresAt, formData.includeBearer, outputType, tokens])
 
   return (
     <div className="flex size-full flex-col gap-5">
@@ -297,11 +336,15 @@ const TokenClient = () => {
                   onChange={event =>
                     setFormData(prev => ({
                       ...prev,
-                      prefix: event.target.value
+                      prefix: event.target.value.slice(0, MAX_TOKEN_PREFIX_CHARS)
                     }))
                   }
                   placeholder="sk_"
                   className="font-mono"
+                />
+                <InputCapNotice
+                  visible={formData.prefix.length >= MAX_TOKEN_PREFIX_CHARS}
+                  limit={MAX_TOKEN_PREFIX_CHARS}
                 />
               </div>
 
@@ -434,6 +477,15 @@ const TokenClient = () => {
             >
               {t('app.generation.token.copy_all')}
             </Button>
+            <Button
+              type="button"
+              variant="default"
+              icon={<FileDown className="h-4 w-4" />}
+              disabled={!tokens.length}
+              onClick={handleDownload}
+            >
+              {t('app.generation.token.download')}
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -446,7 +498,7 @@ const TokenClient = () => {
           {tokens.length ? (
             <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
               <div className="flex flex-col gap-3">
-                {tokens.map((token, index) => (
+                {visibleTokens.map((token, index) => (
                   <div
                     key={`${token}-${index}`}
                     className="flex items-center gap-3 rounded-2xl border border-[var(--glass-border)] bg-[var(--glass-input-bg)] px-4 py-3"
@@ -465,6 +517,14 @@ const TokenClient = () => {
                     />
                   </div>
                 ))}
+                {isRowPreviewLimited && (
+                  <div className="rounded-2xl border border-[var(--glass-border)] bg-[var(--glass-input-bg)] px-4 py-3 text-sm text-[var(--text-secondary)]">
+                    {t('app.generation.token.rows_limited', {
+                      total: tokens.length,
+                      visible: visibleTokens.length
+                    })}
+                  </div>
+                )}
               </div>
 
               <div className="glass-input rounded-2xl p-4">
@@ -473,8 +533,16 @@ const TokenClient = () => {
                   {t('app.generation.token.export_preview')}
                 </div>
                 <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-all font-mono text-xs text-[var(--text-primary)]">
-                  {formattedOutput}
+                  {exportPreview}
                 </pre>
+                {isExportPreviewLimited && (
+                  <p className="mt-3 text-xs leading-5 text-[var(--text-secondary)]">
+                    {t('app.generation.token.preview_limited', {
+                      total: tokens.length,
+                      visible: exportPreviewTokens.length
+                    })}
+                  </p>
+                )}
               </div>
             </div>
           ) : (

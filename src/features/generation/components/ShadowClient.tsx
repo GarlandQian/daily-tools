@@ -1,7 +1,7 @@
 'use client'
 
 import { Copy, Layers3, RotateCcw, SlidersHorizontal } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
@@ -12,6 +12,11 @@ import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Slider } from '@/components/ui/slider'
 import { useCopy } from '@/hooks/useCopy'
+import {
+  createOutputPreview,
+  isOutputPreviewLimited,
+  OUTPUT_PREVIEW_CHARS
+} from '@/utils/outputPreview'
 
 type ShadowOutput = 'css' | 'react' | 'tailwind' | 'variable'
 
@@ -215,7 +220,19 @@ const ShadowClient = () => {
 
   const shadowLayers = useMemo(() => getShadowLayers(config), [config])
   const boxShadow = shadowLayers.join(', ')
-  const output = getOutput(outputType, boxShadow, config.radius)
+  const outputPreviewSource = useMemo(
+    () => getOutput(outputType, boxShadow, config.radius),
+    [boxShadow, config.radius, outputType]
+  )
+  const outputPreview = useMemo(
+    () => createOutputPreview(outputPreviewSource),
+    [outputPreviewSource]
+  )
+  const outputPreviewLimited = isOutputPreviewLimited(outputPreviewSource)
+  const buildCurrentOutput = useCallback(
+    () => getOutput(outputType, boxShadow, config.radius),
+    [boxShadow, config.radius, outputType]
+  )
 
   const updateConfig = (key: keyof ShadowConfig, value: number | string | boolean) => {
     setConfig(prev => ({ ...prev, [key]: value }))
@@ -243,7 +260,10 @@ const ShadowClient = () => {
               >
                 {t('public.reset')}
               </Button>
-              <Button icon={<Copy className="h-4 w-4" />} onClick={() => copy(output)}>
+              <Button
+                icon={<Copy className="h-4 w-4" />}
+                onClick={() => copy(buildCurrentOutput())}
+              >
                 {t('public.copy')}
               </Button>
             </div>
@@ -393,14 +413,26 @@ const ShadowClient = () => {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-3">
           <CardTitle>{t('app.generation.shadow.code')}</CardTitle>
-          <Button size="sm" icon={<Copy className="h-3.5 w-3.5" />} onClick={() => copy(output)}>
+          <Button
+            size="sm"
+            icon={<Copy className="h-3.5 w-3.5" />}
+            onClick={() => copy(buildCurrentOutput())}
+          >
             {t('public.copy')}
           </Button>
         </CardHeader>
         <CardContent>
           <div className="glass-input whitespace-pre-wrap break-all rounded-lg p-4 font-mono text-sm text-[var(--text-primary)]">
-            {output}
+            {outputPreview}
           </div>
+          {outputPreviewLimited ? (
+            <p className="mt-3 text-xs leading-5 text-amber-600 dark:text-amber-300">
+              {t('public.output_preview_limited', {
+                total: outputPreviewSource.length.toLocaleString(),
+                visible: OUTPUT_PREVIEW_CHARS.toLocaleString()
+              })}
+            </p>
+          ) : null}
         </CardContent>
       </Card>
     </div>

@@ -30,8 +30,8 @@ function FileUploadZone({
   const inputRef = React.useRef<HTMLInputElement>(null)
 
   const handleFiles = (files: FileList | null) => {
-    if (!files) return
-    const fileArray = Array.from(files)
+    if (!files || files.length === 0) return
+    const fileArray = multiple ? Array.from(files) : [files[0]]
     const filtered = maxSize ? fileArray.filter(f => f.size <= maxSize) : fileArray
     onChange?.(filtered)
   }
