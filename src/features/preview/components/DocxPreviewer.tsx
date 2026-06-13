@@ -7,6 +7,11 @@ import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 
 import FileUploader from './FileUploader'
+import {
+  formatPreviewFileSize,
+  type PreviewRenderLimit,
+  trimPreviewElements
+} from './previewGuards'
 
 interface PreviewFileInfo {
   lastModified: number
@@ -14,14 +19,8 @@ interface PreviewFileInfo {
   size: number
 }
 
-const previewFileNumberFormatter = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 })
 const MAX_DOCX_SIZE = 25 * 1024 * 1024
-
-const formatFileSize = (bytes: number) => {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${previewFileNumberFormatter.format(bytes / 1024)} KB`
-  return `${previewFileNumberFormatter.format(bytes / (1024 * 1024))} MB`
-}
+const MAX_DOCX_RENDER_PAGES = 80
 
 const DocxPreviewer = () => {
   const { t } = useTranslation()
@@ -33,6 +32,7 @@ const DocxPreviewer = () => {
   const [hasFile, setHasFile] = useState(false)
   const [error, setError] = useState('')
   const [fileInfo, setFileInfo] = useState<PreviewFileInfo | null>(null)
+  const [previewLimit, setPreviewLimit] = useState<PreviewRenderLimit | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const isInitialized = useRef(false)
 
@@ -47,7 +47,12 @@ const DocxPreviewer = () => {
       if (isInitialized.current && previewUrl) {
         myDocxPreviewer.current
           ?.preview(previewUrl)
-          .then(() => setError(''))
+          .then(() => {
+            setError('')
+            setPreviewLimit(
+              trimPreviewElements(docxRef.current, 'section.docx', MAX_DOCX_RENDER_PAGES)
+            )
+          })
           .catch(e => {
             console.error('Docx Preview Error:', e)
             setError(t('app.preview.file.preview_failed'))
@@ -79,7 +84,7 @@ const DocxPreviewer = () => {
     }
 
     if (file.size > MAX_DOCX_SIZE) {
-      setError(t('app.preview.file.too_large', { size: formatFileSize(MAX_DOCX_SIZE) }))
+      setError(t('app.preview.file.too_large', { size: formatPreviewFileSize(MAX_DOCX_SIZE) }))
       return
     }
 
@@ -97,6 +102,7 @@ const DocxPreviewer = () => {
       name: file.name,
       size: file.size
     })
+    setPreviewLimit(null)
     setPreviewUrl(url)
   }
 
@@ -118,6 +124,7 @@ const DocxPreviewer = () => {
     setFileInfo(null)
     setHasFile(false)
     setLoading(false)
+    setPreviewLimit(null)
     setPreviewUrl(null)
   }
 
@@ -137,7 +144,10 @@ const DocxPreviewer = () => {
             accept=".docx"
             onUpload={onUpload}
             disabled={loading}
-            tip={t('app.preview.file.tip', { size: formatFileSize(MAX_DOCX_SIZE), type: '.docx' })}
+            tip={t('app.preview.file.tip', {
+              size: formatPreviewFileSize(MAX_DOCX_SIZE),
+              type: '.docx'
+            })}
           />
           {error && (
             <p className="rounded-lg border border-[var(--danger)] bg-[var(--danger-subtle)] px-3 py-2 text-sm text-[var(--danger)]">
@@ -157,7 +167,7 @@ const DocxPreviewer = () => {
                   </span>
                 </div>
                 <div className="mt-1 text-xs text-[var(--text-secondary)]">
-                  {formatFileSize(fileInfo.size)} ·{' '}
+                  {formatPreviewFileSize(fileInfo.size)} ·{' '}
                   {new Date(fileInfo.lastModified).toLocaleString()}
                 </div>
               </div>
@@ -200,6 +210,14 @@ const DocxPreviewer = () => {
           {error && (
             <p className="mb-3 rounded-lg border border-[var(--danger)] bg-[var(--danger-subtle)] px-3 py-2 text-sm text-[var(--danger)]">
               {error}
+            </p>
+          )}
+          {previewLimit && (
+            <p className="mb-3 rounded-lg border border-[var(--warning)] bg-[var(--warning-subtle)] px-3 py-2 text-sm text-[var(--warning)]">
+              {t('app.preview.file.pages_limited', {
+                total: previewLimit.total,
+                visible: previewLimit.visible
+              })}
             </p>
           )}
           <div className="glass-panel glass-clip relative flex-1 overflow-auto rounded-lg">

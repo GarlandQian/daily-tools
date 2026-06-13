@@ -29,7 +29,8 @@ import { useCopy } from '@/hooks/useCopy'
 import {
   createOutputPreview,
   isOutputPreviewLimited,
-  OUTPUT_PREVIEW_CHARS
+  OUTPUT_PREVIEW_CHARS,
+  OUTPUT_PREVIEW_ROWS
 } from '@/utils/outputPreview'
 
 const WORKLOAD_TYPES = ['deployment', 'statefulset', 'cronjob'] as const
@@ -1212,12 +1213,46 @@ export default function KubernetesClient() {
     parsed.resources,
     yamlModule
   ])
-  const outputPreviewSource = useMemo(() => buildCurrentOutput(), [buildCurrentOutput])
+  const jsonPreviewResources = useMemo(
+    () => parsed.resources.slice(0, OUTPUT_PREVIEW_ROWS),
+    [parsed.resources]
+  )
+  const jsonPreviewResourcesLimited =
+    outputType === 'json' && parsed.resources.length > jsonPreviewResources.length
+  const outputPreviewSource = useMemo(() => {
+    if (outputType !== 'json') return buildCurrentOutput()
+
+    return JSON.stringify(
+      {
+        draft,
+        findings,
+        kinds: parsed.kinds,
+        resources: jsonPreviewResources,
+        resourcesPreview: jsonPreviewResourcesLimited
+          ? {
+              total: parsed.resources.length,
+              visible: jsonPreviewResources.length
+            }
+          : undefined
+      },
+      null,
+      2
+    )
+  }, [
+    buildCurrentOutput,
+    draft,
+    findings,
+    jsonPreviewResources,
+    jsonPreviewResourcesLimited,
+    outputType,
+    parsed.kinds,
+    parsed.resources.length
+  ])
   const outputPreview = useMemo(
     () => createOutputPreview(outputPreviewSource),
     [outputPreviewSource]
   )
-  const outputPreviewLimited = isOutputPreviewLimited(outputPreviewSource)
+  const outputPreviewCharsLimited = isOutputPreviewLimited(outputPreviewSource)
 
   const filteredFindings = useMemo(() => {
     const query = auditQuery.trim().toLowerCase()
@@ -1234,6 +1269,11 @@ export default function KubernetesClient() {
     [filteredFindings]
   )
   const findingsLimited = filteredFindings.length > visibleFindings.length
+  const visibleParsedResources = useMemo(
+    () => parsed.resources.slice(0, PARSED_RENDER_LIMIT),
+    [parsed.resources]
+  )
+  const parsedResourcesLimited = parsed.resources.length > visibleParsedResources.length
 
   const metrics = useMemo(() => {
     const danger = findings.filter(item => item.level === 'danger').length
@@ -1787,7 +1827,15 @@ export default function KubernetesClient() {
                 className="min-h-[360px] font-mono"
                 spellCheck={false}
               />
-              {outputPreviewLimited && (
+              {jsonPreviewResourcesLimited && (
+                <p className="text-xs leading-5 text-amber-600 dark:text-amber-300">
+                  {t('public.output_preview_rows_limited', {
+                    total: parsed.resources.length.toLocaleString(),
+                    visible: jsonPreviewResources.length.toLocaleString()
+                  })}
+                </p>
+              )}
+              {outputPreviewCharsLimited && (
                 <p className="text-xs leading-5 text-amber-600 dark:text-amber-300">
                   {t('public.output_preview_limited', {
                     total: outputPreviewSource.length.toLocaleString(),
@@ -1837,7 +1885,7 @@ export default function KubernetesClient() {
               <CardTitle className="text-base">{t('app.generation.kubernetes.parsed')}</CardTitle>
             </CardHeader>
             <CardContent className="grid gap-2">
-              {parsed.resources.slice(0, PARSED_RENDER_LIMIT).map((resource, index) => (
+              {visibleParsedResources.map((resource, index) => (
                 <div
                   key={`${resource.kind}-${resource.name}-${index}`}
                   className="glass-panel rounded-2xl p-3"
@@ -1875,6 +1923,14 @@ export default function KubernetesClient() {
                   </div>
                 </div>
               ))}
+              {parsedResourcesLimited && (
+                <p className="text-xs leading-5 text-amber-600 dark:text-amber-300">
+                  {t('public.rows_render_limited', {
+                    total: parsed.resources.length,
+                    visible: visibleParsedResources.length
+                  })}
+                </p>
+              )}
               {parsed.resources.length === 0 && (
                 <div className="flex items-center gap-2 rounded-2xl border border-dashed border-[var(--border-subtle)] p-4 text-sm text-[var(--text-muted)]">
                   <AlertTriangle className="h-4 w-4" />

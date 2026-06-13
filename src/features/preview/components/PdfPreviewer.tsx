@@ -8,19 +8,39 @@ import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 
 import FileUploader from './FileUploader'
+import { formatPreviewFileSize, type PreviewRenderLimit } from './previewGuards'
 
 const MAX_PDF_SIZE = 50 * 1024 * 1024
+const MAX_PDF_RENDER_PAGES = 160
 
-const formatBytes = (bytes: number) => {
-  if (bytes < 1024) return `${bytes} B`
-  const units = ['KB', 'MB', 'GB']
-  let value = bytes / 1024
-  let unitIndex = 0
-  while (value >= 1024 && unitIndex < units.length - 1) {
-    value /= 1024
-    unitIndex += 1
+interface PdfPreviewInternals extends JsPdfPreview {
+  fullTotalItems?: number
+  options?: {
+    gap?: number
   }
-  return `${value.toFixed(value >= 10 ? 1 : 2)} ${units[unitIndex]}`
+  pageHeight?: number
+  totalItems?: number
+  wrapperMain?: HTMLElement
+}
+
+const limitPdfPreviewPages = (previewer: PdfPreviewInternals | null): PreviewRenderLimit | null => {
+  if (!previewer || typeof previewer.totalItems !== 'number') return null
+
+  const total = previewer.fullTotalItems ?? previewer.totalItems
+  previewer.fullTotalItems = total
+
+  if (total <= MAX_PDF_RENDER_PAGES) return null
+
+  previewer.totalItems = MAX_PDF_RENDER_PAGES
+  if (previewer.wrapperMain && typeof previewer.pageHeight === 'number') {
+    const gap = previewer.options?.gap ?? 10
+    previewer.wrapperMain.style.height = `${(previewer.pageHeight + gap) * MAX_PDF_RENDER_PAGES - gap}px`
+  }
+
+  return {
+    total,
+    visible: MAX_PDF_RENDER_PAGES
+  }
 }
 
 const getFileExtension = (name: string) => name.split('.').pop()?.toLowerCase() ?? ''
@@ -35,6 +55,7 @@ const PdfPreviewer = () => {
   const [hasFile, setHasFile] = useState(false)
   const [fileInfo, setFileInfo] = useState<File | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [previewLimit, setPreviewLimit] = useState<PreviewRenderLimit | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const isInitialized = useRef(false)
 
@@ -46,10 +67,12 @@ const PdfPreviewer = () => {
           onError: () => {
             setLoading(false)
             setError(t('app.preview.pdf.preview_error'))
+            setPreviewLimit(null)
           },
           onRendered: () => {
             setLoading(false)
             setError(null)
+            setPreviewLimit(limitPdfPreviewPages(myPdfPreviewer.current as PdfPreviewInternals))
           }
         })
         isInitialized.current = true
@@ -90,7 +113,7 @@ const PdfPreviewer = () => {
     if (file.size > MAX_PDF_SIZE) {
       setError(
         t('app.preview.pdf.too_large', {
-          size: formatBytes(MAX_PDF_SIZE)
+          size: formatPreviewFileSize(MAX_PDF_SIZE)
         })
       )
       return
@@ -101,11 +124,14 @@ const PdfPreviewer = () => {
     }
 
     const url = URL.createObjectURL(file)
+    const previewer = myPdfPreviewer.current as PdfPreviewInternals | null
+    if (previewer) previewer.fullTotalItems = undefined
     objectUrlRef.current = url
     setError(null)
     setFileInfo(file)
     setLoading(true)
     setHasFile(true)
+    setPreviewLimit(null)
     setPreviewUrl(url)
   }
 
@@ -130,6 +156,7 @@ const PdfPreviewer = () => {
     setPreviewUrl(null)
     setFileInfo(null)
     setError(null)
+    setPreviewLimit(null)
   }
 
   const handleDownload = () => {
@@ -144,14 +171,19 @@ const PdfPreviewer = () => {
     <div className="flex h-full flex-col gap-4 overflow-hidden">
       {!hasFile ? (
         <div className="grid h-full min-h-[520px] gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
-          <FileUploader accept=".pdf" onUpload={onUpload} disabled={loading} />
+          <FileUploader
+            accept=".pdf"
+            onUpload={onUpload}
+            disabled={loading}
+            tip={t('app.preview.pdf.tip', { size: formatPreviewFileSize(MAX_PDF_SIZE) })}
+          />
           <div className="glass-panel glass-clip rounded-3xl p-5">
             <div className="flex items-center gap-2 text-base font-semibold text-[var(--text-primary)]">
               <ShieldCheck className="h-4 w-4 text-[var(--primary)]" />
               {t('app.preview.pdf.local_only')}
             </div>
             <p className="mt-3 text-sm leading-6 text-[var(--text-secondary)]">
-              {t('app.preview.pdf.local_hint', { size: formatBytes(MAX_PDF_SIZE) })}
+              {t('app.preview.pdf.local_hint', { size: formatPreviewFileSize(MAX_PDF_SIZE) })}
             </p>
             {error && (
               <p className="mt-4 rounded-2xl bg-[var(--error-subtle)] px-3 py-2 text-sm text-[var(--error)]">
@@ -174,13 +206,15 @@ const PdfPreviewer = () => {
                   </div>
                   <div className="mt-2 flex flex-wrap gap-2 text-xs text-[var(--text-secondary)]">
                     <span className="rounded-full bg-[var(--glass-input-bg)] px-2 py-1">
-                      {fileInfo ? formatBytes(fileInfo.size) : '-'}
+                      {fileInfo ? formatPreviewFileSize(fileInfo.size) : '-'}
                     </span>
                     <span className="rounded-full bg-[var(--glass-input-bg)] px-2 py-1">
                       {fileInfo?.type || 'application/pdf'}
                     </span>
                     <span className="rounded-full bg-[var(--glass-input-bg)] px-2 py-1">
-                      {t('app.preview.pdf.max_size', { size: formatBytes(MAX_PDF_SIZE) })}
+                      {t('app.preview.pdf.max_size', {
+                        size: formatPreviewFileSize(MAX_PDF_SIZE)
+                      })}
                     </span>
                   </div>
                 </div>
@@ -225,6 +259,14 @@ const PdfPreviewer = () => {
               {error && (
                 <p className="mt-3 rounded-2xl bg-[var(--error-subtle)] px-3 py-2 text-sm text-[var(--error)]">
                   {error}
+                </p>
+              )}
+              {previewLimit && (
+                <p className="mt-3 rounded-2xl border border-[var(--warning)] bg-[var(--warning-subtle)] px-3 py-2 text-sm text-[var(--warning)]">
+                  {t('app.preview.pdf.pages_limited', {
+                    total: previewLimit.total,
+                    visible: previewLimit.visible
+                  })}
                 </p>
               )}
             </div>

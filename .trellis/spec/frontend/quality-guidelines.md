@@ -56,6 +56,29 @@ const result = useMemo(() => {
 }, [deferredText])
 ```
 
+### Pattern: Guard Local File Preview Expansion
+
+**What**: Browser-only file preview tools must guard both the uploaded file size and the amount of DOM/work produced by third-party preview libraries.
+
+**Why**: A file can be within the upload size cap but still expand into hundreds of rendered pages, slides, rows, canvases, or nested nodes. That expansion can make scrolling and route changes janky even when the file never leaves the browser.
+
+**Required safeguards**:
+
+- Keep hard file size caps before reading the file.
+- Prefer library-level page, slide, row, or column caps when the library exposes them.
+- If the library only exposes a full render API, trim or virtualize rendered sections after preview and show a localized partial-preview notice.
+- Keep original-file download/reupload actions available when the preview is capped.
+- Initialize heavy preview libraries only after a valid file is selected.
+
+**Example**:
+
+```tsx
+const previewLimit = trimPreviewElements(containerRef.current, 'section.docx', 80)
+if (previewLimit) {
+  showNotice(t('app.preview.file.pages_limited', previewLimit))
+}
+```
+
 ---
 
 ## Testing Requirements
@@ -93,4 +116,5 @@ for (const route of routes) {
 - Does a user-controlled input feed an unbounded synchronous loop, parser, regex, diff, or renderer?
 - Does a live-updating component create its own interval instead of using the shared visible timer?
 - Does a long list subscribe every row to a high-frequency store?
+- Does a local file preview cap both file size and rendered page/row/slide expansion?
 - Are large-input warnings translated in both supported locales?

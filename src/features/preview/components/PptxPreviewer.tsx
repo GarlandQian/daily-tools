@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 
 import FileUploader from './FileUploader'
+import { formatPreviewFileSize, type PreviewRenderLimit } from './previewGuards'
 
 interface PreviewFileInfo {
   lastModified: number
@@ -15,14 +16,8 @@ interface PreviewFileInfo {
   type: string
 }
 
-const previewFileNumberFormatter = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 })
 const MAX_PPTX_SIZE = 30 * 1024 * 1024
-
-const formatFileSize = (bytes: number) => {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${previewFileNumberFormatter.format(bytes / 1024)} KB`
-  return `${previewFileNumberFormatter.format(bytes / (1024 * 1024))} MB`
-}
+const PPTX_RENDERED_SLIDES = 1
 
 const PptxPreviewer = () => {
   const { t } = useTranslation()
@@ -36,6 +31,7 @@ const PptxPreviewer = () => {
   const [hasFile, setHasFile] = useState(false)
   const [previewRequestId, setPreviewRequestId] = useState(0)
   const [fileInfo, setFileInfo] = useState<PreviewFileInfo | null>(null)
+  const [previewLimit, setPreviewLimit] = useState<PreviewRenderLimit | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [error, setError] = useState('')
   const isInitialized = useRef(false)
@@ -56,16 +52,22 @@ const PptxPreviewer = () => {
           const measuredWidth = Math.floor(host.getBoundingClientRect().width || host.clientWidth)
           myPPtxPreviewer.current = init(host, {
             width: measuredWidth > 0 ? Math.min(measuredWidth, 1200) : 960,
-            height: 700
+            height: 700,
+            mode: 'slide'
           })
           isInitialized.current = true
         }
 
-        myPPtxPreviewer.current?.dom
-          .querySelectorAll('.pptx-preview-wrapper')
-          .forEach(element => element.remove())
         await myPPtxPreviewer.current?.preview(previewBufferRef.current)
-        if (!cancelled) setError('')
+        if (!cancelled) {
+          const slideCount = myPPtxPreviewer.current?.slideCount ?? 0
+          setPreviewLimit(
+            slideCount > PPTX_RENDERED_SLIDES
+              ? { total: slideCount, visible: PPTX_RENDERED_SLIDES }
+              : null
+          )
+          setError('')
+        }
       } catch {
         if (!cancelled) setError(t('app.preview.pptx.preview_error'))
       } finally {
@@ -100,7 +102,7 @@ const PptxPreviewer = () => {
     }
 
     if (file.size > MAX_PPTX_SIZE) {
-      setError(t('app.preview.pptx.too_large', { size: formatFileSize(MAX_PPTX_SIZE) }))
+      setError(t('app.preview.pptx.too_large', { size: formatPreviewFileSize(MAX_PPTX_SIZE) }))
       return
     }
 
@@ -122,6 +124,7 @@ const PptxPreviewer = () => {
       type: file.type || 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
     })
     setPreviewUrl(objectUrl)
+    setPreviewLimit(null)
     const reader = new FileReader()
     reader.onload = function (event) {
       if (uploadTokenRef.current !== uploadToken) return
@@ -164,6 +167,7 @@ const PptxPreviewer = () => {
     setFileInfo(null)
     setHasFile(false)
     setLoading(false)
+    setPreviewLimit(null)
     setPreviewRequestId(0)
     setPreviewUrl(null)
   }
@@ -184,7 +188,7 @@ const PptxPreviewer = () => {
             accept=".pptx"
             onUpload={onUpload}
             disabled={loading}
-            tip={t('app.preview.pptx.tip', { size: formatFileSize(MAX_PPTX_SIZE) })}
+            tip={t('app.preview.pptx.tip', { size: formatPreviewFileSize(MAX_PPTX_SIZE) })}
           />
           <div className="glass-panel glass-clip rounded-3xl p-5">
             <div className="flex items-center gap-2 text-base font-semibold text-[var(--text-primary)]">
@@ -192,7 +196,7 @@ const PptxPreviewer = () => {
               {t('app.preview.pptx.local_only')}
             </div>
             <p className="mt-3 text-sm leading-6 text-[var(--text-secondary)]">
-              {t('app.preview.pptx.local_hint', { size: formatFileSize(MAX_PPTX_SIZE) })}
+              {t('app.preview.pptx.local_hint', { size: formatPreviewFileSize(MAX_PPTX_SIZE) })}
             </p>
             {error && (
               <p className="mt-4 rounded-2xl bg-[var(--error-subtle)] px-3 py-2 text-sm text-[var(--error)]">
@@ -215,7 +219,7 @@ const PptxPreviewer = () => {
                   </div>
                   <div className="mt-2 flex flex-wrap gap-2 text-xs text-[var(--text-secondary)]">
                     <span className="rounded-full bg-[var(--glass-input-bg)] px-2 py-1">
-                      {fileInfo ? formatFileSize(fileInfo.size) : '-'}
+                      {fileInfo ? formatPreviewFileSize(fileInfo.size) : '-'}
                     </span>
                     <span className="rounded-full bg-[var(--glass-input-bg)] px-2 py-1">
                       {fileInfo?.type ||
@@ -267,6 +271,14 @@ const PptxPreviewer = () => {
               {error && (
                 <p className="mt-3 rounded-2xl bg-[var(--error-subtle)] px-3 py-2 text-sm text-[var(--error)]">
                   {error}
+                </p>
+              )}
+              {previewLimit && (
+                <p className="mt-3 rounded-2xl border border-[var(--warning)] bg-[var(--warning-subtle)] px-3 py-2 text-sm text-[var(--warning)]">
+                  {t('app.preview.pptx.render_limited', {
+                    total: previewLimit.total,
+                    visible: previewLimit.visible
+                  })}
                 </p>
               )}
             </div>
