@@ -37,6 +37,7 @@ interface MarkdownHeading {
 interface MarkdownStats {
   characters: number
   codeBlocks: number
+  headingCount: number
   headings: MarkdownHeading[]
   links: number
   lines: number
@@ -131,35 +132,64 @@ const slugifyHeading = (value: string) =>
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '')
 
+const countPatternMatches = (value: string, pattern: RegExp) => {
+  let count = 0
+
+  pattern.lastIndex = 0
+  while (pattern.exec(value)) count += 1
+
+  return count
+}
+
 const analyzeMarkdown = (value: string, wordsPerMinute: number): MarkdownStats => {
   const plainText = stripMarkdown(value)
   const words = plainText.match(/[\p{L}\p{N}'-]+/gu)?.length ?? 0
   const headings: MarkdownHeading[] = []
+  let headingCount = 0
+  let lineCount = 0
+  let listItems = 0
+  let tableRows = 0
+  let lineStart = 0
 
-  value.split('\n').forEach((line, index) => {
+  for (let index = 0; index <= value.length; index += 1) {
+    const char = value[index]
+    if (index !== value.length && char !== '\n' && char !== '\r') continue
+
+    const line = value.slice(lineStart, index)
+    lineCount += 1
+
     const match = /^(#{1,6})\s+(.+)$/.exec(line)
-    if (!match) return
-    const text = match[2].replace(/#+$/g, '').trim()
-    headings.push({
-      id: slugifyHeading(text) || `heading-${index + 1}`,
-      level: match[1].length,
-      line: index + 1,
-      text
-    })
-  })
+    if (match) {
+      headingCount += 1
+      if (headings.length < MAX_MARKDOWN_TOC_ROWS) {
+        const text = match[2].replace(/#+$/g, '').trim()
+        headings.push({
+          id: slugifyHeading(text) || `heading-${lineCount}`,
+          level: match[1].length,
+          line: lineCount,
+          text
+        })
+      }
+    }
+
+    if (/^\s*(?:[-*+]|\d+\.)\s+/.test(line)) listItems += 1
+    if (/^\s*\|.+\|\s*$/.test(line)) tableRows += 1
+
+    if (char === '\r' && value[index + 1] === '\n') index += 1
+    lineStart = index + 1
+  }
 
   return {
     characters: value.length,
-    codeBlocks: value.match(/```/g)?.length
-      ? Math.floor((value.match(/```/g)?.length ?? 0) / 2)
-      : 0,
+    codeBlocks: Math.floor(countPatternMatches(value, /```/g) / 2),
+    headingCount,
     headings,
-    links: value.match(/!?\[[^\]]+\]\([^)]+\)/g)?.length ?? 0,
-    lines: value ? value.split('\n').length : 0,
-    listItems: value.match(/^\s*(?:[-*+]|\d+\.)\s+/gm)?.length ?? 0,
+    links: countPatternMatches(value, /!?\[[^\]]+\]\([^)]+\)/g),
+    lines: value ? lineCount : 0,
+    listItems,
     minutes: words > 0 ? Math.max(1, Math.ceil(words / wordsPerMinute)) : 0,
     plainText,
-    tables: value.match(/^\s*\|.+\|\s*$/gm)?.length ? 1 : 0,
+    tables: tableRows > 0 ? 1 : 0,
     words
   }
 }
@@ -202,11 +232,8 @@ const MarkdownClient = () => {
     () => analyzeMarkdown(analysisContent, wordsPerMinute),
     [analysisContent, wordsPerMinute]
   )
-  const visibleHeadings = useMemo(
-    () => stats.headings.slice(0, MAX_MARKDOWN_TOC_ROWS),
-    [stats.headings]
-  )
-  const hiddenHeadingCount = Math.max(0, stats.headings.length - visibleHeadings.length)
+  const visibleHeadings = stats.headings
+  const hiddenHeadingCount = Math.max(0, stats.headingCount - visibleHeadings.length)
   const renderedHtml = () => previewRef.current?.innerHTML.trim() ?? ''
   const buildExportContent = () => {
     if (exportType === 'markdown') return input
@@ -218,7 +245,7 @@ const MarkdownClient = () => {
           stats: {
             characters: stats.characters,
             codeBlocks: stats.codeBlocks,
-            headings: stats.headings.length,
+            headings: stats.headingCount,
             links: stats.links,
             lines: stats.lines,
             listItems: stats.listItems,
@@ -232,7 +259,7 @@ const MarkdownClient = () => {
             line: heading.line,
             text: heading.text
           })),
-          tocCapped: toc.length < stats.headings.length,
+          tocCapped: toc.length < stats.headingCount,
           tocVisibleCount: toc.length
         },
         null,
@@ -317,10 +344,7 @@ const MarkdownClient = () => {
             <Metric label={t('app.preview.markdown.metric.characters')} value={stats.characters} />
             <Metric label={t('app.preview.markdown.metric.lines')} value={stats.lines} />
             <Metric label={t('app.preview.markdown.metric.minutes')} value={stats.minutes} />
-            <Metric
-              label={t('app.preview.markdown.metric.headings')}
-              value={stats.headings.length}
-            />
+            <Metric label={t('app.preview.markdown.metric.headings')} value={stats.headingCount} />
             <Metric label={t('app.preview.markdown.metric.links')} value={stats.links} />
             <Metric label={t('app.preview.markdown.metric.lists')} value={stats.listItems} />
             <Metric label={t('app.preview.markdown.metric.code')} value={stats.codeBlocks} />
@@ -453,16 +477,16 @@ const MarkdownClient = () => {
               {t('app.preview.markdown.toc')}
             </CardTitle>
             <CardDescription>
-              {t('app.preview.markdown.toc_count', { count: stats.headings.length })}
+              {t('app.preview.markdown.toc_count', { count: stats.headingCount })}
             </CardDescription>
           </CardHeader>
           <CardContent className="min-h-0 flex-1 overflow-auto">
-            {stats.headings.length > 0 ? (
+            {stats.headingCount > 0 ? (
               <div className="space-y-2">
                 {hiddenHeadingCount > 0 && (
                   <p className="rounded-xl border border-[var(--warning)] bg-[var(--warning-subtle)] px-3 py-2 text-xs text-[var(--warning)]">
                     {t('app.preview.markdown.toc_limited', {
-                      total: stats.headings.length,
+                      total: stats.headingCount,
                       visible: visibleHeadings.length
                     })}
                   </p>
