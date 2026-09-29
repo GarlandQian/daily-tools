@@ -3,6 +3,6 @@
 ## Sessions
 
 @@@auto:current-status
-- **Active File**: `journal-0.md`
-- **Total Sessions**: 1
-- **Last Active**: 2026-05-28
+- **Active File**: `journal-1.md`
+- **Total Sessions**: 2
+- **Last Active**: 2026-09-29
