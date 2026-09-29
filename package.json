@@ -15,14 +15,15 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "typecheck": "tsc --noEmit --pretty false",
-    "test": "pnpm run typecheck",
-    "check": "pnpm run lint && pnpm run typecheck && pnpm run build",
+    "test": "node --test tests/*.test.ts",
+    "check": "pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run build",
     "prepare": "husky"
   },
   "dependencies": {
     "@js-preview/docx": "^1.6.4",
     "@js-preview/excel": "^1.7.14",
     "@js-preview/pdf": "^2.0.10",
+    "@radix-ui/react-dialog": "1.1.15",
     "@radix-ui/react-radio-group": "^1.2.2",
     "@radix-ui/react-slot": "^1.1.1",
     "@react-spring/three": "^10.0.3",

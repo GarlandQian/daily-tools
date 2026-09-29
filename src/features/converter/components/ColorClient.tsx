@@ -24,6 +24,7 @@ import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
+import { downloadText } from '@/utils/download'
 
 interface RgbValue {
   r: number
@@ -576,16 +577,6 @@ const buildExport = (
   }
 
   return `:root {\n  --color-${name}: ${color.hex.toUpperCase()};\n  --color-${name}-rgb: ${color.rgb.r} ${color.rgb.g} ${color.rgb.b};\n  --color-${name}-alpha: ${alpha.toFixed(2)};\n${cssPalette}\n${harmonyVars}\n}`
-}
-
-const downloadText = (content: string, filename: string, type: string) => {
-  const blob = new Blob([content], { type })
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = filename
-  anchor.click()
-  URL.revokeObjectURL(url)
 }
 
 const ColorClient = () => {

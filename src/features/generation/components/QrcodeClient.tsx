@@ -29,6 +29,7 @@ import { Select } from '@/components/ui/select'
 import { Slider } from '@/components/ui/slider'
 import { Textarea } from '@/components/ui/textarea'
 import { useToast } from '@/components/ui/toast'
+import { downloadText } from '@/utils/download'
 
 import type { QrcodeRendererProps } from './QrcodeRenderer'
 
@@ -364,16 +365,6 @@ const buildFindingsCsv = (findings: QrFinding[]) =>
     ...findings.map(finding => [finding.level, finding.key, finding.subject].map(csvCell).join(','))
   ].join('\n')
 
-const downloadText = (content: string, filename: string, type: string) => {
-  const blob = new Blob([content], { type })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.download = filename
-  link.href = url
-  link.click()
-  URL.revokeObjectURL(url)
-}
-
 const serializeSvg = (svg: SVGSVGElement) => new XMLSerializer().serializeToString(svg)
 
 const QrcodeClient = () => {
@@ -629,13 +620,7 @@ const QrcodeClient = () => {
     }
 
     const source = serializeSvg(svg)
-    const blob = new Blob([source], { type: 'image/svg+xml;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.download = `${safeFileName}.svg`
-    link.href = url
-    link.click()
-    URL.revokeObjectURL(url)
+    downloadText(source, `${safeFileName}.svg`, 'image/svg+xml;charset=utf-8')
     toast.success(t('public.success'))
   }, [
     canExportQr,

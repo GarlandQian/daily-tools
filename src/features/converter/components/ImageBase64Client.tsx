@@ -14,6 +14,7 @@ import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useToast } from '@/components/ui/toast'
 import { useCopy } from '@/hooks/useCopy'
+import { downloadText } from '@/utils/download'
 
 type OutputFormat = 'dataUri' | 'base64' | 'css' | 'html' | 'markdown'
 
@@ -84,16 +85,6 @@ const getOutputMeta = (fileInfo: FileInfo | null, format: OutputFormat) => {
   if (format === 'markdown')
     return { filename: `${filenameBase}.md`, type: 'text/markdown;charset=utf-8' }
   return { filename: `${filenameBase}.txt`, type: 'text/plain;charset=utf-8' }
-}
-
-const downloadText = (content: string, filename: string, type: string) => {
-  const blob = new Blob([content], { type })
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = filename
-  anchor.click()
-  URL.revokeObjectURL(url)
 }
 
 const buildOutputPreview = (

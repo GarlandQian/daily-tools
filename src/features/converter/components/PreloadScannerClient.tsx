@@ -26,6 +26,7 @@ import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
+import { downloadText } from '@/utils/download'
 import {
   createOutputPreview,
   isOutputPreviewLimited,
@@ -845,16 +846,6 @@ const buildOutput = (
   if (outputType === 'json')
     return JSON.stringify({ draft, findings, resources: parsed.resources }, null, 2)
   return buildCsv(parsed)
-}
-
-const downloadText = (text: string, filename: string, type: string) => {
-  const blob = new Blob([text], { type })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = filename
-  link.click()
-  URL.revokeObjectURL(url)
 }
 
 function Metric({ label, value }: { label: string; value: number | string }) {

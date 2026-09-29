@@ -25,6 +25,7 @@ import { Select } from '@/components/ui/select'
 import { Slider } from '@/components/ui/slider'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
+import { downloadText } from '@/utils/download'
 
 interface CronFormData {
   second: string
@@ -539,16 +540,6 @@ const buildFindingsCsv = (findings: CronFinding[]) =>
     ['level', 'key', 'subject'].map(csvCell).join(','),
     ...findings.map(finding => [finding.level, finding.key, finding.subject].map(csvCell).join(','))
   ].join('\n')
-
-const downloadText = (content: string, filename: string, type: string) => {
-  const blob = new Blob([content], { type })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.download = filename
-  link.href = url
-  link.click()
-  URL.revokeObjectURL(url)
-}
 
 const CronClient = () => {
   const { t } = useTranslation()

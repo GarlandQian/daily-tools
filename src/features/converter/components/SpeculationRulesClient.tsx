@@ -22,6 +22,7 @@ import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
+import { downloadText } from '@/utils/download'
 import {
   createOutputPreview,
   isOutputPreviewLimited,
@@ -354,16 +355,6 @@ const getRuleTargets = (rule: unknown) => {
   const where = isKnownObject(rule.where) ? rule.where : null
   const hrefMatches = where && typeof where.href_matches === 'string' ? where.href_matches : ''
   return hrefMatches ? [hrefMatches] : []
-}
-
-const downloadText = (content: string, filename: string, type: string) => {
-  const blob = new Blob([content], { type })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = filename
-  link.click()
-  URL.revokeObjectURL(url)
 }
 
 const SpeculationRulesClient = () => {

@@ -1,171 +1,34 @@
 'use client'
 
-import type { JsPdfPreview } from '@js-preview/pdf'
 import { Download, FileText, ShieldCheck, Trash2, Upload } from 'lucide-react'
-import { type ChangeEvent, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 
+import { useLocalFilePreview } from '../hooks/useLocalFilePreview'
+import { MAX_PDF_SIZE, pdfPreviewFormat } from '../lib/previewFormats'
 import FileUploader from './FileUploader'
-import { formatPreviewFileSize, type PreviewRenderLimit } from './previewGuards'
-
-const MAX_PDF_SIZE = 50 * 1024 * 1024
-const MAX_PDF_RENDER_PAGES = 160
-
-interface PdfPreviewInternals extends JsPdfPreview {
-  fullTotalItems?: number
-  options?: {
-    gap?: number
-  }
-  pageHeight?: number
-  totalItems?: number
-  wrapperMain?: HTMLElement
-}
-
-const limitPdfPreviewPages = (previewer: PdfPreviewInternals | null): PreviewRenderLimit | null => {
-  if (!previewer || typeof previewer.totalItems !== 'number') return null
-
-  const total = previewer.fullTotalItems ?? previewer.totalItems
-  previewer.fullTotalItems = total
-
-  if (total <= MAX_PDF_RENDER_PAGES) return null
-
-  previewer.totalItems = MAX_PDF_RENDER_PAGES
-  if (previewer.wrapperMain && typeof previewer.pageHeight === 'number') {
-    const gap = previewer.options?.gap ?? 10
-    previewer.wrapperMain.style.height = `${(previewer.pageHeight + gap) * MAX_PDF_RENDER_PAGES - gap}px`
-  }
-
-  return {
-    total,
-    visible: MAX_PDF_RENDER_PAGES
-  }
-}
-
-const getFileExtension = (name: string) => name.split('.').pop()?.toLowerCase() ?? ''
+import { formatPreviewFileSize } from './previewGuards'
 
 const PdfPreviewer = () => {
   const { t } = useTranslation()
-  const myPdfPreviewer = useRef<JsPdfPreview | null>(null)
-  const pdfRef = useRef<HTMLDivElement>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const objectUrlRef = useRef<string | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [hasFile, setHasFile] = useState(false)
-  const [fileInfo, setFileInfo] = useState<File | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [previewLimit, setPreviewLimit] = useState<PreviewRenderLimit | null>(null)
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
-  const isInitialized = useRef(false)
-
-  useEffect(() => {
-    const init = async () => {
-      if (pdfRef.current && !isInitialized.current) {
-        const { default: jsPreviewPdf } = await import('@js-preview/pdf')
-        myPdfPreviewer.current = jsPreviewPdf.init(pdfRef.current, {
-          onError: () => {
-            setLoading(false)
-            setError(t('app.preview.pdf.preview_error'))
-            setPreviewLimit(null)
-          },
-          onRendered: () => {
-            setLoading(false)
-            setError(null)
-            setPreviewLimit(limitPdfPreviewPages(myPdfPreviewer.current as PdfPreviewInternals))
-          }
-        })
-        isInitialized.current = true
-      }
-
-      if (isInitialized.current && previewUrl) {
-        myPdfPreviewer.current
-          ?.preview(previewUrl)
-          .catch(() => setError(t('app.preview.pdf.preview_error')))
-          .finally(() => {
-            setLoading(false)
-          })
-      }
-    }
-
-    if (hasFile) {
-      init()
-    }
-  }, [hasFile, previewUrl, t])
-
-  useEffect(() => {
-    return () => {
-      myPdfPreviewer.current?.destroy()
-      if (objectUrlRef.current) {
-        URL.revokeObjectURL(objectUrlRef.current)
-      }
-      isInitialized.current = false
-    }
-  }, [])
-
-  const onUpload = (file: File) => {
-    const extension = getFileExtension(file.name)
-    if (extension !== 'pdf' && file.type !== 'application/pdf') {
-      setError(t('app.preview.pdf.invalid_type'))
-      return
-    }
-
-    if (file.size > MAX_PDF_SIZE) {
-      setError(
-        t('app.preview.pdf.too_large', {
-          size: formatPreviewFileSize(MAX_PDF_SIZE)
-        })
-      )
-      return
-    }
-
-    if (objectUrlRef.current) {
-      URL.revokeObjectURL(objectUrlRef.current)
-    }
-
-    const url = URL.createObjectURL(file)
-    const previewer = myPdfPreviewer.current as PdfPreviewInternals | null
-    if (previewer) previewer.fullTotalItems = undefined
-    objectUrlRef.current = url
-    setError(null)
-    setFileInfo(file)
-    setLoading(true)
-    setHasFile(true)
-    setPreviewLimit(null)
-    setPreviewUrl(url)
-  }
-
-  const handleReupload = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (file) {
-      onUpload(file)
-      event.target.value = ''
-    }
-  }
-
-  const handleRemove = () => {
-    if (objectUrlRef.current) {
-      URL.revokeObjectURL(objectUrlRef.current)
-      objectUrlRef.current = null
-    }
-    myPdfPreviewer.current?.destroy()
-    myPdfPreviewer.current = null
-    isInitialized.current = false
-    setHasFile(false)
-    setLoading(false)
-    setPreviewUrl(null)
-    setFileInfo(null)
-    setError(null)
-    setPreviewLimit(null)
-  }
-
-  const handleDownload = () => {
-    if (!previewUrl || !fileInfo) return
-    const anchor = document.createElement('a')
-    anchor.href = previewUrl
-    anchor.download = fileInfo.name
-    anchor.click()
-  }
+  const {
+    containerRef,
+    fileInputRef,
+    fileInfo,
+    hasFile,
+    loading,
+    error,
+    result: previewLimit,
+    onUpload,
+    handleReupload,
+    handleClear,
+    handleDownload
+  } = useLocalFilePreview(pdfPreviewFormat, {
+    invalidType: t('app.preview.pdf.invalid_type'),
+    tooLarge: t('app.preview.pdf.too_large', { size: formatPreviewFileSize(MAX_PDF_SIZE) }),
+    previewFailed: t('app.preview.pdf.preview_error')
+  })
 
   return (
     <div className="flex h-full flex-col gap-4 overflow-hidden">
@@ -233,7 +96,7 @@ const PdfPreviewer = () => {
                     size="sm"
                     variant="outline"
                     icon={<Download className="h-4 w-4" />}
-                    disabled={!previewUrl}
+                    disabled={!fileInfo}
                     onClick={handleDownload}
                   >
                     {t('app.preview.pdf.download')}
@@ -243,7 +106,7 @@ const PdfPreviewer = () => {
                     size="sm"
                     variant="ghost"
                     icon={<Trash2 className="h-4 w-4" />}
-                    onClick={handleRemove}
+                    onClick={handleClear}
                   >
                     {t('public.clear')}
                   </Button>
@@ -282,7 +145,7 @@ const PdfPreviewer = () => {
                 {error}
               </div>
             )}
-            <div className="h-full" ref={pdfRef} />
+            <div className="h-full" ref={containerRef} />
           </div>
         </div>
       )}

@@ -27,6 +27,7 @@ import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useToast } from '@/components/ui/toast'
 import { useCopy } from '@/hooks/useCopy'
+import { downloadText } from '@/utils/download'
 
 import {
   aesCrypto,
@@ -149,16 +150,6 @@ const getCrypto = (algorithm: SymmetricAlgorithm): CryptoOperation => {
 }
 
 const countBytes = (value: string) => new TextEncoder().encode(value).length
-
-const downloadText = (content: string, filename: string) => {
-  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = filename
-  anchor.click()
-  URL.revokeObjectURL(url)
-}
 
 const SymmetricCryptoClient = ({ algorithm }: SymmetricCryptoClientProps) => {
   const { t } = useTranslation()

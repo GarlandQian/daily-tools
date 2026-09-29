@@ -23,6 +23,7 @@ import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useToast } from '@/components/ui/toast'
 import { useCopy } from '@/hooks/useCopy'
+import { downloadText } from '@/utils/download'
 import {
   createOutputPreview,
   isOutputPreviewLimited,
@@ -682,13 +683,7 @@ const EnvBuilderClient = () => {
   const handleDownload = () => {
     if (!hasOutput) return
 
-    const blob = new Blob([buildCurrentOutput()], { type: 'text/plain;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const anchor = document.createElement('a')
-    anchor.href = url
-    anchor.download = outputFilename
-    anchor.click()
-    URL.revokeObjectURL(url)
+    downloadText(buildCurrentOutput(), outputFilename)
   }
 
   const reset = () => {

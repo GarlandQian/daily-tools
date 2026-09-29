@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useEffect, useLayoutEffect, useState } from 'react'
 
 import { ToastProvider } from '@/components/ui/toast'
+import { readLocalStorage, writeLocalStorage } from '@/utils/storage'
 
 export type ThemeMode = 'light' | 'dark' | 'system'
 
@@ -21,10 +22,8 @@ const ThemeContext = createContext<ThemeContextType>({
 export const useTheme = () => useContext(ThemeContext)
 
 const getSavedThemeMode = (): ThemeMode => {
-  if (typeof window === 'undefined') return 'system'
-
-  const saved = localStorage.getItem('theme-preference') as ThemeMode | null
-  return saved && ['light', 'dark', 'system'].includes(saved) ? saved : 'system'
+  const saved = readLocalStorage('theme-preference')
+  return saved === 'light' || saved === 'dark' || saved === 'system' ? saved : 'system'
 }
 
 export default function ThemeProvider({ children }: { children: React.ReactNode }) {
@@ -57,7 +56,7 @@ export default function ThemeProvider({ children }: { children: React.ReactNode 
 
   useEffect(() => {
     if (mounted) {
-      localStorage.setItem('theme-preference', themeMode)
+      writeLocalStorage('theme-preference', themeMode)
     }
   }, [themeMode, mounted])
 

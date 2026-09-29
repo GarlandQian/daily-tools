@@ -1,140 +1,34 @@
 'use client'
-import type { JsDocxPreview } from '@js-preview/docx'
+
 import { Download, FileText, Trash2, Upload } from 'lucide-react'
-import { type ChangeEvent, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 
+import { useLocalFilePreview } from '../hooks/useLocalFilePreview'
+import { docxPreviewFormat, MAX_DOCX_SIZE } from '../lib/previewFormats'
 import FileUploader from './FileUploader'
-import {
-  formatPreviewFileSize,
-  type PreviewRenderLimit,
-  trimPreviewElements
-} from './previewGuards'
-
-interface PreviewFileInfo {
-  lastModified: number
-  name: string
-  size: number
-}
-
-const MAX_DOCX_SIZE = 25 * 1024 * 1024
-const MAX_DOCX_RENDER_PAGES = 80
+import { formatPreviewFileSize } from './previewGuards'
 
 const DocxPreviewer = () => {
   const { t } = useTranslation()
-  const myDocxPreviewer = useRef<JsDocxPreview | null>(null)
-  const docxRef = useRef<HTMLDivElement>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const objectUrlRef = useRef<string | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [hasFile, setHasFile] = useState(false)
-  const [error, setError] = useState('')
-  const [fileInfo, setFileInfo] = useState<PreviewFileInfo | null>(null)
-  const [previewLimit, setPreviewLimit] = useState<PreviewRenderLimit | null>(null)
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
-  const isInitialized = useRef(false)
-
-  useEffect(() => {
-    const init = async () => {
-      if (docxRef.current && !isInitialized.current) {
-        const { default: jsPreviewDocx } = await import('@js-preview/docx')
-        await import('@js-preview/docx/lib/index.css')
-        myDocxPreviewer.current = jsPreviewDocx.init(docxRef.current)
-        isInitialized.current = true
-      }
-      if (isInitialized.current && previewUrl) {
-        myDocxPreviewer.current
-          ?.preview(previewUrl)
-          .then(() => {
-            setError('')
-            setPreviewLimit(
-              trimPreviewElements(docxRef.current, 'section.docx', MAX_DOCX_RENDER_PAGES)
-            )
-          })
-          .catch(e => {
-            console.error('Docx Preview Error:', e)
-            setError(t('app.preview.file.preview_failed'))
-          })
-          .finally(() => {
-            setLoading(false)
-          })
-      }
-    }
-    if (hasFile) {
-      init()
-    }
-  }, [hasFile, previewUrl, t])
-
-  useEffect(() => {
-    return () => {
-      myDocxPreviewer.current?.destroy()
-      if (objectUrlRef.current) {
-        URL.revokeObjectURL(objectUrlRef.current)
-      }
-      isInitialized.current = false
-    }
-  }, [])
-
-  const onUpload = (file: File) => {
-    if (!file.name.toLowerCase().endsWith('.docx')) {
-      setError(t('app.preview.file.invalid_type', { type: '.docx' }))
-      return
-    }
-
-    if (file.size > MAX_DOCX_SIZE) {
-      setError(t('app.preview.file.too_large', { size: formatPreviewFileSize(MAX_DOCX_SIZE) }))
-      return
-    }
-
-    if (objectUrlRef.current) {
-      URL.revokeObjectURL(objectUrlRef.current)
-    }
-
-    const url = URL.createObjectURL(file)
-    objectUrlRef.current = url
-    setLoading(true)
-    setHasFile(true)
-    setError('')
-    setFileInfo({
-      lastModified: file.lastModified,
-      name: file.name,
-      size: file.size
-    })
-    setPreviewLimit(null)
-    setPreviewUrl(url)
-  }
-
-  const handleReupload = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (file) {
-      onUpload(file)
-      event.target.value = ''
-    }
-  }
-
-  const handleClear = () => {
-    if (objectUrlRef.current) {
-      URL.revokeObjectURL(objectUrlRef.current)
-      objectUrlRef.current = null
-    }
-    docxRef.current?.replaceChildren()
-    setError('')
-    setFileInfo(null)
-    setHasFile(false)
-    setLoading(false)
-    setPreviewLimit(null)
-    setPreviewUrl(null)
-  }
-
-  const handleDownload = () => {
-    if (!previewUrl || !fileInfo) return
-    const anchor = document.createElement('a')
-    anchor.href = previewUrl
-    anchor.download = fileInfo.name
-    anchor.click()
-  }
+  const {
+    containerRef,
+    fileInputRef,
+    fileInfo,
+    hasFile,
+    loading,
+    error,
+    result: previewLimit,
+    onUpload,
+    handleReupload,
+    handleClear,
+    handleDownload
+  } = useLocalFilePreview(docxPreviewFormat, {
+    invalidType: t('app.preview.file.invalid_type', { type: '.docx' }),
+    tooLarge: t('app.preview.file.too_large', { size: formatPreviewFileSize(MAX_DOCX_SIZE) }),
+    previewFailed: t('app.preview.file.preview_failed')
+  })
 
   return (
     <div className="flex flex-col gap-4 h-full overflow-hidden">
@@ -185,7 +79,7 @@ const DocxPreviewer = () => {
                 type="button"
                 variant="outline"
                 icon={<Download className="h-4 w-4" />}
-                disabled={!previewUrl}
+                disabled={!fileInfo}
                 onClick={handleDownload}
               >
                 {t('app.preview.file.download')}
@@ -226,7 +120,7 @@ const DocxPreviewer = () => {
                 <div className="animate-spin h-6 w-6 border-2 border-[var(--primary)] border-t-transparent rounded-full" />
               </div>
             )}
-            <div className="h-full" ref={docxRef}></div>
+            <div className="h-full" ref={containerRef}></div>
           </div>
         </div>
       )}

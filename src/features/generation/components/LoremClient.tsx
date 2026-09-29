@@ -14,6 +14,7 @@ import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useToast } from '@/components/ui/toast'
 import { useCopy } from '@/hooks/useCopy'
+import { downloadText } from '@/utils/download'
 import {
   createOutputPreview,
   isOutputPreviewLimited,
@@ -180,18 +181,6 @@ const formatOutput = (text: string, format: LoremOutputFormat, sectionLabel: str
     case 'plain':
       return text
   }
-}
-
-const downloadText = (content: string, filename: string, type: string) => {
-  const blob = new Blob([content], { type })
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = filename
-  document.body.appendChild(anchor)
-  anchor.click()
-  document.body.removeChild(anchor)
-  URL.revokeObjectURL(url)
 }
 
 const getDownloadMeta = (format: LoremOutputFormat) => {

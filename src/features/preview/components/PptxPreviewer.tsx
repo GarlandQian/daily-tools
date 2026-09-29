@@ -1,184 +1,34 @@
 'use client'
+
 import { Download, FileText, ShieldCheck, Trash2, Upload } from 'lucide-react'
-import type jsPreviewPPtx from 'pptx-preview'
-import { type ChangeEvent, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 
+import { useLocalFilePreview } from '../hooks/useLocalFilePreview'
+import { MAX_PPTX_SIZE, pptxPreviewFormat } from '../lib/previewFormats'
 import FileUploader from './FileUploader'
-import { formatPreviewFileSize, type PreviewRenderLimit } from './previewGuards'
-
-interface PreviewFileInfo {
-  lastModified: number
-  name: string
-  size: number
-  type: string
-}
-
-const MAX_PPTX_SIZE = 30 * 1024 * 1024
-const PPTX_RENDERED_SLIDES = 1
+import { formatPreviewFileSize } from './previewGuards'
 
 const PptxPreviewer = () => {
   const { t } = useTranslation()
-  const myPPtxPreviewer = useRef<ReturnType<typeof jsPreviewPPtx.init> | null>(null)
-  const pptxRef = useRef<HTMLDivElement>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const objectUrlRef = useRef<string | null>(null)
-  const previewBufferRef = useRef<ArrayBuffer | null>(null)
-  const uploadTokenRef = useRef(0)
-  const [loading, setLoading] = useState(false)
-  const [hasFile, setHasFile] = useState(false)
-  const [previewRequestId, setPreviewRequestId] = useState(0)
-  const [fileInfo, setFileInfo] = useState<PreviewFileInfo | null>(null)
-  const [previewLimit, setPreviewLimit] = useState<PreviewRenderLimit | null>(null)
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
-  const [error, setError] = useState('')
-  const isInitialized = useRef(false)
-
-  useEffect(() => {
-    let cancelled = false
-
-    const preview = async () => {
-      if (!hasFile || !previewRequestId || !pptxRef.current || !previewBufferRef.current) return
-
-      try {
-        const host = pptxRef.current
-
-        if (!isInitialized.current) {
-          const { init } = await import('pptx-preview')
-          if (cancelled) return
-
-          const measuredWidth = Math.floor(host.getBoundingClientRect().width || host.clientWidth)
-          myPPtxPreviewer.current = init(host, {
-            width: measuredWidth > 0 ? Math.min(measuredWidth, 1200) : 960,
-            height: 700,
-            mode: 'slide'
-          })
-          isInitialized.current = true
-        }
-
-        await myPPtxPreviewer.current?.preview(previewBufferRef.current)
-        if (!cancelled) {
-          const slideCount = myPPtxPreviewer.current?.slideCount ?? 0
-          setPreviewLimit(
-            slideCount > PPTX_RENDERED_SLIDES
-              ? { total: slideCount, visible: PPTX_RENDERED_SLIDES }
-              : null
-          )
-          setError('')
-        }
-      } catch {
-        if (!cancelled) setError(t('app.preview.pptx.preview_error'))
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    }
-
-    void preview()
-
-    return () => {
-      cancelled = true
-    }
-  }, [hasFile, previewRequestId, t])
-
-  useEffect(() => {
-    return () => {
-      myPPtxPreviewer.current?.dom
-        .querySelectorAll('.pptx-preview-wrapper')
-        .forEach(e => e.remove())
-      if (objectUrlRef.current) {
-        URL.revokeObjectURL(objectUrlRef.current)
-      }
-      previewBufferRef.current = null
-      isInitialized.current = false
-    }
-  }, [])
-
-  const onUpload = (file: File) => {
-    if (!file.name.toLowerCase().endsWith('.pptx')) {
-      setError(t('app.preview.pptx.invalid_type'))
-      return
-    }
-
-    if (file.size > MAX_PPTX_SIZE) {
-      setError(t('app.preview.pptx.too_large', { size: formatPreviewFileSize(MAX_PPTX_SIZE) }))
-      return
-    }
-
-    if (objectUrlRef.current) {
-      URL.revokeObjectURL(objectUrlRef.current)
-    }
-
-    const uploadToken = uploadTokenRef.current + 1
-    uploadTokenRef.current = uploadToken
-    const objectUrl = URL.createObjectURL(file)
-    objectUrlRef.current = objectUrl
-    setLoading(true)
-    setHasFile(true)
-    setError('')
-    setFileInfo({
-      lastModified: file.lastModified,
-      name: file.name,
-      size: file.size,
-      type: file.type || 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
-    })
-    setPreviewUrl(objectUrl)
-    setPreviewLimit(null)
-    const reader = new FileReader()
-    reader.onload = function (event) {
-      if (uploadTokenRef.current !== uploadToken) return
-      const arrayBuffer = event.target?.result
-      if (!(arrayBuffer instanceof ArrayBuffer)) {
-        setLoading(false)
-        setError(t('app.preview.pptx.preview_error'))
-        return
-      }
-      previewBufferRef.current = arrayBuffer
-      setPreviewRequestId(id => id + 1)
-    }
-    reader.onerror = function () {
-      if (uploadTokenRef.current !== uploadToken) return
-      setLoading(false)
-      setError(t('app.preview.pptx.preview_error'))
-    }
-    reader.readAsArrayBuffer(file)
-  }
-
-  const handleReupload = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (file) {
-      onUpload(file)
-      event.target.value = ''
-    }
-  }
-
-  const handleClear = () => {
-    if (objectUrlRef.current) {
-      URL.revokeObjectURL(objectUrlRef.current)
-      objectUrlRef.current = null
-    }
-    myPPtxPreviewer.current?.dom
-      .querySelectorAll('.pptx-preview-wrapper')
-      .forEach(element => element.remove())
-    uploadTokenRef.current += 1
-    previewBufferRef.current = null
-    setError('')
-    setFileInfo(null)
-    setHasFile(false)
-    setLoading(false)
-    setPreviewLimit(null)
-    setPreviewRequestId(0)
-    setPreviewUrl(null)
-  }
-
-  const handleDownload = () => {
-    if (!previewUrl || !fileInfo) return
-    const anchor = document.createElement('a')
-    anchor.href = previewUrl
-    anchor.download = fileInfo.name
-    anchor.click()
-  }
+  const {
+    containerRef,
+    fileInputRef,
+    fileInfo,
+    hasFile,
+    loading,
+    error,
+    result: previewLimit,
+    onUpload,
+    handleReupload,
+    handleClear,
+    handleDownload
+  } = useLocalFilePreview(pptxPreviewFormat, {
+    invalidType: t('app.preview.pptx.invalid_type'),
+    tooLarge: t('app.preview.pptx.too_large', { size: formatPreviewFileSize(MAX_PPTX_SIZE) }),
+    previewFailed: t('app.preview.pptx.preview_error')
+  })
 
   return (
     <div className="flex h-full flex-col gap-4 overflow-hidden">
@@ -245,7 +95,7 @@ const PptxPreviewer = () => {
                     size="sm"
                     variant="outline"
                     icon={<Download className="h-4 w-4" />}
-                    disabled={!previewUrl}
+                    disabled={!fileInfo}
                     onClick={handleDownload}
                   >
                     {t('app.preview.pptx.download')}
@@ -294,7 +144,7 @@ const PptxPreviewer = () => {
                 {error}
               </div>
             )}
-            <div className="h-full" ref={pptxRef} />
+            <div className="h-full" ref={containerRef} />
           </div>
         </div>
       )}

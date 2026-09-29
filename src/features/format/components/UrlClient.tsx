@@ -23,6 +23,7 @@ import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
+import { downloadText } from '@/utils/download'
 import { collectBoundedNonEmptyLines } from '@/utils/textScan'
 
 interface QueryParam {
@@ -199,16 +200,6 @@ const buildBatchExport = (
     null,
     2
   )
-
-const downloadText = (content: string, filename: string, type: string) => {
-  const blob = new Blob([content], { type })
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = filename
-  anchor.click()
-  URL.revokeObjectURL(url)
-}
 
 const UrlClient = () => {
   const { t } = useTranslation()

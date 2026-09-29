@@ -27,6 +27,7 @@ import { Select } from '@/components/ui/select'
 import { Slider } from '@/components/ui/slider'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
+import { downloadText } from '@/utils/download'
 
 type GridMode = 'fixed' | 'auto-fit' | 'auto-fill'
 type AlignMode = 'stretch' | 'start' | 'center' | 'end'
@@ -572,16 +573,6 @@ const buildFindingsCsv = (findings: GridFinding[]) =>
     ['level', 'key', 'subject'].map(csvCell).join(','),
     ...findings.map(finding => [finding.level, finding.key, finding.subject].map(csvCell).join(','))
   ].join('\n')
-
-const downloadText = (content: string, filename: string, type: string) => {
-  const blob = new Blob([content], { type })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.download = filename
-  link.href = url
-  link.click()
-  URL.revokeObjectURL(url)
-}
 
 const buildGridCss = (state: GridState, areaDefinition: AreaDefinition | null) => {
   const template = getTemplate(state, areaDefinition)

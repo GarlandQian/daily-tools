@@ -28,6 +28,7 @@ import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
+import { downloadText } from '@/utils/download'
 import {
   createOutputPreview,
   isOutputPreviewLimited,
@@ -668,17 +669,6 @@ const levelClass = (level: FindingLevel) => {
   if (level === 'danger') return 'border-red-300/50 bg-red-500/10 text-red-600'
   if (level === 'warn') return 'border-amber-300/50 bg-amber-500/10 text-amber-700'
   return 'border-emerald-300/50 bg-emerald-500/10 text-emerald-700'
-}
-
-const downloadText = (content: string, filename: string, type: string) => {
-  const blob = new Blob([content], { type })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-
-  link.href = url
-  link.download = filename
-  link.click()
-  URL.revokeObjectURL(url)
 }
 
 const buildHtml = (canonicalUrl: string, alternates: AlternateRow[]) =>

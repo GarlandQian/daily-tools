@@ -22,6 +22,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { useToast } from '@/components/ui/toast'
 import { useCopy } from '@/hooks/useCopy'
 import { cn } from '@/lib/utils'
+import { downloadText } from '@/utils/download'
 
 type SqlLanguage =
   | 'sql'
@@ -203,16 +204,6 @@ const analyzeSql = (value: string): SqlStats => ({
   statements: countSqlStatements(value),
   tables: extractTables(value)
 })
-
-const downloadText = (content: string, filename: string, type: string) => {
-  const blob = new Blob([content], { type })
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = filename
-  anchor.click()
-  URL.revokeObjectURL(url)
-}
 
 const SqlClient = () => {
   const { t } = useTranslation()

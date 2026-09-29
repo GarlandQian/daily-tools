@@ -26,6 +26,7 @@ import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
+import { downloadText } from '@/utils/download'
 import {
   createOutputPreview,
   isOutputPreviewLimited,
@@ -515,16 +516,6 @@ const isTraceIdValid = (value: string) =>
   /^[0-9a-f]{32}$/.test(value) && !ZERO_HEX_PATTERN.test(value)
 const isParentIdValid = (value: string) =>
   /^[0-9a-f]{16}$/.test(value) && !ZERO_HEX_PATTERN.test(value)
-
-const downloadText = (content: string, filename: string, type: string) => {
-  const blob = new Blob([content], { type })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = filename
-  link.click()
-  URL.revokeObjectURL(url)
-}
 
 const getDownloadMeta = (format: OutputFormat) => {
   if (format === 'csv' || format === 'propagation') {

@@ -24,6 +24,7 @@ import { Select } from '@/components/ui/select'
 import { Slider } from '@/components/ui/slider'
 import { useToast } from '@/components/ui/toast'
 import { useCopy } from '@/hooks/useCopy'
+import { downloadText } from '@/utils/download'
 
 type PasswordMode = 'passphrase' | 'password'
 type PasswordOutput = 'csv' | 'json' | 'lines'
@@ -261,16 +262,6 @@ const formatPasswordOutput = (
   }
 
   return passwords.join('\n')
-}
-
-const downloadText = (content: string, filename: string, type: string) => {
-  const blob = new Blob([content], { type })
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = filename
-  anchor.click()
-  URL.revokeObjectURL(url)
 }
 
 const PasswordClient = () => {

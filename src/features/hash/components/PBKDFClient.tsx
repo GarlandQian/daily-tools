@@ -25,6 +25,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { useToast } from '@/components/ui/toast'
 import { commonPasswords } from '@/const/common-passwords'
 import { useCopy } from '@/hooks/useCopy'
+import { downloadText } from '@/utils/download'
 import { yieldToMain } from '@/utils/scheduler'
 
 import {
@@ -78,16 +79,6 @@ const SAMPLES = {
   string,
   { iterations: number; length: DerivedLength; password: string; prf: PrfAlgorithm; salt: string }
 >
-
-const downloadText = (content: string, filename: string, type = 'text/plain;charset=utf-8') => {
-  const blob = new Blob([content], { type })
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = filename
-  anchor.click()
-  URL.revokeObjectURL(url)
-}
 
 const PBKDFClient = () => {
   const { t } = useTranslation()

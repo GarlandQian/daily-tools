@@ -27,6 +27,7 @@ import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
+import { downloadText } from '@/utils/download'
 import {
   createOutputPreview,
   isOutputPreviewLimited,
@@ -376,18 +377,6 @@ function toSlug(value: string, fallback: string) {
 
 function compactLines(lines: string[]) {
   return lines.filter(line => line.trim()).join('\n')
-}
-
-function downloadText(content: string, filename: string, type = 'text/plain;charset=utf-8') {
-  const blob = new Blob([content], { type })
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = filename
-  document.body.appendChild(anchor)
-  anchor.click()
-  anchor.remove()
-  URL.revokeObjectURL(url)
 }
 
 function buildSecurityHeaders(draft: NginxDraft) {

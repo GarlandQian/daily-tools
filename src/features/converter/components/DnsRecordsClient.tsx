@@ -25,6 +25,7 @@ import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
+import { downloadText } from '@/utils/download'
 import {
   createOutputPreview,
   isOutputPreviewLimited,
@@ -271,17 +272,6 @@ const buildRecordsCsv = (records: ParsedRecord[]) =>
   ]
     .map(row => row.map(escapeCsv).join(','))
     .join('\n')
-
-const downloadText = (content: string, filename: string, type: string) => {
-  const blob = new Blob([content], { type })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-
-  link.href = url
-  link.download = filename
-  link.click()
-  URL.revokeObjectURL(url)
-}
 
 const parseZoneRecords = (input: string, origin: string): ParsedRecord[] => {
   const rows: ParsedRecord[] = []

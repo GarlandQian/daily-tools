@@ -24,6 +24,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { useToast } from '@/components/ui/toast'
 import { commonPasswords } from '@/const/common-passwords'
 import { useCopy } from '@/hooks/useCopy'
+import { downloadText } from '@/utils/download'
 
 import { calculateTextHash, loadCryptoJS, type TextHashAlgorithm } from '../utils/crypto'
 import { type HashLookupAlgorithm, lookupHash } from '../utils/lookup'
@@ -153,16 +154,6 @@ const buildExport = (results: TextHashResult[], format: ExportFormat) => {
         `${result.algorithm}: ${result.digest}${results.length > 1 ? `\n${result.input}` : ''}`
     )
     .join('\n\n')
-}
-
-const downloadText = (content: string, filename: string, type: string) => {
-  const blob = new Blob([content], { type })
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = filename
-  anchor.click()
-  URL.revokeObjectURL(url)
 }
 
 const TextHashClient = ({ family }: TextHashClientProps) => {

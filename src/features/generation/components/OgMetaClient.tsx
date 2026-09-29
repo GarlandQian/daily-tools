@@ -25,6 +25,7 @@ import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
+import { downloadText } from '@/utils/download'
 
 type OgPreset = 'article' | 'product' | 'tool'
 type OgType = 'article' | 'product' | 'profile' | 'website'
@@ -436,16 +437,6 @@ const buildFindingsCsv = (findings: OgFinding[]) =>
     ['level', 'key', 'subject'].map(csvCell).join(','),
     ...findings.map(finding => [finding.level, finding.key, finding.subject].map(csvCell).join(','))
   ].join('\n')
-
-const downloadText = (content: string, filename: string, type: string) => {
-  const blob = new Blob([content], { type })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = filename
-  link.click()
-  URL.revokeObjectURL(url)
-}
 
 const OgMetaClient = () => {
   const { t } = useTranslation()

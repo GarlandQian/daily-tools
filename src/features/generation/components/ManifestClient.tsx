@@ -24,6 +24,7 @@ import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopy } from '@/hooks/useCopy'
+import { downloadText } from '@/utils/download'
 
 type DisplayMode = 'standalone' | 'fullscreen' | 'minimal-ui' | 'browser'
 type Direction = 'auto' | 'ltr' | 'rtl'
@@ -329,25 +330,8 @@ const escapeHtml = (value: string) =>
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#39;')
 
-const downloadJson = (content: string) => {
-  const blob = new Blob([content], { type: 'application/manifest+json;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = 'manifest.webmanifest'
-  anchor.click()
-  URL.revokeObjectURL(url)
-}
-
-const downloadText = (content: string, filename: string, type: string) => {
-  const blob = new Blob([content], { type })
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = filename
-  anchor.click()
-  URL.revokeObjectURL(url)
-}
+const downloadJson = (content: string) =>
+  downloadText(content, 'manifest.webmanifest', 'application/manifest+json;charset=utf-8')
 
 const parseManifestWorkspace = (input: string): ParsedManifest => {
   const capped = input.length > MANIFEST_WORKSPACE_LIMIT

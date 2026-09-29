@@ -15,6 +15,7 @@ import { Slider } from '@/components/ui/slider'
 import { Textarea } from '@/components/ui/textarea'
 import { useToast } from '@/components/ui/toast'
 import { useCopy } from '@/hooks/useCopy'
+import { downloadText } from '@/utils/download'
 
 type UUIDVersion = 'v1' | 'v3' | 'v4' | 'v5'
 type UUIDNamespacePreset = 'dns' | 'url' | 'oid' | 'x500'
@@ -70,16 +71,6 @@ const clampNumber = (value: number, min: number, max: number) => {
 const formatUuidValue = (uuid: string, uppercase: boolean, hyphenless: boolean) => {
   const formatted = hyphenless ? uuid.replaceAll('-', '') : uuid
   return uppercase ? formatted.toUpperCase() : formatted
-}
-
-const downloadText = (content: string, filename: string, type: string) => {
-  const blob = new Blob([content], { type })
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = filename
-  anchor.click()
-  URL.revokeObjectURL(url)
 }
 
 const UuidClient = () => {

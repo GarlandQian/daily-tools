@@ -15,6 +15,7 @@ import { Select } from '@/components/ui/select'
 import { Slider } from '@/components/ui/slider'
 import { useToast } from '@/components/ui/toast'
 import { useCopy } from '@/hooks/useCopy'
+import { downloadText } from '@/utils/download'
 
 type TokenFormat = 'alphanumeric' | 'base64' | 'base64url' | 'hex' | 'numeric'
 type TokenOutput = 'bearer' | 'curl' | 'env' | 'json' | 'lines'
@@ -198,16 +199,6 @@ const formatTokenOutput = (
   }
 
   return tokens.join('\n')
-}
-
-const downloadText = (content: string, filename: string, type: string) => {
-  const blob = new Blob([content], { type })
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = filename
-  anchor.click()
-  URL.revokeObjectURL(url)
 }
 
 const TokenClient = () => {

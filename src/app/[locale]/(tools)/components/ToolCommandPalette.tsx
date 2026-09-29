@@ -1,5 +1,6 @@
 'use client'
 
+import { DialogDescription, DialogTitle } from '@radix-ui/react-dialog'
 import {
   CommandDialog,
   CommandEmpty,
@@ -75,6 +76,10 @@ export const ToolCommandPalette = ({
       overlayClassName="fixed inset-0 z-[70] bg-black/35 backdrop-blur-sm"
       contentClassName="glass-panel-strong fixed left-1/2 top-[12vh] z-[80] flex max-h-[min(36rem,calc(100vh-6rem))] w-[min(42rem,calc(100vw-1.5rem))] -translate-x-1/2 flex-col overflow-hidden rounded-2xl border border-[var(--glass-border-strong)] shadow-[0_24px_80px_rgba(0,0,0,0.22)]"
     >
+      <DialogTitle className="sr-only">{t('public.tool_search.dialog_label')}</DialogTitle>
+      <DialogDescription className="sr-only">
+        {t('public.tool_search.navigate_hint')}
+      </DialogDescription>
       <div className="flex items-center gap-3 border-b border-[var(--glass-border)] px-4 py-3">
         <Search className="h-4 w-4 shrink-0 text-[var(--text-tertiary)]" aria-hidden="true" />
         <CommandInput
