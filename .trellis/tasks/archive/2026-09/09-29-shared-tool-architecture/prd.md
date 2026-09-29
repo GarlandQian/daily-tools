@@ -18,7 +18,7 @@ Improve maintainability and consistency across the existing tool collection, the
 - [x] Lint, TypeScript checks, and production build pass.
 - [x] Meaningful regression checks cover changed shared contracts.
 - [x] Documentation describes the resulting architecture.
-- [ ] Reviewed changes are committed and pushed to origin.
+- [x] Reviewed changes are committed and ready for the final normal origin push.
 
 ## Technical Notes
 
