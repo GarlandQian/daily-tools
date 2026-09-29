@@ -38,3 +38,36 @@ Refactored navigation, migrated 91 tool downloads, and unified DOCX/XLSX/PDF/PPT
 ### Next Steps
 
 - None - task complete
+
+
+## Session 3: Reduce translation deployment storage
+
+**Date**: 2026-09-29
+**Task**: Reduce translation deployment storage
+**Branch**: `main`
+
+### Summary
+
+Moved complete bilingual dictionaries into the shared client provider instead of serialized RootLayout props. Local standalone plus static output fell from 1,300,876,724 to 85,819,794 bytes (93.40% reduction), retaining the same generated pages and language switching. Production build, TypeScript and targeted lint passed; browser inspection showed no JavaScript exceptions. Vercel account retention and old deployments remain unchanged; measured build bytes are not account billing usage.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `dad6105` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
