@@ -1,0 +1,41 @@
+{
+  "before": {
+    "standalone": {
+      "files": 5511,
+      "bytes": 1287918079
+    },
+    "static": {
+      "files": 178,
+      "bytes": 12958645
+    },
+    "html": {
+      "files": 234,
+      "bytes": 334248938
+    },
+    "rsc": {
+      "files": 2333,
+      "bytes": 906451613
+    },
+    "uuid_rsc_bytes": 1296351
+  },
+  "after": {
+    "standalone": {
+      "files": 5509,
+      "bytes": 71573772
+    },
+    "static": {
+      "files": 179,
+      "bytes": 14246022
+    },
+    "html": {
+      "files": 234,
+      "bytes": 18237288
+    },
+    "rsc": {
+      "files": 2333,
+      "bytes": 7350500
+    },
+    "uuid_rsc_bytes": 9997
+  },
+  "reduction_percent": 93.4
+}

@@ -6,7 +6,6 @@ import React from 'react'
 
 import ThemeProvider from '@/components/ThemeProvider'
 import TranslationsProvider from '@/components/TranslationsProvider'
-import initTranslations from '@/locales/i18n'
 import i18nConfig from '@/locales/i18nConfig'
 
 export const metadata = {
@@ -27,7 +26,6 @@ const RootLayout = async ({
   params: Promise<{ locale?: string }>
 }>) => {
   const { locale = i18nConfig.defaultLocale } = await params
-  const { resources } = await initTranslations(locale)
   return (
     <html lang={locale} suppressHydrationWarning>
       <head>
@@ -43,9 +41,7 @@ const RootLayout = async ({
       <body className="flex min-h-screen w-full flex-col">
         <NextTopLoader showSpinner={false} />
         <ThemeProvider>
-          <TranslationsProvider locale={locale} resources={resources}>
-            {children}
-          </TranslationsProvider>
+          <TranslationsProvider locale={locale}>{children}</TranslationsProvider>
         </ThemeProvider>
       </body>
     </html>

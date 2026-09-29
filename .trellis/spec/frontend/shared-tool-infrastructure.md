@@ -39,6 +39,19 @@ or integrating a local document renderer. Route wrappers remain under
 - Theme transition callbacks and timers belong to one transition and must not
   apply stale state or remove a newer transition's classes.
 
+### Translation deployment output
+
+- Keep both locale dictionaries in the shared client translation provider's
+  module imports. Each provider still creates its own i18next instance for SSR.
+- Pass the selected locale across the server/client boundary, never the full
+  dictionaries. Resource props are serialized into every prerendered HTML and
+  RSC segment and can multiply megabytes of text across hundreds of outputs.
+- Both languages must be available synchronously for saved-language restoration
+  and the existing language switch. Namespace or lazy-loading changes require
+  preserving translated SSR and handling loading before switching.
+- Measure logical file bytes for production HTML/RSC and shared static assets;
+  local disk allocation and development caches are not Vercel billing metrics.
+
 ### Downloads
 
 - Text defaults to `text/plain;charset=utf-8`, uses UTF-8, and adds no BOM.
